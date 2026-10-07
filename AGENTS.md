@@ -10,6 +10,7 @@
   - `refs/Rebel_base_RL` — SoG 蓝本 `research/world_model/src/gitcg_world_model/`；22 套脚本专家 `research/world_model/src/gitcg_expert_system/deck_rules/`（评测假想敌）；`packages/pybinding/examples/agent_vs_agent.py` 是 Player 子类的参考写法
   - `refs/AI` — DouZero 式 DMC 基线参考
 - `refs/` 在 .gitignore 里（不入库，缺了重新 clone）。
+- Git remote：`origin` = GitHub（`https://github.com/Peruere1828/genshin-GITCG.git`）；`njugit` = 南大 GitLab（`git@git.nju.edu.cn:Fmyh1828/genshin-GITCG.git`，SSH）。
 
 ## 环境
 
