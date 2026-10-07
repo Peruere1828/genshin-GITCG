@@ -20,6 +20,17 @@
 | D9 | 工程目录 | `~/projects/genshin-GITCG`（本机），代码 git 同步、作业/数据走超算存储 |
 | D10 | 本地先行 | 在批量算力（超算/A800）解锁前，先在**本地 12 核 CPU + LLM API**上推进"本地先行轨道"（§4.1 L0–L4）：环境/评测/表示层 + LLM Agent 层 + SoG 管线玩具验证；真训练留待算力解锁 |
 
+### 0.1 本地先行实施记录（2026-10-07，L0–L4 已完成，代码见 `master`/`njugit`）
+
+| # | 议题 | 决策/事实 |
+|---|------|-----------|
+| I1 | 蓝本落地方式 | `refs/Rebel_base_RL` 的 `gitcg_world_model` + `gitcg_expert_system` **逐模块移植**进 `reps/`、`agents/scripted/`（非 `apply_all`），地图/许可见 `NOTICE.md`；实测在 gitcg 0.21.0 上可跑完整对局 |
+| I2 | 验收口径修正 | 脚本对手实测为 **20 套**（`registry.RAW_DECKS`），PLAN 中"22 套"按更早版本理解；**验收以"全部脚本对手"表述为准**，数量以评测池实际注册为准 |
+| I3 | 重放确定性 | 引擎牌堆洗牌用 JS `Math.random`（不可种子化）+ 全局 action codebook 累积 → 已用「Python 预洗牌+NO_SHUFFLE」与「每局 reset codebook」修正；**代价：low-level action code 仅单局内稳定，训练须用语义 key/option 特征**（AGENTS.md / NOTICE.md） |
+| I4 | 多进程形态 | `multiprocessing` fork/spawn 均不可用（死锁/重导入 `__main__`）→ 自建 `python -m envs.rollout_worker` JSON-lines 子进程协议 |
+| I5 | 搜索引擎前置 | **gitcg pybinding 不能克隆/恢复中局状态**（`canResume:false`）→ continual resolving 分叉搜索被阻塞；M3 前须扩展 pybinding 或改用 TS server 暂停路径（`train/README.md`） |
+| I6 | LLM 资源落地 | `.env` 的 `deepseek-flash` 为推理模型；局内辅助用非推理 `deepseek-chat`（低延迟），深度复盘用推理模型；降级链 local→API→纯策略已实现 |
+
 ---
 
 ## 1. 目标与非目标

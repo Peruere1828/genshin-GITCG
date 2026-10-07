@@ -1,0 +1,29 @@
+#BSUB -J gitcg-arena
+#BSUB -q cpu1
+#BSUB -n 12
+#BSUB -W 08:00
+#BSUB -o logs/gitcg-arena.%J.out
+#BSUB -e logs/gitcg-arena.%J.err
+# 脚本对手 arena（L1）。海量作业模式：用不同 SEEDS/SHARD 切分，结果回到 reports/arena。
+# 示例: GITCG_SEEDS=50 GITCG_WORKERS=12 bsub < scripts/cluster/lsf/arena.lsf
+#      （多分片：给每个作业不同 GITCG_TEST_START，或包装成 LSF 数组作业）
+
+set -euo pipefail
+mkdir -p logs data/arena reports/arena
+cd "${GITCG_REPO:-$HOME/projects/genshin-GITCG}"
+
+if [ -n "${GITCG_CONDA_ENV:-}" ]; then
+  source "$(conda info --base)/etc/profile.d/conda.sh"
+  conda activate "$GITCG_CONDA_ENV"
+fi
+
+export GITCG_ASSETS_OFFLINE=1
+export OMP_NUM_THREADS=1
+export PYTHONUNBUFFERED=1
+
+SEEDS="${GITCG_SEEDS:-50}"
+WORKERS="${GITCG_WORKERS:-12}"
+START="${GITCG_TEST_START:-0}"
+TAG="${GITCG_TAG:-scripted_ladder_${START}}"
+
+python -m eval.arena --seeds "$SEEDS" --seed-start "$START" --workers "$WORKERS" --tag "$TAG"

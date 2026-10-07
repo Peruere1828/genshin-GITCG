@@ -1,0 +1,37 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install engine + test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install gitcg pytest
+      - name: Warm card asset cache (needs network once)
+        run: |
+          python -c "from agents.scripted.assets import load_assets; c=load_assets(); print(len(c.cards), 'cards')"
+      - name: Required gates (info-leak, action adapter, replay consistency, smoke)
+        run: |
+          GITCG_ASSETS_OFFLINE=1 python -m pytest -q \
+            tests/test_info_hiding.py \
+            tests/test_info_leak.py \
+            tests/test_action_adapter.py \
+            tests/test_replay_consistency.py \
+            tests/test_env_smoke.py \
+            tests/test_llm.py \
+            tests/test_stats.py \
+            tests/test_ladder.py
