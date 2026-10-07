@@ -1,0 +1,210 @@
+{
+  "tag": "arena_smoke",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "workers": 12,
+  "swap": false,
+  "n_matches": 27,
+  "metadata": {
+    "engine_lock": {
+      "engine": {
+        "repo": "https://github.com/piovium/genius-invokation",
+        "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+        "pybinding_version": "0.21.0"
+      },
+      "cards": {
+        "data_version": "v4-latest-CHS@2026-10-07",
+        "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+      },
+      "reference": {
+        "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+      },
+      "runtime": {
+        "python": "3.12",
+        "platform": "linux",
+        "shuffle": "python_seeded_no_shuffle"
+      }
+    },
+    "runtime": {
+      "python": "3.12.13",
+      "platform": "Linux-6.8.0-142-generic-x86_64-with-glibc2.39",
+      "gitcg_version": "unknown",
+      "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+    },
+    "policies": {
+      "contestant": "expert:<deck>",
+      "pool": "expert:<deck>"
+    }
+  },
+  "contestants": [
+    {
+      "deck": "superconduct_aggro",
+      "games": 9,
+      "wins": 7.0,
+      "losses": 2,
+      "draws": 0,
+      "errors": 0,
+      "rate": 0.7777777777777778,
+      "ci_low": 0.4525833436728054,
+      "ci_high": 0.9367762376877727
+    },
+    {
+      "deck": "dual_mualani_stacks",
+      "games": 9,
+      "wins": 6.5,
+      "losses": 2,
+      "draws": 1,
+      "errors": 0,
+      "rate": 0.7222222222222222,
+      "ci_low": 0.40190414061658836,
+      "ci_high": 0.9095835244718742
+    },
+    {
+      "deck": "natlan_battleship",
+      "games": 9,
+      "wins": 2.0,
+      "losses": 6,
+      "draws": 2,
+      "errors": 0,
+      "rate": 0.2222222222222222,
+      "ci_low": 0.06322376231222723,
+      "ci_high": 0.5474166563271946
+    }
+  ],
+  "pairings": [
+    {
+      "deck0": "dual_mualani_stacks",
+      "deck1": "dual_mualani_stacks",
+      "games": 3,
+      "wins0": 2,
+      "wins1": 1,
+      "draws": 0,
+      "errors": 0,
+      "rate0_wins": 2.0,
+      "rate0_games": 3,
+      "rate0_rate": 0.6666666666666666,
+      "rate0_ci_low": 0.2076549551264879,
+      "rate0_ci_high": 0.9385096847238394
+    },
+    {
+      "deck0": "dual_mualani_stacks",
+      "deck1": "natlan_battleship",
+      "games": 3,
+      "wins0": 2,
+      "wins1": 1,
+      "draws": 0,
+      "errors": 0,
+      "rate0_wins": 2.0,
+      "rate0_games": 3,
+      "rate0_rate": 0.6666666666666666,
+      "rate0_ci_low": 0.2076549551264879,
+      "rate0_ci_high": 0.9385096847238394
+    },
+    {
+      "deck0": "dual_mualani_stacks",
+      "deck1": "superconduct_aggro",
+      "games": 3,
+      "wins0": 2,
+      "wins1": 0,
+      "draws": 1,
+      "errors": 0,
+      "rate0_wins": 2.5,
+      "rate0_games": 3,
+      "rate0_rate": 0.8333333333333334,
+      "rate0_ci_low": 0.30998154176528897,
+      "rate0_ci_high": 0.9823477379353658
+    },
+    {
+      "deck0": "natlan_battleship",
+      "deck1": "dual_mualani_stacks",
+      "games": 3,
+      "wins0": 1,
+      "wins1": 2,
+      "draws": 0,
+      "errors": 0,
+      "rate0_wins": 1.0,
+      "rate0_games": 3,
+      "rate0_rate": 0.3333333333333333,
+      "rate0_ci_low": 0.0614903152761605,
+      "rate0_ci_high": 0.7923450448735121
+    },
+    {
+      "deck0": "natlan_battleship",
+      "deck1": "natlan_battleship",
+      "games": 3,
+      "wins0": 0,
+      "wins1": 1,
+      "draws": 2,
+      "errors": 0,
+      "rate0_wins": 1.0,
+      "rate0_games": 3,
+      "rate0_rate": 0.3333333333333333,
+      "rate0_ci_low": 0.0614903152761605,
+      "rate0_ci_high": 0.7923450448735121
+    },
+    {
+      "deck0": "natlan_battleship",
+      "deck1": "superconduct_aggro",
+      "games": 3,
+      "wins0": 0,
+      "wins1": 3,
+      "draws": 0,
+      "errors": 0,
+      "rate0_wins": 0.0,
+      "rate0_games": 3,
+      "rate0_rate": 0.0,
+      "rate0_ci_low": 0.0,
+      "rate0_ci_high": 0.5615060804490177
+    },
+    {
+      "deck0": "superconduct_aggro",
+      "deck1": "dual_mualani_stacks",
+      "games": 3,
+      "wins0": 2,
+      "wins1": 1,
+      "draws": 0,
+      "errors": 0,
+      "rate0_wins": 2.0,
+      "rate0_games": 3,
+      "rate0_rate": 0.6666666666666666,
+      "rate0_ci_low": 0.2076549551264879,
+      "rate0_ci_high": 0.9385096847238394
+    },
+    {
+      "deck0": "superconduct_aggro",
+      "deck1": "natlan_battleship",
+      "games": 3,
+      "wins0": 3,
+      "wins1": 0,
+      "draws": 0,
+      "errors": 0,
+      "rate0_wins": 3.0,
+      "rate0_games": 3,
+      "rate0_rate": 1.0,
+      "rate0_ci_low": 0.43849391955098227,
+      "rate0_ci_high": 1.0
+    },
+    {
+      "deck0": "superconduct_aggro",
+      "deck1": "superconduct_aggro",
+      "games": 3,
+      "wins0": 2,
+      "wins1": 1,
+      "draws": 0,
+      "errors": 0,
+      "rate0_wins": 2.0,
+      "rate0_games": 3,
+      "rate0_rate": 0.6666666666666666,
+      "rate0_ci_low": 0.2076549551264879,
+      "rate0_ci_high": 0.9385096847238394
+    }
+  ],
+  "elo": {
+    "natlan_battleship": 1443.367528008777,
+    "dual_mualani_stacks": 1522.3964641684163,
+    "superconduct_aggro": 1534.2360078228066
+  }
+}

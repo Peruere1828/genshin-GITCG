@@ -43,11 +43,11 @@ def load_engine_lock(path: str | Path | None = None) -> dict[str, Any]:
 def runtime_metadata(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     """Best-effort environment stamp for run metadata (never contains secrets)."""
     try:
-        import gitcg  # noqa: PLC0415
+        from importlib.metadata import version as _pkg_version
 
-        gitcg_version = getattr(gitcg, "__version__", None) or "unknown"
+        gitcg_version = _pkg_version("gitcg")
     except Exception:
-        gitcg_version = "missing"
+        gitcg_version = "unknown"
     refs_engine = REPO_ROOT / "refs" / "genius-invokation"
     meta: dict[str, Any] = {
         "python": sys.version.split()[0],

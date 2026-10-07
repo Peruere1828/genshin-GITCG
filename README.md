@@ -28,8 +28,11 @@
 ## 起步
 
 ```bash
-pip install gitcg          # 或从 refs/genius-invokation/packages/pybinding 本地安装
-python -m eval.arena --smoke   # M0 冒烟：脚本对手互打
+pip install gitcg                      # 引擎绑定；conda env `gitcg`
+python -m pytest -q -m "not slow"      # 快速测试
+python -m envs.benchmark --games 12 --workers 1   # L0 吞吐基线
+python -m eval.arena --smoke --seeds 3 --workers 12  # L1 脚本对手 arena 冒烟
 ```
 
 许可：本项目按 AGPL-3.0（上游 genius-invokation / Rebel_base_RL 均为 AGPL）；不携带任何米哈游卡面/素材。
+见 `NOTICE.md`（移植范围 / 归属 / 洗牌确定性 workaround）。

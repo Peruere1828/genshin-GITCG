@@ -8,10 +8,14 @@
   - `reps/`：从 `refs/Rebel_base_RL/.../gitcg_world_model` **逐模块移植**的表示层（`schema`/`snapshot`/`action_hierarchy`/`action_adapter`/`public_state`/`semantic_priors`/`agents`/`replay` + 对应 toml），导入路径改为 `reps.*`。来源与许可见 `NOTICE.md`。
   - `agents/scripted/`：从 `gitcg_expert_system` 移植的脚本卡组规则（`ExpertRuleAgent` + `deck_rules/` + assets/profiles/registry/codec）。**实测可跑完整对局**。
   - `envs/`：`PolicyPlayer`（把 `gitcg.Player` 五类请求接到 `Policy` 抽象，观测只来自 `notification.state`）+ `run_match`（同步跑完整局）+ `expert_policy`/baseline policy + 牌组装配。
-  - `tests/`：信息隐藏（`public_state` 掩码）、action adapter 覆盖/载荷、同种子重放一致、冒烟对局；`python -m pytest` 全绿（`-m "not slow"` 跳过慢测）。
+  - `eval/`：`opponents`（20 脚本 + 基线对手池）+ `arena`（contestant×pool×paired-seeds 矩阵 + Wilson CI + Elo + 落盘）+ `ladder` + `stats`。
+  - `envs/rollout.py` + `rollout_worker.py`：多进程 rollout（**JSON-lines 子进程，不用 multiprocessing**）+ `benchmark.py`（L0 吞吐基线）。
+  - `tests/`：信息隐藏（`public_state` 掩码）、action adapter 覆盖/载荷、同种子重放一致、冒烟对局、stats/ladder/arena；`python -m pytest` 全绿（`-m "not slow"` 跳过慢测）。
+  - 实测基线见 `reports/LOCAL_BASELINE.md`（单核 ~819 局/h，M0"1 万局/小时"≈13 核）。
+- **多进程坑（重要）**：`multiprocessing` 的 `fork` 会在 `gitcg` 的 C/JS 运行时上**死锁**；`spawn` 又会重导入 `__main__`（pytest/`-m` 下崩）。因此 rollout 走自建子进程协议（`python -m envs.rollout_worker`，stdin/stdout JSON-lines，`cwd=仓库根`+`PYTHONPATH`）。不要改回 ProcessPoolExecutor。
 - **对手数是 20 不是 22**：`gitcg_expert_system/deck_rules/` 实际注册 20 套（`registry.RAW_DECKS`）。PLAN §4 措辞"22 套"来自更早版本；以代码为准，后续如需补齐再补。
 - **重放确定性坑（重要）**：引擎牌堆洗牌用 JS `Math.random()`，**不受** `ATTR_STATE_CONFIG_RANDOM_SEED` 控制（`packages/core/src/utils.ts:shuffle` 注释自曝）。因此 `envs/match.py` 默认在 Python 侧按种子**预洗牌**并传 `NO_SHUFFLE=1`，骰子/摸牌走引擎种子 RNG → 同种子可完全复现。详见 `NOTICE.md`。DISABLED 之前不要删这个 workaround。
-- 其余目录（`train/`/`coach/`/`decklab/`/`orchestrator/`）仍为 README 占位；README 里的目标态命令（如 `python -m eval.arena --smoke`）在实现前不可用。
+- `train/`/`coach/`/`decklab/`/`orchestrator/` 仍为 README 占位（目标态命令未实现）。`eval/arena --smoke`、`envs/benchmark`、`pytest` 已可用（见上）。
 - `refs/` 是三个上游参考仓，**只读**（只抄代码思路 + 逐模块移植，不修改、不在其上 apply 补丁，见 PLAN.md §6.5）：
   - `refs/genius-invokation` — 引擎本体 + Python 绑定 `packages/pybinding`（即 `gitcg`）+ IO 协议 `docs/development/io.md`（含 `notification.state` 的信息隐藏语义）
   - `refs/Rebel_base_RL` — SoG 蓝本 `research/world_model/src/gitcg_world_model/`；22 套脚本专家 `research/world_model/src/gitcg_expert_system/deck_rules/`（评测假想敌）；`packages/pybinding/examples/agent_vs_agent.py` 是 Player 子类的参考写法

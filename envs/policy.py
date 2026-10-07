@@ -115,3 +115,28 @@ def expert_policy(slug: str, *, seed: int | None = None) -> ScriptedPolicy:
     profile = expert_profile(slug)
     agent = ExpertRuleAgent(assets=_asset_catalog(), profile=profile, seed=seed)
     return ScriptedPolicy(agent, name=f"expert:{slug}")
+
+
+def build_policy(spec: str, *, seed: int, role: str) -> Policy:
+    """Build a policy from a serializable spec string (used by multiprocess rollout).
+
+    ``seed``/``role`` are folded into the policy RNG seed so the same task always
+    reproduces the same agents (M0 replay consistency).
+    """
+    from common.seeding import derive_seed
+
+    spec = spec.strip()
+    if spec.startswith("expert:"):
+        slug = spec.split(":", 1)[1]
+        return expert_policy(slug, seed=derive_seed(seed, role, "expert", slug))
+    if spec == "heuristic":
+        return heuristic_policy()
+    if spec == "legal_random":
+        return BaselinePolicy(
+            LegalRandomAgent(seed=derive_seed(seed, role, "legal_random")),
+            name="legal_random",
+        )
+    if spec == "random":
+        return RandomPolicy(seed=derive_seed(seed, role, "random"))
+    raise KeyError(f"unknown policy spec: {spec!r}")
+

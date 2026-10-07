@@ -11,4 +11,6 @@ gitcg (pybinding) 的 Gym 式封装、Player 子类（on_action/on_reroll_dice/o
 - `match.py`：`PolicyPlayer`（把 5 类 RPC 请求接到 `Policy`，只用 `notification.state` 构造决策上下文，
   非法/异常动作回退到 `declare_end`）与 `run_match(...)`（同步跑完整局，返回 `MatchRecord`，可选逐决策日志）。
   牌堆在 Python 侧按种子预洗 + `NO_SHUFFLE=1` 保证同种子可复现（见 `NOTICE.md`）。
-- 待办：多进程 rollout runner、episode JSONL 落盘、吞吐基准（L0 验收）。
+- 待办：episode JSONL 落盘（`eval/arena` 已落盘原始对局记录 `data/arena/*.jsonl`）、
+  多进程 rollout（已实现：`rollout.py` + `rollout_worker.py`，JSON-lines 子进程，避免 fork 死锁）、
+  吞吐基准（已实现：`benchmark.py`，见 `reports/LOCAL_BASELINE.md`）。

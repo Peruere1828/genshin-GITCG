@@ -1,0 +1,40 @@
+{
+  "games": 12,
+  "workers": 1,
+  "wall_seconds": 52.762,
+  "cpu_seconds": 66.093,
+  "games_per_hour_wall": 818.8,
+  "games_per_hour_per_core": 818.8,
+  "decisions": 1491,
+  "decisions_per_second_cpu": 22.6,
+  "errors": 0,
+  "metadata": {
+    "deck0": "superconduct_aggro",
+    "deck1": "natlan_battleship",
+    "engine_lock": {
+      "engine": {
+        "repo": "https://github.com/piovium/genius-invokation",
+        "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+        "pybinding_version": "0.21.0"
+      },
+      "cards": {
+        "data_version": "v4-latest-CHS@2026-10-07",
+        "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+      },
+      "reference": {
+        "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+      },
+      "runtime": {
+        "python": "3.12",
+        "platform": "linux",
+        "shuffle": "python_seeded_no_shuffle"
+      }
+    },
+    "runtime": {
+      "python": "3.12.13",
+      "platform": "Linux-6.8.0-142-generic-x86_64-with-glibc2.39",
+      "gitcg_version": "unknown",
+      "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+    }
+  }
+}
