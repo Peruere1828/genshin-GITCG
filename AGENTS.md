@@ -11,8 +11,10 @@
   - `eval/`：`opponents`（20 脚本 + 基线对手池）+ `arena`（contestant×pool×paired-seeds 矩阵 + Wilson CI + Elo + 落盘）+ `ladder` + `stats`。
   - `envs/rollout.py` + `rollout_worker.py`：多进程 rollout（**JSON-lines 子进程，不用 multiprocessing**）+ `benchmark.py`（L0 吞吐基线）。
   - `common/llm.py`：OpenAI 兼容 LLM 客户端（仅标准库），降级链 local→API→纯策略；`agents/llm_assist.py`（局内 LLM 辅助，白名单候选+预算+回退+干预记录）；`coach/replay.py`（复盘教练，结构化 JSON）；`decklab/sensitivity.py`（模板内 flex 换卡敏感性）；`scripts/run_llm_agent.py`（纯策略 vs LLM 辅助小样本对比）。
-  - `tests/`：信息隐藏（`public_state` 掩码）、action adapter 覆盖/载荷、同种子重放一致、冒烟对局、stats/ladder/arena、LLM（mock 客户端）、decklab；`python -m pytest` 全绿（`-m "not slow"` 跳过慢测）。
+  - `train/`（L4 玩具）：`model.py`(CVPN) + `data.py`(采集) + `train_loop.py`(BC/蒸馏) + `pipeline.py`(采集→训练→评测→门禁→落盘) + `resolver.py`(搜索脚手架)；`agents/neural.py`(`NeuralPolicy` 接回 env)。
+  - `tests/`：信息隐藏（`public_state` 掩码）、action adapter 覆盖/载荷、同种子重放一致、冒烟对局、stats/ladder/arena、LLM（mock 客户端）、decklab、train；`python -m pytest` 全绿（`-m "not slow"` 跳过慢测）。
   - 实测基线见 `reports/LOCAL_BASELINE.md`（单核 ~819 局/h，M0"1 万局/小时"≈13 核）。
+- **搜索引擎阻塞（重要，M3 前置）**：`gitcg` pybinding 的 `State.toJson` 写 `canResume:false`，`State(json=...)`+`Game` 无法续跑（`Game.is_resumable()==False`）→ **无法克隆中局状态做分叉搜索**（continual resolving 的硬前置）。M3 前必须先扩展 pybinding/用 TS server 暴露可恢复快照；在此之前 teacher 只能用非搜索策略（脚本专家 BC / 自蒸馏）。详见 `train/README.md`。
 - **LLM 模型坑**：`.env` 里 `DEEPSEEK_MODEL=deepseek-flash` 是**推理模型**（返回 `reasoning_content`，`content` 可能因 max_tokens 被推理吃光而为空）。局内辅助默认改用 `deepseek-chat`（非推理、~0.5–0.8s/次）；深度复盘（`coach`）可用 `deepseek-flash` + 大 max_tokens。`deepseek-v4-pro` 亦可用。
 - **多进程坑（重要）**：`multiprocessing` 的 `fork` 会在 `gitcg` 的 C/JS 运行时上**死锁**；`spawn` 又会重导入 `__main__`（pytest/`-m` 下崩）。因此 rollout 走自建子进程协议（`python -m envs.rollout_worker`，stdin/stdout JSON-lines，`cwd=仓库根`+`PYTHONPATH`）。不要改回 ProcessPoolExecutor。
 - **对手数是 20 不是 22**：`gitcg_expert_system/deck_rules/` 实际注册 20 套（`registry.RAW_DECKS`）。PLAN §4 措辞"22 套"来自更早版本；以代码为准，后续如需补齐再补。

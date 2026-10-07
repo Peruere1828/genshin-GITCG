@@ -38,5 +38,15 @@
 ```bash
 python -m envs.benchmark --games 12 --workers 1
 python -m eval.arena --smoke --seeds 3 --workers 12
-python -m pytest -q -m "not slow"   # 快速；去掉 -m 跑全量（含慢测约 2 分钟）
+python -m pytest -q -m "not slow"   # 快速；去掉 -m 跑全量（含慢测约 3 分钟）
 ```
+
+## L4 SoG 玩具管线（2026-10-07）
+
+`python -m train.pipeline --overfit`（1 局采集 → CVPN → 60 epoch 训练 → 对脚本对手评测 → 门禁 → 落盘）：
+- 采集样本 94（含 action/choose_active/reroll/select/switch 五类请求），零报错完成。
+- 训练集一致率 ~0.74（多数类 ~0.3）→ 网络可学；`reports/train/round_*_overfit.json`。
+- checkpoint 落 `data/checkpoints/`（不入库）；`NeuralPolicy` 已能在真引擎里对脚本对手完成合法对局。
+
+**注意**：搜索（continual resolving）被引擎阻塞——pybinding 不能克隆/恢复中局状态
+（`canResume:false`），无法分叉评估候选动作。M3 前需先暴露可恢复快照。详见 `train/README.md`。
