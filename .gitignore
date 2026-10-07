@@ -23,6 +23,7 @@ replay*/
 engine.local.lock
 *.log
 .DS_Store
+.env
 
 # 参考仓只读，不入库（重新 clone 即可）
 refs/

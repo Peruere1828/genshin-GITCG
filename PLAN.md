@@ -255,8 +255,8 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
 ```
 
 ## 10. 下一步行动（M0 起步清单）
-1. 建工程仓 `~/projects/genshin-GITCG` 与上述骨架（现有 `refs/` 三个参考仓保持只读，可移入其下 `refs/`）。
-2. 用 pip 安装 `gitcg`（或从 `genius-invokation/packages/pybinding` 本地装），跑通 `agent_vs_agent` 风格的 `Player` 子类 demo。
+1. ~~建工程仓 `~/projects/genshin-GITCG` 与上述骨架~~（已完成：目录 + 各 README + `configs/engine.lock.example`；`refs/` 三仓已就位）。
+2. ~~用 pip 安装 `gitcg`~~（已完成：conda env `gitcg`（Python 3.12）内 PyPI `gitcg` 0.21.0，最小 `Player` 子类冒烟对局跑通至 `GameStatus.FINISHED`。API 陷阱见 `AGENTS.md`）；下一步把 `agent_vs_agent` 风格 demo 落到 `envs/`。
 3. 写 `envs/` Gym 式封装 + 多进程 rollout，先让 22 套脚本对手互打起来（这是 M0 验收）。
 4. 写信息泄漏测试与重放一致性测试（进 CI）。
 5. 建 `eval/` arena v0：脚本对手互打的胜率矩阵 + 入库，作为一切后续对比的底座。
