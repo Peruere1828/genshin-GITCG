@@ -1,11 +1,14 @@
-"""M1 acceptance (part 1): every legal concrete action is representable.
+"""M1 acceptance (part 1): every legal concrete action is representable and is
+covered by the abstract action hierarchy.
 
 The action adapter must expose a stable code + payload for 100% of the legal
-concrete actions the engine offers, with kind-appropriate payload fields. This is
-a prerequisite for the abstraction-coverage / round-trip gate (PLAN.md §6.2).
+concrete actions the engine offers, with kind-appropriate payload fields, and the
+hierarchy must partition all legal actions (PLAN.md §6.2, go/no-go gate).
 """
 
 from __future__ import annotations
+
+import pytest
 
 from envs.decks import deck_spec
 from envs.match import run_match
@@ -34,7 +37,8 @@ class _Capture:
         return self.inner.choose(built)
 
 
-def _capture_game():
+@pytest.fixture(scope="module")
+def captured_game():
     cap = _Capture(expert_policy("superconduct_aggro"))
     opp = expert_policy("natlan_battleship")
     record = run_match(
@@ -43,11 +47,15 @@ def _capture_game():
     return record, cap
 
 
-def test_every_legal_action_has_a_code_and_payload():
-    record, cap = _capture_game()
+def test_game_reaches_completion(captured_game):
+    record, cap = captured_game
     assert record.error is None
     assert cap.contexts, "no decision contexts captured"
+    assert record.fallbacks0 == 0
 
+
+def test_every_legal_action_has_a_code_and_payload(captured_game):
+    record, cap = captured_game
     max_options = 0
     for built in cap.contexts:
         context = built.context
@@ -70,11 +78,30 @@ def test_every_legal_action_has_a_code_and_payload():
     )
 
 
-def test_chosen_action_is_always_legal():
-    record, cap = _capture_game()
+def test_abstract_actions_cover_every_legal_concrete_action(captured_game):
+    """M1 gate: the hierarchy partitions 100% of legal concrete actions."""
+    from reps.action_hierarchy import (
+        high_action_vocab_size,
+        legal_high_to_low_dict,
+        match_low_level_code_index,
+    )
+
+    _record, cap = captured_game
+    vocab = high_action_vocab_size()
     for built in cap.contexts:
-        # A fallback would have replaced the chosen code; legality of the final
-        # code is enforced in PolicyPlayer, this asserts the adapter agrees.
-        legal = set(int(c) for c in built.context.legal_low_level_codes)
-        assert legal
-    assert record.fallbacks0 == 0
+        context = built.context
+        codes = set(int(c) for c in context.legal_low_level_codes)
+        assert codes
+
+        high_to_low = legal_high_to_low_dict(context)
+        mapped_lows = {low for lows in high_to_low.values() for low in lows}
+        assert codes == mapped_lows, (
+            f"abstract actions do not cover all legal actions: "
+            f"missing={sorted(codes - mapped_lows)} extra={sorted(mapped_lows - codes)}"
+        )
+        assert set(high_to_low) == set(int(h) for h in context.legal_high_level_codes)
+        assert all(0 <= high < vocab for high in high_to_low)
+
+        # Round-trip: every legal code is recoverable from its semantic key.
+        for code in context.legal_low_level_codes:
+            assert match_low_level_code_index(context, int(code)) is not None

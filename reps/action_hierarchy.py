@@ -227,6 +227,18 @@ def set_default_hierarchical_action_codebook(codebook: HierarchicalActionCodeboo
         _DEFAULT_CODEBOOK = codebook
 
 
+def reset_default_hierarchical_action_codebook() -> None:
+    """Rebuild the process-global codebook from empty.
+
+    The codebook assigns low-level action codes incrementally as new semantic
+    specs are seen, so without a reset a match's codes (and occasionally its
+    outcome) depend on which matches ran earlier in the same process. Callers
+    that require "same seed -> same game" (envs.match.run_match, arena workers)
+    reset before each match. See AGENTS.md ("重放确定性坑").
+    """
+    set_default_hierarchical_action_codebook(build_default_hierarchical_action_codebook())
+
+
 def build_action_legality_engine() -> ActionLegalityEngine:
     return ActionLegalityEngine(default_hierarchical_action_codebook())
 

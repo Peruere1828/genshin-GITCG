@@ -33,7 +33,7 @@ from gitcg import (
 
 from reps.action_adapter import BuiltDecisionContext, build_decision_context
 from reps.schema import DecisionType, DeckSpec, OptionKind, StateSnapshot
-from reps.snapshot import snapshot_notification
+from reps.snapshot import snapshot_notification, snapshot_state
 
 from .policy import Policy
 
@@ -200,17 +200,23 @@ class PolicyPlayer(Player):
         if self.notification is None:
             raise RuntimeError("decision requested before any notification")
         view = snapshot_notification(self.notification)
+        full_state = view
         full_state_json = None
         if self.full_state_provider is not None:
             try:
                 full_state_json = self.full_state_provider()
+                if full_state_json:
+                    # God view (training targets / privileged state). Agent inputs
+                    # still use ``player_view`` below, so this does not leak.
+                    full_state = snapshot_state(None, full_state_json)
             except Exception:
                 full_state_json = None
+                full_state = view
         return build_decision_context(
             acting_player=self.who,
             request_type=request_type,
             request=request,
-            full_state=view,
+            full_state=full_state,
             player_view=view,
             full_state_json=full_state_json,
             step_index=self._step_index,
@@ -321,6 +327,7 @@ def run_match(
     record_views: bool = False,
     record_final_state: bool = False,
     deterministic_shuffle: bool = True,
+    full_state_for_agents: bool = False,
 ) -> MatchRecord:
     """Play one full game synchronously in the current thread.
 
@@ -330,8 +337,13 @@ def run_match(
 
     With ``deterministic_shuffle`` (default) the pile is pre-shuffled in Python
     from ``seed`` so identical inputs reproduce an identical game; see
-    ``_build_create_param``.
+    ``_build_create_param``. The process-global action codebook is reset so codes
+    do not depend on earlier matches in the same process (see
+    ``reps.action_hierarchy.reset_default_hierarchical_action_codebook``).
     """
+    from reps.action_hierarchy import reset_default_hierarchical_action_codebook
+
+    reset_default_hierarchical_action_codebook()
     create_param = _build_create_param(
         deck0,
         deck1,
@@ -344,6 +356,7 @@ def run_match(
     error: str | None = None
     truncated = False
     players: list[PolicyPlayer] = []
+    full_state_provider = (lambda: game.state().json()) if full_state_for_agents else None
     for who, policy in ((0, policy0), (1, policy1)):
         recorder = decisions if record_decisions else None
         players.append(
@@ -352,6 +365,7 @@ def run_match(
                 policy,
                 recorder=recorder,
                 record_views=record_views,
+                full_state_provider=full_state_provider,
             )
         )
     game.set_player(0, players[0])

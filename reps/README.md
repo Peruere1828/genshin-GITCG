@@ -15,5 +15,9 @@ action_adapter（抽象↔具体映射 + 合法化）、belief_groups（public b
   `LowLevelActionSpec` + 响应载荷（`BuiltDecisionContext`）。
 - `public_state.py`：`mask_state_for_player`（对局信息隐藏）+ public belief 起点。
 - `semantic_priors.py` / `agents.py` / `replay.py`：先验、legal-random/heuristic 基线、回放序列化。
+- `observation_encoder.py` + `belief_groups.py/.toml` + `features.py` + `event_features.py` + `decks.py` + `opponent_identity.py`：
+  token 化观测（公共信息 token + `opponent_token_mask`）、动作 option 特征、belief target（由 `full_state` 计算）、
+  privileged state。工厂：`envs/observation.py:default_encoder()`（词表覆盖 20 套脚本卡组，152 卡 / 36 角色）。
+- 信息泄漏硬门禁：`tests/test_info_leak.py`（只改对手隐藏信息的两个 context，编码**输入**必须一致；改公开信息必须变）。
 
-待办：`observation_encoder`（token 化观测 + 信息泄漏测试）、`belief_groups`、抽象动作覆盖/往返测试加固。
+待办：抽象动作覆盖上限加固（当前观测到单步最大合法动作数远小于护栏 512）、belief_groups 在搜索中的使用。

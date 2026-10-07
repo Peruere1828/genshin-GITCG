@@ -24,8 +24,20 @@ into `data/` (gitignored) via the public GI-TCG assets API.
 
 ## Engine reproducibility note
 
-`gitcg`'s deck-pile shuffle uses JavaScript `Math.random()` and is **not**
-controlled by the engine's seeded random generator. To keep "same seed -> same
-game" we pre-shuffle each pile in Python from a derived seed and pass
-`NO_SHUFFLE=1` to the engine (`envs/match.py`). Dice rolls and draws use the
-engine's seeded RNG and are already deterministic given the pile order.
+Two engine behaviours break naive "same seed -> same game"; both are worked
+around so `run_match` is fully deterministic:
+
+1. `gitcg`'s deck-pile shuffle uses JavaScript `Math.random()` and is **not**
+   controlled by the engine's seeded random generator. We pre-shuffle each pile
+   in Python from a derived seed and pass `NO_SHUFFLE=1` (`envs/match.py`). Dice
+   rolls and draws use the engine's seeded RNG and are sequential given the pile.
+
+2. The ported `reps/action_hierarchy` keeps a **process-global** low-level action
+   codebook whose codes are assigned incrementally as new action specs appear. A
+   match's codes therefore depended on which matches ran earlier in the process.
+   `run_match` resets the codebook at the start of every match, making a match
+   independent of process history.
+
+Consequence: low-level `action_code`s are only stable *within* a match. Training
+pipelines must key labels/embeddings on the semantic action key
+(`reps.action_hierarchy.low_level_semantic_key_for_code`), not the raw code.

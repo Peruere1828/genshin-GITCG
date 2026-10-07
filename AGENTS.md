@@ -14,7 +14,10 @@
   - 实测基线见 `reports/LOCAL_BASELINE.md`（单核 ~819 局/h，M0"1 万局/小时"≈13 核）。
 - **多进程坑（重要）**：`multiprocessing` 的 `fork` 会在 `gitcg` 的 C/JS 运行时上**死锁**；`spawn` 又会重导入 `__main__`（pytest/`-m` 下崩）。因此 rollout 走自建子进程协议（`python -m envs.rollout_worker`，stdin/stdout JSON-lines，`cwd=仓库根`+`PYTHONPATH`）。不要改回 ProcessPoolExecutor。
 - **对手数是 20 不是 22**：`gitcg_expert_system/deck_rules/` 实际注册 20 套（`registry.RAW_DECKS`）。PLAN §4 措辞"22 套"来自更早版本；以代码为准，后续如需补齐再补。
-- **重放确定性坑（重要）**：引擎牌堆洗牌用 JS `Math.random()`，**不受** `ATTR_STATE_CONFIG_RANDOM_SEED` 控制（`packages/core/src/utils.ts:shuffle` 注释自曝）。因此 `envs/match.py` 默认在 Python 侧按种子**预洗牌**并传 `NO_SHUFFLE=1`，骰子/摸牌走引擎种子 RNG → 同种子可完全复现。详见 `NOTICE.md`。DISABLED 之前不要删这个 workaround。
+- **重放确定性坑（重要）**：
+  1. 引擎牌堆洗牌用 JS `Math.random()`，**不受** `ATTR_STATE_CONFIG_RANDOM_SEED` 控制（`packages/core/src/utils.ts:shuffle` 自曝）。因此 `envs/match.py` 默认在 Python 侧按种子**预洗牌**并传 `NO_SHUFFLE=1`，骰子/摸牌走引擎种子 RNG。
+  2. `reps/action_hierarchy` 的**全局 action codebook** 随进程内对局累积分配 low-level code，导致同一局结果依赖"本进程之前跑过什么"。`run_match` 现在每局开始调用 `reset_default_hierarchical_action_codebook()`，保证同种子跨进程/跨顺序一致。
+  3. 代价：low-level `action_code` 只在单局内稳定，跨局/跨进程不保证同一语义同一 code。**建训练管线（L4/WS3）时必须用语义 key（`low_level_semantic_key_for_code`）而非裸 code 做标签/embedding**，否则策略头学乱。详见 `NOTICE.md`。
 - `train/`/`coach/`/`decklab/`/`orchestrator/` 仍为 README 占位（目标态命令未实现）。`eval/arena --smoke`、`envs/benchmark`、`pytest` 已可用（见上）。
 - `refs/` 是三个上游参考仓，**只读**（只抄代码思路 + 逐模块移植，不修改、不在其上 apply 补丁，见 PLAN.md §6.5）：
   - `refs/genius-invokation` — 引擎本体 + Python 绑定 `packages/pybinding`（即 `gitcg`）+ IO 协议 `docs/development/io.md`（含 `notification.state` 的信息隐藏语义）
