@@ -1,0 +1,143 @@
+{
+  "deck": "superconduct_aggro",
+  "opponent": "natlan_battleship",
+  "seeds": [
+    0,
+    1
+  ],
+  "pure_policy": {
+    "wins": 2.0,
+    "games": 2,
+    "rate": 1.0,
+    "ci_low": 0.34237195288961925,
+    "ci_high": 1.0
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-142-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  },
+  "llm_assisted": {
+    "wins": 2.0,
+    "games": 2,
+    "rate": 1.0,
+    "ci_low": 0.34237195288961925,
+    "ci_high": 1.0
+  },
+  "llm_usage": {
+    "calls": 8,
+    "prompt_tokens": 4557,
+    "completion_tokens": 229,
+    "errors": 0,
+    "total_seconds": 8.027
+  },
+  "interventions": [
+    {
+      "step_index": 4,
+      "request_type": "action",
+      "called": true,
+      "n_candidates": 13,
+      "base_code": 93,
+      "llm_code": 78,
+      "final_code": 78,
+      "changed": true,
+      "reason": "Use Raiden skill to apply Electro and build energy for burst.",
+      "error": null,
+      "latency_seconds": 0.763
+    },
+    {
+      "step_index": 5,
+      "request_type": "action",
+      "called": true,
+      "n_candidates": 13,
+      "base_code": 93,
+      "llm_code": 78,
+      "final_code": 78,
+      "changed": true,
+      "reason": "Use Raiden skill to apply Electro and build energy for burst.",
+      "error": null,
+      "latency_seconds": 0.926
+    },
+    {
+      "step_index": 6,
+      "request_type": "action",
+      "called": true,
+      "n_candidates": 13,
+      "base_code": 109,
+      "llm_code": 79,
+      "final_code": 79,
+      "changed": true,
+      "reason": "Play 沙中遗事 free, sets up future value with no dice cost.",
+      "error": null,
+      "latency_seconds": 1.677
+    },
+    {
+      "step_index": 8,
+      "request_type": "action",
+      "called": true,
+      "n_candidates": 12,
+      "base_code": 109,
+      "llm_code": 88,
+      "final_code": 88,
+      "changed": true,
+      "reason": "流放者头冠 on 雷电将军 boosts energy/damage; only 2 dice, best value play.",
+      "error": null,
+      "latency_seconds": 1.056
+    },
+    {
+      "step_index": 4,
+      "request_type": "action",
+      "called": true,
+      "n_candidates": 12,
+      "base_code": 193,
+      "llm_code": 193,
+      "final_code": 193,
+      "changed": false,
+      "reason": "Use Raiden skill to set up Electro for superconduct and gain energy.",
+      "error": null,
+      "latency_seconds": 0.843
+    },
+    {
+      "step_index": 5,
+      "request_type": "action",
+      "called": true,
+      "n_candidates": 13,
+      "base_code": 209,
+      "llm_code": 228,
+      "final_code": 228,
+      "changed": true,
+      "reason": "Use Raiden skill to apply Electro and gain energy for burst setup.",
+      "error": null,
+      "latency_seconds": 1.045
+    },
+    {
+      "step_index": 6,
+      "request_type": "action",
+      "called": true,
+      "n_candidates": 13,
+      "base_code": 229,
+      "llm_code": 198,
+      "final_code": 198,
+      "changed": true,
+      "reason": "Raiden has full energy; play 华饰之兜 on her to boost survivability before opponent's aggro turn.",
+      "error": null,
+      "latency_seconds": 0.96
+    },
+    {
+      "step_index": 7,
+      "request_type": "action",
+      "called": true,
+      "n_candidates": 12,
+      "base_code": 229,
+      "llm_code": 202,
+      "final_code": 202,
+      "changed": true,
+      "reason": "Equip Gambler's Earring on Raiden to enable energy/draw engine for aggro turns.",
+      "error": null,
+      "latency_seconds": 0.757
+    }
+  ],
+  "interventions_changed": 7,
+  "interventions_failed": 0
+}

@@ -56,7 +56,9 @@ class ArenaSpec:
             base_seed=self.base_seed,
         )
         if self.record_decisions:
-            tasks = [replace(task, record_decisions=True) for task in tasks]
+            tasks = [
+                replace(task, record_decisions=True, record_views=True) for task in tasks
+            ]
         return tasks
 
 

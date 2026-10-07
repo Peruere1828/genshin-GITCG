@@ -18,7 +18,12 @@ from common.lock import runtime_metadata
 
 @dataclass(frozen=True)
 class MatchTask:
-    """A single match request, addressable by (deck0, deck1, seed)."""
+    """A single match request, addressable by (deck0, deck1, seed).
+
+    ``deck0_inline``/``deck1_inline`` allow evaluating *mutated* decks that have no
+    registry entry (deck-building sensitivity); they are plain
+    ``{"name", "characters", "cards"}`` dicts so they cross the worker boundary.
+    """
 
     index: int
     deck0: str
@@ -29,6 +34,8 @@ class MatchTask:
     record_decisions: bool = False
     record_views: bool = False
     tag: str = ""
+    deck0_inline: dict[str, Any] | None = None
+    deck1_inline: dict[str, Any] | None = None
 
     def policy_spec(self, role: int) -> str:
         """Resolve ``"expert"`` to ``expert:<same slug as the deck>``."""
@@ -49,18 +56,33 @@ class MatchTask:
             "record_decisions": self.record_decisions,
             "record_views": self.record_views,
             "tag": self.tag,
+            "deck0_inline": self.deck0_inline,
+            "deck1_inline": self.deck1_inline,
         }
+
+
+def _resolve_deck(name: str, inline: dict[str, Any] | None):
+    from reps.schema import DeckSpec
+
+    if inline is not None:
+        return DeckSpec(
+            name=str(inline["name"]),
+            characters=tuple(int(c) for c in inline["characters"]),
+            cards=tuple(int(c) for c in inline["cards"]),
+        )
+    from envs.decks import deck_spec
+
+    return deck_spec(name)
 
 
 def run_task(task: MatchTask) -> dict[str, Any]:
     """Execute one task in the current process (top-level: picklable for pools)."""
-    from envs.decks import deck_spec
     from envs.match import run_match
     from envs.policy import build_policy
 
     record = run_match(
-        deck_spec(task.deck0),
-        deck_spec(task.deck1),
+        _resolve_deck(task.deck0, task.deck0_inline),
+        _resolve_deck(task.deck1, task.deck1_inline),
         build_policy(task.policy_spec(0), seed=task.seed, role="p0"),
         build_policy(task.policy_spec(1), seed=task.seed, role="p1"),
         seed=task.seed,

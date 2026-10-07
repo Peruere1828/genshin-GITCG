@@ -14,5 +14,7 @@
 - `test_arena.py`（slow）：arena 顺序与多进程结果一致（验证 codebook reset + 预洗牌确定性）。
 - `test_env_smoke.py`：脚本对手对局跑通、无 IO 错误 / 无回退。
 - `test_stats.py` / `test_ladder.py`：Wilson CI、Elo。
+- `test_llm.py`：LLM 客户端 JSON 解析/脱敏、LLM 辅助策略「非法响应回退 + 预算 + prompt 不泄密」、教练结构化输出（mock 客户端，无网络）。
+- `test_decklab.py`：换卡保持 30 张、候选池排除、换卡评测小样本（slow）。
 
 依赖：需要资产缓存（`data/assets/`）；首次运行会联网拉取，CI 可预置缓存并设 `GITCG_ASSETS_OFFLINE=1`。

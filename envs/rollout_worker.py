@@ -28,6 +28,8 @@ def _process_line(line: str) -> dict:
         record_decisions=bool(payload.get("record_decisions", False)),
         record_views=bool(payload.get("record_views", False)),
         tag=payload.get("tag", ""),
+        deck0_inline=payload.get("deck0_inline"),
+        deck1_inline=payload.get("deck1_inline"),
     )
     return run_task(task)
 
