@@ -111,13 +111,18 @@ def _run_tasks_sequential(tasks: list[MatchTask]) -> list[dict[str, Any]]:
 
 
 def _run_shard_in_subprocess(
-    shard: list[MatchTask], *, python: str, env: dict[str, str], repo_root: str
+    shard: list[MatchTask],
+    *,
+    python: str,
+    env: dict[str, str],
+    repo_root: str,
+    worker_module: str = "envs.rollout_worker",
 ) -> list[dict[str, Any]]:
     import subprocess
     import threading
 
     process = subprocess.Popen(
-        [python, "-m", "envs.rollout_worker"],
+        [python, "-m", worker_module],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -128,22 +133,33 @@ def _run_shard_in_subprocess(
     )
 
     stderr_chunks: list[str] = []
+    output_chunks: list[str] = []
 
-    def _drain_stderr() -> None:
-        assert process.stderr is not None
-        for line in process.stderr:
-            stderr_chunks.append(line)
+    def _drain(stream, chunks: list[str]) -> None:
+        for line in stream:
+            chunks.append(line)
 
-    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    # Both pipes must drain *while* tasks are being written: a large shard can
+    # fill the worker's stdout pipe (64 KiB) before stdin is fully written, which
+    # deadlocked the old write-all-then-read-all version (worker blocks on
+    # stdout, parent blocks on stdin).
+    stderr_thread = threading.Thread(
+        target=_drain, args=(process.stderr, stderr_chunks), daemon=True
+    )
+    stdout_thread = threading.Thread(
+        target=_drain, args=(process.stdout, output_chunks), daemon=True
+    )
     stderr_thread.start()
+    stdout_thread.start()
 
     assert process.stdin is not None and process.stdout is not None
     for task in shard:
         process.stdin.write(json.dumps(task.as_dict(), ensure_ascii=False) + "\n")
     process.stdin.close()
 
+    stdout_thread.join()
     results: list[dict[str, Any]] = []
-    for line in process.stdout:
+    for line in output_chunks:
         line = line.strip()
         if line:
             results.append(json.loads(line))
