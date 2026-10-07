@@ -1,0 +1,232 @@
+# 七圣召唤 AI + Agent 工程 — 需求与实现路径（PLAN.md）
+
+> 状态：v1 草案（已经需求确认，待评审）
+> 决策记录见 §0；里程碑按阶段推进、不绑定日期。
+
+---
+
+## 0. 已确认的需求决策
+
+| # | 议题 | 决策 |
+|---|------|------|
+| D1 | 第一优先目标 | **打赢强规则/脚本对手**。以 `gitcg_expert_system/deck_rules` 的 22 套脚本卡组为假想敌，胜率台阶是第一验收标准 |
+| D2 | Agent 范围 | 全都要：**对局决策 Agent**（局内分析局面并决策）+ **训练自迭代闭环** + **元环境/卡组构筑 Agent** + **复盘/教练 Agent** + **工程自改进** |
+| D3 | 训练主线 | **直接上 SoG/ReBeL 路线**（public belief + continual resolving + 搜索监督蒸馏），以 `Rebel_base_RL/research/world_model` 为架构蓝本。DMC/BC 只作冷启动与 sanity 基线，不作主线 |
+| D4 | 卡池/版本 | **跟随最新卡池**。接受追版本成本，用"每次训练冻结引擎 commit + 卡池版本"控制不可复现性 |
+| D5 | LLM 使用 | **局内局外都用**。局内做局面解读/候选生成/校验（评测需区分"纯策略"与"LLM 辅助"两种模式）；局外做复盘、调度、卡组思考、代码改进 |
+| D6 | LLM 资源 | **混合**：本地开源模型（A800 上跑）为主，关键步骤（深度复盘、卡组思考）可选商业 API |
+| D7 | 算力 | **南大超算为主**（公共共享 CPU 队列跑自博弈/搜索，GPU 队列跑训练/推理），**A800 80G 为间隙弹性资源**（科研任务空窗期用，主要承载本地大 LLM）；工程按"无常驻服务、随时可断点迁移"设计 |
+| D8 | 时间粒度 | 按里程碑（M0–M6），不排日期 |
+| D9 | 工程目录 | `~/projects/genshin-GITCG`（本机），代码 git 同步、作业/数据走超算存储 |
+
+---
+
+## 1. 目标与非目标
+
+### 目标（按优先级）
+1. **G1 强度**：训练出的策略（网络+搜索，可选 LLM 辅助）在固定 meta 上稳定击败全部 22 套脚本专家策略，并在自博弈阶梯上持续爬升。
+2. **G2 自迭代**：形成"自博弈 → 评测 → 复盘归因 → 生成课程/数据/代码改动 → 再训练 → 门禁验收"的闭环，且 Agent 能主导其中大部分环节。
+3. **G3 Agent 能力**：局内实时决策 Agent、局外复盘教练、卡组构筑顾问三件套可独立使用、可评测。
+4. **G4 可复现**：任意一个 checkpoint 的训练数据、引擎版本、卡池版本、配置可追溯重放。
+
+### 非目标（v1 明确不做）
+- 不做天梯/真人平台自动对战接入（play.piovium.org 仅取公开复盘数据做 BC，遵守平台条款）；
+- 不做卡面/素材渲染与产品化 UI（引擎自带 web-ui 够用）；
+- 不做跨游戏泛化、不追求论文发表（但工程按可发表标准留好实验记录）；
+- 不做实时 15 秒限时的极致优化（引擎对局不设人类时限，后期再压延迟）。
+
+---
+
+## 2. 总体架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  WS5 自迭代闭环 Orchestrator（LLM Agent 主导，带护栏门禁）          │
+│  计划 → 实验 → 评测 → 复盘归因 → 课程/数据/补丁 → 门禁 → 合并/回滚   │
+└────────────┬──────────────────────────────────┬─────────────────┘
+             │                                  │
+┌────────────▼──────────────┐    ┌──────────────▼─────────────────┐
+│  WS4 Agent 层（LLM 混合）   │    │  WS3 SoG/ReBeL 训练内核          │
+│  · 局内决策 Agent           │◄──►│  · public belief（belief_groups）│
+│    （候选生成/校验/兜底）    │    │  · continual_resolving 搜索      │
+│  · 复盘/教练 Agent          │    │  · CVPN 策略价值网络              │
+│  · 卡组构筑 Agent           │    │  · 搜索监督蒸馏（sog_pipeline）   │
+└────────────┬──────────────┘    │  · batched_inference（GPU 批推理）│
+             │                   └──────────────┬─────────────────┘
+┌────────────▼──────────────────────────────────▼─────────────────┐
+│  WS1 观测/动作表示层                                               │
+│  observation_encoder（隐藏信息安全 token 化）+ action_hierarchy      │
+│  + action_taxonomy.toml（动作抽象/分层，抑制组合爆炸）               │
+└────────────┬────────────────────────────────────────────────────┘
+┌────────────▼────────────────────────────────────────────────────┐
+│  WS0 环境与工程基座：gitcg (pybinding) → Gym 式 Env / 多进程 rollout │
+│  IO 协议 RpcRequest/RpcResponse + notification（已做信息隐藏）       │
+└────────────┬────────────────────────────────────────────────────┘
+┌────────────▼────────────────────────────────────────────────────┐
+│  WS2 评测与基准：arena + 22 套脚本对手 + TrueSkill/Elo 阶梯 + 复盘归因 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+数据流（对局内）：`gitcg notification.state → observation_encoder → public belief → CVPN 先验 + continual resolving 搜索 →（可选 LLM 候选/校验）→ 动作 → 引擎`。
+数据流（对局外）：`对局日志 → 复盘 Agent 归因 → 训练数据/课程/补丁 → 门禁评测 → 新 checkpoint`。
+
+---
+
+## 3. 工作流分解
+
+### WS0 环境与工程基座
+- **交付**：`gitcg`（`genius-invokation/packages/pybinding`，pip 可装）包装成 Gym 式环境；多进程/多机 rollout runner；episode 日志格式（JSONL + 引擎 state 快照）。
+- **接口基线**：按官方 `examples/agent_vs_agent.py` 写法实现 `Player` 子类（`on_action / on_reroll_dice / on_choose_active / on_select_card / on_switch_hands / on_notify`）；观测走 `docs/development/io.md` 的 `notification.state`（**已隐藏对手手牌/骰子/牌堆，禁止用全量 state 造观测**）。
+- **可参考**：`Rebel_base_RL/research/world_model/src/gitcg_world_model/env.py`（环境封装）、`genius-invokation/packages/test/src/controller.ts`（TS 侧驱动思路）。
+- **版本策略（D4 落地）**：`engine.lock` 记录 gitcg 的 git commit + 卡池数据版本；每次训练 run 的元数据里强制带上；升级卡池 = 新 run，旧 run 可用旧 lock 重放。
+
+### WS1 观测/动作表示（决定上限的模块）
+- **观测**：以 `observation_encoder.py` 为蓝本做 token 化观测（角色/装备/状态/骰子/手牌数/公开事件历史），显式建"公共信息 + 私有信息"两段式编码；写一个**信息泄漏测试**（用两份只差对手隐藏信息的 state 喂编码器，输出必须一致）。
+- **动作**：照抄 `action_hierarchy.py + action_taxonomy.toml` 做动作分层/抽象（目标：把裸动作空间压到每步几十个可选抽象动作 + 参数头）；`action_adapter.py` 负责抽象动作 ↔ 引擎具体动作的双向映射，必须有合法化校验（非法动作回退到合法集）。
+- **信念**：`belief_groups.py / belief_groups.toml` 作为 public belief 的起点（对手手牌/牌堆的粒子或分组表示），SoG 路线必需。
+
+### WS2 评测与基准（先于训练建成）
+- **对手池**：`gitcg_expert_system/deck_rules/` 全部 22 套脚本策略（超导、冻结、水皇、双岩、那维双岩、Skirk 系等）作为固定假想敌；每套都是一个固定 checkpoint。
+- **指标**：分卡组胜率矩阵（22 对手 × 我方 N 套 meta 卡组）+ TrueSkill/Elo 阶梯（对固定基线 + 历史 checkpoint 双向）+ 平均回合数/决策延迟；**不指望算 exploitability**，用"对固定基线不劣于 + 阶梯上升"做工程门禁。
+- **arena**：`run_expert_arena.py` 思路改造；支持并行批量、固定随机种子批、结果入库（SQLite/DuckDB）与曲线图。
+- **复盘归因**：每局输出逐决策记录（观测、候选、搜索值、最终动作、LLM 是否干预、结果），供 WS4 教练 Agent 消费。
+
+### WS3 SoG/ReBeL 训练内核（主线）
+以 `research/world_model/src/gitcg_world_model/` 为蓝本，逐件替换/加固（原仓库是实验分支，**只当代码库抄，不当可运行基线**）：
+1. `cvpn_model.py`：CVPN（策略+价值网络），bf16、几百万~几千万参数小 transformer/token 编码；deck-id 条件化输入。
+2. `continual_resolving.py + resolving_agent.py`：在线公共信念搜索（continual resolving）；先"实用采样 resolver"版本跑通，再向 GT-CFR 局部求解语义演进（README 明说这块还欠着）。
+3. `cvpn_training.py + sog_pipeline.py`：搜索产出作为 teacher → 蒸馏回网络 → 候选 vs 工作 checkpoint 门禁（不劣于才接受）的外环。
+4. `batched_inference.py`：GPU 批推理服务（max_batch_size=128），CPU 侧多进程搜索/环境步进通过它批量打分——**GPU 只做推理/训练，CPU 做搜索**，与我们的算力结构匹配。
+5. **冷启动**：`bootstrap_agent.py` + 脚本专家对局 + （可选）piovium/AI 的"LM 打分头初始化"思路做 BC 热启动；`piovium/AI` 的 DMC-Q 基线保留为 sanity 对照（若 SoG 管线长时间不涨，回退验证管线本身）。
+- 文档基线：`docs/SOG_GT_CFR_CONTINUAL_RESOLVING_CHARTER.md`、`research/world_model/TRAINING_METHODS.md`、`ACTION_HIERARCHY_GUIDE.md`（注意文档里残留 Windows 路径 `E:\Coding\...`，以实际 repo 相对路径为准）。
+
+### WS4 Agent 层（LLM 混合，D5/D6）
+- **局内决策 Agent**（双模式，评测必须分开报分）：
+  - *纯策略模式*：CVPN + 搜索直接出动作，LLM 不参与——这是 G1 的验收口径；
+  - *LLM 辅助模式*：LLM 做局面解读、从搜索 top-k 候选中校验/重排、搜索不可用时兜底；受**延迟预算**约束（每步 ≤ 数秒），所有 LLM 干预记入对局日志用于后续蒸馏。本地开源模型（A800 上部署 32B 级 bf16 或 LoRA）为主，商业 API 仅离线用。
+- **复盘/教练 Agent**：消费 WS2 的逐决策日志，产出（a）失误归因报告（哪一步搜索值/胜率掉点、是否动作抽象背锅）；（b）课程建议（针对薄弱卡组/局面类型加自博弈权重）；（c）BC 标签（"当时更优动作"）。输出是结构化 JSON，可直接进训练管线。
+- **卡组构筑 Agent**：围绕 meta 卡组做构筑搜索（换卡敏感性分析、对 22 套假想敌的对位胜率模拟），v1 只在**固定模板内调 5–15 张 flex 位**，不做自由构筑；结论固化为新 deck-list 进评测池。
+- **工程 Agent**：读写训练代码/配置、跑实验、汇总结果（见 WS5 护栏）。
+
+### WS5 自迭代闭环（recursive self-improvement）
+一个 run 的标准循环：
+```
+① 计划：Agent 根据上轮复盘产出本轮 hypothesis（改课程/改动作抽象/改网络/改搜索参数）
+② 实验：在分支上落实改动 → 小规模冒烟（千局级）
+③ 训练/自博弈：主训练（A800）+ 大规模自博弈采集（超算 CPU 队列）
+④ 评测：22 对手胜率矩阵 + TrueSkill 阶梯 + 回归集
+⑤ 复盘：教练 Agent 归因 → 更新失败案例库
+⑥ 门禁：通过 → 合并 + 发 checkpoint；不通过 → 保留记录、回滚
+```
+**护栏（工程自改进的安全边界，必须先于自动改码上线）**：
+- Agent 改动只进隔离分支/容器，禁止直改主线；
+- 合并门禁 = 单测 + 信息泄漏测试 + 冒烟 + 评测不劣于当前 checkpoint，四项全过才可合并；
+- 每个自动改动带 hypothesis 与预期指标，评测后自动判定"证实/证伪"进知识库；
+- 一切改动可 `git revert`，checkpoint/数据/配置三件套永不被 Agent 覆盖，只追加。
+
+### WS6 数据
+- 自博弈数据（主）：搜索 teacher 标注，按 replay 池管理（照 `cvpn_training.py` 的 bounded replay reuse）。
+- 脚本专家数据（冷启动）：22 套策略对局 + 教练 Agent 修正标签。
+- 公开复盘数据（可选热启动）：play.piovium.org 公开数据做 BC，**先读平台条款，注意人机混用限制**。
+- 所有数据带 `engine commit + 卡池版本` 元数据（D4）。
+
+---
+
+## 4. 里程碑与验收标准
+
+| 里程碑 | 内容 | 验收标准 |
+|--------|------|----------|
+| **M0 基座** | gitcg 环境封装 + 多进程 rollout + episode 日志 + arena 骨架 + 22 套脚本对手全部可跑 | 1 万局/小时级（单机 128 核）脚本互打跑通；信息泄漏测试通过；同种子重放一致 |
+| **M1 观测/动作** | observation_encoder + action_hierarchy/taxonomy + belief_groups 落地 | 任一步合法抽象动作 ≤ 且能覆盖 100% 合法具体动作（adapter 往返测试）；随机策略与脚本对局无非法动作崩溃 |
+| **M2 冷启动基线** | 脚本专家 BC / DMC-Q sanity 基线 + 评测阶梯 v1 | BC/DMC 基线对 22 对手整体胜率 ≥ 50%（分卡组报表出）；阶梯与曲线可自动出图 |
+| **M3 SoG 内核 v1** | CVPN + 实用版 continual resolving + 搜索蒸馏外环 + batched inference | 自博弈训练循环稳定跑 ≥ 数十小时不崩；候选 checkpoint 通过门禁率 > 0 且阶梯趋势向上 |
+| **M4 强度里程碑 ⭐** | SoG 持续训练 + 课程（按失败案例调自博弈配比） | **纯策略模式对 22 套脚本对手整体胜率 ≥ 70%，且无单套对手胜率 < 45%**；对 M2 基线胜率 ≥ 65% |
+| **M5 Agent 层 v1** | 局内 LLM 辅助模式 + 复盘/教练 Agent + 卡组 Agent（模板内 flex） | LLM 辅助模式 ≥ 纯策略模式胜率；教练 Agent 归因与人工抽查一致率达标；构筑 Agent 产出 ≥ 1 套胜率提升的 deck 调整 |
+| **M6 自迭代闭环** | WS5 循环全自动跑通 + 护栏门禁 | 无人工干预连续 ≥ 5 个迭代；每迭代有 hypothesis/证实证伪记录；阶梯不回退 |
+
+- M4 是 D1 的主验收；M5/M6 是 D2 的主验收。
+- 阶梯固定对照组：22 套脚本 + M2 基线 + 历史 checkpoint（防止"打赢了旧自己但打不赢脚本"的假进步）。
+
+---
+
+## 5. 算力与部署
+
+**结论：超算为主，A800 为间隙弹性资源。** 依据：我们的 RL 网络只有几百万~几千万参数，训练/推理在消费级 GPU（5090/4090，超算公共队列有）上就足够，80G 显存唯一不可替代的用途是本地部署大 LLM（32B+ bf16）——而 LLM 是间歇性负载（局内低 QPS、局外离线批处理），正好放 A800 的科研空窗期。SoG 路线的真正瓶颈是 CPU 搜索/环境步进，超算多节点 CPU 队列是唯一能横向扩的地方。
+
+| 资源 | 用途 | 关键点 |
+|------|------|--------|
+| 超算 CPU 队列（主力） | 自博弈 rollout + CPU 搜索 + 评测 arena：`7702ib`（128 核）、`9242opa`（96 核）、`6140ib`（72 核）、`6330ib`（56 核）等；小作业走 `cpu1` | LSF 切片批作业；公共共享队列不被抢占，但共享 fairshare，长跑用海量作业模式 |
+| 超算 GPU 队列（主力） | CVPN 训练、batched_inference：`945090ib`（5090 32G）、`734090ib`/`75434090ib`（4090 24G）、`83a100ib`（A100 40G）、`62v100ib`（V100 32G） | 小网络 + bf16，任何一张都够；不依赖大显存 |
+| A800 80G（间隙弹性） | ① 本地大 LLM（32B/72B bf16 或 LoRA）做局内辅助与深度复盘；② 临时小实验/调试 | 不承载长时训练/自博弈（贵 + 有科研任务抢占）；LLM 不可用时走商业 API 兜底（D6 混合方案） |
+
+**工程形态约束（由 D7 推出，所有模块必须遵守）**：
+- **无常驻服务**：`batched_inference` 等服务按作业拉起/销毁，不假设"某个端口一直开着"；A800 上的 LLM 服务同理，客户端必须能降级到 API 或纯策略模式。
+- **一切长任务可断点**：训练、自博弈、评测全部支持 checkpoint + 重提（LSF 作业被排队/中断是常态）。
+- 存储：热数据（当前 run 的 replay 池/checkpoint）在作业节点本地盘或超算高速存储，归档走大容量存储；本机只放代码与小体积报告。
+
+### 5.1 备用模式：只间歇使用 A800（若不依赖超算）
+
+若最终决定只用 A800 的科研空窗期：
+- 路线不变、里程碑验收不变，但 M4/M6 墙钟时间预计拉长 2–4 倍（与窗口占比成反比）；
+- M3 起工程硬性要求提前：一键 `run_iteration`（采集→训练→评测→落盘）在窗口内零看管跑完，窗口结束即产 checkpoint 与报告；
+- 自博弈吞吐用"窗口预算"管理：窗口内优先级 = 训练 > 评测 > 自博弈采集 > LLM 分析；窗口碎片期只跑采集；
+- **性价比最优的混合**：超算 CPU 队列仅跑纯 CPU 自博弈采集（无需 GPU、不占 A800、批作业无人值守），A800 窗口留给训练 + 本地 LLM。这样数据瓶颈与窗口解耦，M4 时间接近"超算为主"模式。
+
+## 6. 关键设计决策与备选分支
+
+1. **SoG 为主线，DMC 为备线**：直接上 SoG 的前提是 M1 的观测/动作/信念三件套质量过硬。若 M3 处训练长期不涨，启用备线：先 DMC-Q（piovium/AI 思路）验证管线 → 产出 BC 数据 → 回灌 SoG。切换判据：M3 冒烟后阶梯 2 周量级无上升趋势。
+2. **动作抽象是硬前置**（不是优化项）：没有它 CVPN 的动作头不可训练，M1 的"抽象动作覆盖全部合法动作"测试是 go/no-go。
+3. **纯策略模式为强度验收口径**：LLM 辅助可以更强，但 G1 的验收、训练门禁、阶梯全部以纯策略模式计，避免"LLM 掩盖策略缺陷"。
+4. **跟随最新卡池的代价控制**：不追新卡池的中间小版本；卡池升级作为一次显式迁移（更新 engine.lock + 数据重标注策略 + 迁移评测），频率 ≤ 每大版本一次。
+5. **不直接跑 Rebel_base_RL**：根目录几十个 `apply_*.py` 补丁脚本、文档 Windows 路径，表明它是打补丁式实验分支。做法是**逐模块搬代码 + 自己写测试**，而不是 `apply_all`。
+
+## 7. 风险与缓解
+
+| 风险 | 影响 | 缓解 |
+|------|------|------|
+| 动作空间组合爆炸压不下来 | 训练不收敛 | M1 设 go/no-go；taxomony 先按 Rebel_base_RL 现成的，不够再加参数化动作（目标/骰子选择用独立参数头） |
+| 信息泄漏（上帝视角） | 虚高胜率、上线即崩 | 信息泄漏自动化测试进 CI + 门禁；观测只走 `notification.state` |
+| Rebel_base_RL 代码不可跑/有隐性 bug | 蓝本不可用 | 逐模块移植 + 重写测试；核心算法对照 charter 文档独立复核 |
+| 追卡池版本消耗全部工程量 | 训练中断 | engine.lock 冻结 + 显式迁移节奏（§6.4） |
+| CPU 搜索吞吐不足 | 自博弈数据饥饿 | 超算 CPU 队列横向扩 rollout；搜索深度自适应（前期浅搜索、后期加深） |
+| A800 不可预期获得 | 本地 LLM 能力时有时无 | A800 只承载间歇性 LLM 负载；客户端强制降级链（本地 LLM → API → 纯策略）；训练/自博弈完全不依赖 A800 |
+| LLM 干预不可评测 | 说不清强弱 | 双模式分开报分 + 干预全量记录 |
+| 自迭代闭环改坏工程 | 回归/丢失进度 | §WS5 护栏：分支隔离 + 四项门禁 + 只追加存储 |
+| exploitability 算不了 | 无法知道距纳什多近 | 接受工程口径：固定基线 + 阶梯 + 对手池多样性（22 套 + 自博弈池 + 历史 checkpoint） |
+
+## 8. 许可与合规
+- **AGPL-3.0**：genius-invokation / Rebel_base_RL / LPSim 主体均是 AGPL。基于其二次开发并分发（**含以服务形式对外提供**）需以 AGPL 开源。若只想内部研究不对外服务，仍需注意 AGPL 网络条款；建议本项目代码本身按 AGPL-3.0 发布，省去合规判断。
+- 卡面/素材版权归米哈游，训练产物与发布物不携带游戏素材。
+- play.piovium.org 数据使用前过一遍平台条款（人机混用限制、数据授权）。
+- 超算使用遵守学校收费/作业规范（公共队列 fairshare，长跑作业用海量作业模式）。
+
+## 9. 目录结构（工程仓 `~/projects/genshin-GITCG`，参考仓 `refs/` 只读不修改）
+
+```
+genshin-GITCG/          # = ~/projects/genshin-GITCG
+├── PLAN.md                    # 本文档
+├── envs/                      # WS0: gitcg 封装、Player 子类、rollout runner
+├── reps/                      # WS1: observation_encoder / action_hierarchy / adapter / belief
+├── agents/                    # WS4: resolving_agent（纯策略）、llm_assist（局内）、脚本对手适配
+├── train/                     # WS3: cvpn_model / cvpn_training / sog_pipeline / batched_inference
+├── eval/                      # WS2: arena、阶梯、22 对手注册表、报表
+├── coach/                     # WS4: 复盘归因、课程建议、BC 标签
+├── decklab/                   # WS4: 卡组构筑 Agent（模板内 flex）
+├── orchestrator/              # WS5: 自迭代循环 + 护栏门禁
+├── data/                      # 回放池、日志（内容 gitignore，只存 schema 与清单）
+├── tests/                     # 信息泄漏测试、adapter 往返、重放一致性等
+├── configs/                   # run 配置 + engine.lock + 卡池版本
+└── reports/                   # 评测曲线、复盘报告、hypothesis 台账
+```
+
+## 10. 下一步行动（M0 起步清单）
+1. 建工程仓 `~/projects/genshin-GITCG` 与上述骨架（现有 `refs/` 三个参考仓保持只读，可移入其下 `refs/`）。
+2. 用 pip 安装 `gitcg`（或从 `genius-invokation/packages/pybinding` 本地装），跑通 `agent_vs_agent` 风格的 `Player` 子类 demo。
+3. 写 `envs/` Gym 式封装 + 多进程 rollout，先让 22 套脚本对手互打起来（这是 M0 验收）。
+4. 写信息泄漏测试与重放一致性测试（进 CI）。
+5. 建 `eval/` arena v0：脚本对手互打的胜率矩阵 + 入库，作为一切后续对比的底座。
+6. 并行调研：读 `docs/SOG_GT_CFR_CONTINUAL_RESOLVING_CHARTER.md` + `continual_resolving.py`，产出"实用 resolver → GT-CFR"的差距清单（M3 输入）。
+7. 确认超算 Python/容器环境与作业模板（LSF 切片 + 断点续跑），`engine.lock` 机制先落地；A800 环境按"可选、可断"配置，不进关键路径。
+
+---
+*本文档随决策变化更新；重大变更（改主线、改验收口径）需在 §0 追加决策记录。*
