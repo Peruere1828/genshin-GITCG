@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from eval.arena import ArenaSpec, run_arena
@@ -41,3 +43,36 @@ def test_arena_multiprocess_matches_sequential():
     seq = {key(m): m["winner"] for m in sequential.matches}
     par = {key(m): m["winner"] for m in parallel.matches}
     assert seq == par
+
+
+@pytest.mark.slow
+def test_streamed_arena_resumes_after_interruption(tmp_path):
+    spec = _tiny_spec(workers=2)
+    raw = tmp_path / "resume_test.jsonl"
+    first = run_arena(spec, raw_path=raw)
+    assert len(first.matches) == 8
+    lines = raw.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 8
+
+    # Simulate a hard kill: only the first 5 results made it to disk.
+    raw.write_text("\n".join(lines[:5]) + "\n", encoding="utf-8")
+    second = run_arena(spec, raw_path=raw)
+
+    assert second.metadata["resumed_matches"] == 5
+    assert len(second.matches) == 8
+    assert len(raw.read_text(encoding="utf-8").strip().splitlines()) == 8
+    key = lambda m: (m["deck0"], m["deck1"], m["seed"])  # noqa: E731
+    assert {key(m): m["winner"] for m in second.matches} == {
+        key(m): m["winner"] for m in first.matches
+    }
+
+
+def test_resume_refuses_fingerprint_mismatch(tmp_path):
+    spec = _tiny_spec(workers=1)
+    raw = tmp_path / "mismatch.jsonl"
+    raw.write_text(json.dumps({"task_index": 0}) + "\n", encoding="utf-8")
+    (tmp_path / "mismatch.meta.json").write_text(
+        json.dumps({"fingerprint": "not-the-real-one"}), encoding="utf-8"
+    )
+    with pytest.raises(RuntimeError, match="fingerprint"):
+        run_arena(spec, raw_path=raw)

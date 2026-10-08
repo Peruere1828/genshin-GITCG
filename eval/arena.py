@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as _dt
+import hashlib
 import json
+import threading
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable
@@ -140,9 +142,106 @@ class ArenaResult:
         }
 
 
-def run_arena(spec: ArenaSpec, *, progress: bool = False) -> ArenaResult:
+def _spec_fingerprint(spec: ArenaSpec) -> str:
+    """Identity of the task grid; guards resumed runs against config drift."""
+    blob = json.dumps(
+        {
+            "deck_pairs": spec.deck_pairs(),
+            "seeds": list(spec.seeds),
+            "policy0": spec.policy0,
+            "policy1": spec.policy1,
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _stream_state(
+    spec: ArenaSpec, raw_path: Path
+) -> tuple[list[dict[str, Any]], Any, Any]:
+    """Load completed matches and open the append-only result stream.
+
+    Returns ``(done, on_result, close)``. ``on_result`` is called from rollout
+    reader threads, so writes are serialised with a lock and flushed per match.
+    """
+    meta_path = raw_path.with_name(raw_path.name.removesuffix(".jsonl") + ".meta.json")
+    fingerprint = _spec_fingerprint(spec)
+    done: list[dict[str, Any]] = []
+    if raw_path.exists():
+        if not meta_path.exists():
+            raise RuntimeError(
+                f"{raw_path} exists but {meta_path} is missing; cannot resume "
+                "safely (delete the raw file or use another --tag)"
+            )
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        if meta.get("fingerprint") != fingerprint:
+            raise RuntimeError(
+                f"{raw_path} was produced by a different spec (fingerprint "
+                "mismatch); use another --tag or delete the old raw/meta files"
+            )
+        with raw_path.open(encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    done.append(json.loads(line))
+                except json.JSONDecodeError:
+                    # A torn trailing line from a hard kill is expected on resume.
+                    continue
+    else:
+        meta_path.write_text(
+            json.dumps(
+                {"fingerprint": fingerprint, "tag": spec.tag}, ensure_ascii=False
+            ),
+            encoding="utf-8",
+        )
+
+    handle = raw_path.open("a", encoding="utf-8")
+    lock = threading.Lock()
+
+    def _on_result(match: dict[str, Any]) -> None:
+        with lock:
+            handle.write(json.dumps(match, ensure_ascii=False, sort_keys=True) + "\n")
+            handle.flush()
+
+    def _close() -> None:
+        handle.close()
+
+    return done, _on_result, _close
+
+
+def run_arena(
+    spec: ArenaSpec,
+    *,
+    progress: bool = False,
+    raw_path: Path | None = None,
+) -> ArenaResult:
+    """Run every (pairing, seed) match and collect the records.
+
+    When ``raw_path`` is given, results are streamed to that JSONL file as they
+    complete and matches already present (by ``task_index``) are skipped, so an
+    interrupted run resumes instead of restarting (PLAN.md D7). A ``.meta.json``
+    sidecar pins the spec fingerprint; resuming against a different spec is
+    refused rather than silently mixing results.
+    """
     tasks = spec.tasks()
-    matches = run_tasks(tasks, workers=spec.workers, progress=progress)
+    done: list[dict[str, Any]] = []
+    on_result = None
+    close_stream = None
+    if raw_path is not None:
+        done, on_result, close_stream = _stream_state(spec, raw_path)
+    done_indices = {match.get("task_index") for match in done}
+    pending = [task for task in tasks if task.index not in done_indices]
+    try:
+        fresh = run_tasks(
+            pending, workers=spec.workers, progress=progress, on_result=on_result
+        )
+    finally:
+        if close_stream is not None:
+            close_stream()
+    matches = sorted(done + fresh, key=lambda item: item.get("task_index", -1))
     metadata = {
         "engine_lock": load_engine_lock(),
         "runtime": runtime_metadata(),
@@ -150,6 +249,7 @@ def run_arena(spec: ArenaSpec, *, progress: bool = False) -> ArenaResult:
             "contestant": spec.policy0 or "expert:<deck>",
             "pool": spec.policy1 or "expert:<deck>",
         },
+        "resumed_matches": len(done),
     }
     return ArenaResult(spec=spec, matches=matches, metadata=metadata)
 
@@ -159,12 +259,15 @@ def _run_id(spec: ArenaSpec) -> str:
     return f"{stamp}_{spec.tag}"
 
 
-def write_artifacts(result: ArenaResult, *, run_id: str | None = None) -> dict[str, Path]:
+def write_artifacts(
+    result: ArenaResult, *, run_id: str | None = None, raw_path: Path | None = None
+) -> dict[str, Path]:
     run_id = run_id or _run_id(result.spec)
-    raw_path = ensure_dir(data_dir("arena")) / f"{run_id}.jsonl"
-    with raw_path.open("w", encoding="utf-8") as handle:
-        for match in result.matches:
-            handle.write(json.dumps(match, ensure_ascii=False, sort_keys=True) + "\n")
+    if raw_path is None:
+        raw_path = ensure_dir(data_dir("arena")) / f"{run_id}.jsonl"
+        with raw_path.open("w", encoding="utf-8") as handle:
+            for match in result.matches:
+                handle.write(json.dumps(match, ensure_ascii=False, sort_keys=True) + "\n")
 
     out_dir = ensure_dir(reports_dir("arena"))
     summary_path = out_dir / f"{run_id}.json"
@@ -255,12 +358,15 @@ def main(argv: list[str] | None = None) -> int:
         swap=args.swap,
         tag=tag,
     )
-    result = run_arena(spec)
+    raw_path = ensure_dir(data_dir("arena")) / f"{tag}.jsonl"
+    result = run_arena(spec, raw_path=None if args.no_write else raw_path)
     _print_report(result)
+    if result.metadata.get("resumed_matches"):
+        print(f"[arena] resumed {result.metadata['resumed_matches']} matches from {raw_path}")
     if not args.no_write:
-        paths = write_artifacts(result)
+        paths = write_artifacts(result, raw_path=raw_path)
         print(f"[arena] wrote {paths['summary']}")
-        print(f"[arena] raw     {paths['raw']}")
+        print(f"[arena] raw     {paths['raw']} (streamed; re-run the same command to resume)")
     return 0
 
 

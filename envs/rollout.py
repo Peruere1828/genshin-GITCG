@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from common.lock import runtime_metadata
 
@@ -117,6 +117,7 @@ def _run_shard_in_subprocess(
     env: dict[str, str],
     repo_root: str,
     worker_module: str = "envs.rollout_worker",
+    on_result: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     import subprocess
     import threading
@@ -133,22 +134,30 @@ def _run_shard_in_subprocess(
     )
 
     stderr_chunks: list[str] = []
-    output_chunks: list[str] = []
+    results: list[dict[str, Any]] = []
 
-    def _drain(stream, chunks: list[str]) -> None:
-        for line in stream:
-            chunks.append(line)
+    def _drain_stderr() -> None:
+        assert process.stderr is not None
+        for line in process.stderr:
+            stderr_chunks.append(line)
+
+    def _drain_stdout() -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            match = json.loads(line)
+            results.append(match)
+            if on_result is not None:
+                on_result(match)
 
     # Both pipes must drain *while* tasks are being written: a large shard can
     # fill the worker's stdout pipe (64 KiB) before stdin is fully written, which
     # deadlocked the old write-all-then-read-all version (worker blocks on
     # stdout, parent blocks on stdin).
-    stderr_thread = threading.Thread(
-        target=_drain, args=(process.stderr, stderr_chunks), daemon=True
-    )
-    stdout_thread = threading.Thread(
-        target=_drain, args=(process.stdout, output_chunks), daemon=True
-    )
+    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    stdout_thread = threading.Thread(target=_drain_stdout, daemon=True)
     stderr_thread.start()
     stdout_thread.start()
 
@@ -158,11 +167,6 @@ def _run_shard_in_subprocess(
     process.stdin.close()
 
     stdout_thread.join()
-    results: list[dict[str, Any]] = []
-    for line in output_chunks:
-        line = line.strip()
-        if line:
-            results.append(json.loads(line))
     returncode = process.wait()
     stderr_thread.join(timeout=1)
     if returncode != 0 or len(results) != len(shard):
@@ -178,8 +182,13 @@ def run_tasks(
     *,
     workers: int | None = None,
     progress: bool = False,
+    on_result: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Run tasks, sequentially when ``workers <= 1`` else across worker processes.
+
+    ``on_result`` is invoked from reader threads as each match result arrives,
+    so callers can stream results to disk instead of losing everything when a
+    long run is interrupted (PLAN.md D7: everything must be resumable).
 
     Worker processes are spawned as fresh interpreters running
     ``envs.rollout_worker`` over a JSON-lines pipe. This deliberately avoids
@@ -197,7 +206,11 @@ def run_tasks(
     resolved = workers if workers is not None else (_os.cpu_count() or 1)
     resolved = max(1, min(int(resolved), len(tasks)))
     if resolved == 1:
-        return _run_tasks_sequential(tasks)
+        results = _run_tasks_sequential(tasks)
+        if on_result is not None:
+            for match in results:
+                on_result(match)
+        return results
 
     shards = [tasks[i::resolved] for i in range(resolved)]
     shards = [shard for shard in shards if shard]
@@ -211,7 +224,14 @@ def run_tasks(
     results: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=len(shards)) as pool:
         futures = [
-            pool.submit(_run_shard_in_subprocess, shard, python=python, env=env, repo_root=root)
+            pool.submit(
+                _run_shard_in_subprocess,
+                shard,
+                python=python,
+                env=env,
+                repo_root=root,
+                on_result=on_result,
+            )
             for shard in shards
         ]
         for future in futures:
