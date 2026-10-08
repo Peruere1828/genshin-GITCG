@@ -32,6 +32,8 @@
 | I4 | 多进程形态 | `multiprocessing` fork/spawn 均不可用（死锁/重导入 `__main__`）→ 自建 `python -m envs.rollout_worker` JSON-lines 子进程协议 |
 | I5 | 搜索引擎前置 | **gitcg pybinding 不能克隆/恢复中局状态**（`canResume:false`）→ continual resolving 分叉搜索被阻塞；M3 前须扩展 pybinding 或改用 TS server 暂停路径（`train/README.md`） |
 | I6 | LLM 资源落地 | `.env` 的 `deepseek-flash` 为推理模型；局内辅助用非推理 `deepseek-chat`（低延迟），深度复盘用推理模型；降级链 local→API→纯策略已实现 |
+| I7 | 长任务耐久性 | 全矩阵连丢两次才跑成：① `run_tasks` 先写后读导致大 shard **管道死锁**（已修：stdout 并发排空 + 回归测试）；② harness 重启牵连后台作业被杀、内存态全丢 → arena 改为**结果流式落盘 + 按 task_index 断点续跑 + spec 指纹护栏**（D7 落实）；长作业脱离 harness（tmux/setsid）运行，验收时先看原始记录行数 |
+| I8 | 日志入库口径 | `reports/` 只进聚合摘要；逐事件/逐干预明细（LLM probe 日志等）gitignore；原始逐局 JSONL 一直在 `data/`（不入库） |
 
 ---
 
@@ -188,6 +190,20 @@ L0–L4 已完成（§0.1）。算力解锁前在本地继续推进，均为可�
 | L5.4 | **S1 引擎桥**（D12）：TS server `canResume:true` 路径 → 中局快照/克隆/分支 | M3 前置 | 分支续跑确定性测试过；Python 侧以 JSON-lines 子进程接入 |
 | L5.5 | （可选）评测池扩容：补齐对手至 22 套（另找 deck share code） | D11 | 新卡组入池并出对位报表，不阻塞任何验收 |
 
+**L5 进度（2026-10-08）**：
+
+- **L5.1 ✅ 全矩阵底座**：20×20×50 双向 = **40,000 局，0 error / 0 truncated**（12 核 ~8 小时，一次跑完无断点）。
+  产物 `reports/arena/20261008T163940_full_matrix_20x20.json/.pairings.csv`（含 `engine.lock` 元数据，400 对位行 × 100 局）。
+  强度基线（Wilson 95% CI）：最强 unyielding_geo 0.831 [0.814, 0.847]、dvalin_bonk 0.733、double_geo_navia 0.723；
+  最弱 skirk_chasca_freeze 0.175 [0.159, 0.193]、skirk_ayaka_navia 0.181、ice_water_battleship 0.186；Elo 阶梯同步落盘。
+  对手池强度分层清晰（0.175–0.831），作 M2/M4 门禁底座合适。
+  **吞吐修正（排产口径）**：12 worker 并行实测 **~4,900 局/h**（每局 ~8.8s/核，为单核 819 局/h 的 ~50% 并行效率）；
+  原"40,000 局 ≈ 49 核·时"的线性外推偏乐观 ~2 倍，实际 ≈ 96 核·时。
+- **L5.2 ◐ LLM 小样本矩阵**：5 对手 × 10 局冒烟完成——0 API 失败、0 降级回退，干预改动作率 ~80%，
+  预算 6 次/局全部用满；纯策略 vs LLM 辅助 2 胜 1 负 2 平（弱对局提升更明显：double_geo_navia 0.15→0.30）。
+  放量到池内全部对手、出聚合矩阵报表待做。
+- L5.3–L5.5 未启动。长作业运行方式见 §0.1 I7（tmux + 流式断点）。
+
 ---
 
 ## 5. 算力与部署
@@ -284,8 +300,8 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
 
 原 M0 起步清单（§10 v1 的 1–7 项）已全部完成，见 git log 与 §0.1。当前清单即 §4.2 的 L5：
 
-1. **L5.1 对手池全矩阵底座**（20×20×50 双向，隔夜）——启动中；
-2. **L5.2 LLM 小样本胜率矩阵**——先 5 对手×10 局冒烟，通过后放量到池内全部对手；
+1. ~~**L5.1 对手池全矩阵底座**~~（✅ 2026-10-08 完成：40,000 局 0 error，见 §4.2）；
+2. **L5.2 LLM 小样本胜率矩阵**——冒烟 ✅（5 对手×10 局），剩余：放量到池内全部对手 + 聚合矩阵报表；
 3. **L5.3 CVPN 学习曲线放大**（数千~数万样本）；
 4. **L5.4 S1 引擎桥**（D12）：调研 `packages/server` 暂停路径 + `core` 的 `serializeGameStateLog`/`deserializeGameStateLog`（对象图序列化、RNG 随 state 恢复），实现中局快照/克隆/分支 + 分支续跑确定性测试；兜底 replay-branch MC teacher；
 5. **L5.5**（可选）评测池扩容补对手（D11）；
