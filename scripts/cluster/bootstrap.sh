@@ -27,7 +27,7 @@ echo "[bootstrap] vendor:  $VENDOR"
 
 # 1) Python deps into a repo-local dir (do NOT mutate the shared conda env).
 mkdir -p "$PYDEPS"
-pip install -q --target "$PYDEPS" -i "$PIP_INDEX" \
+python -m pip install -q --target "$PYDEPS" -i "$PIP_INDEX" \
   "cffi>=1.17.1" "protobuf==5.29.1" tomli pytest
 
 # 2) gitcg prebuilt wheel (not on the internal mirror): extract into PYDEPS.
