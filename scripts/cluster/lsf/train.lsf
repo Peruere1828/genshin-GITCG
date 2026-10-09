@@ -1,27 +1,19 @@
 #BSUB -J gitcg-train
 #BSUB -q cpu1
-#BSUB -n 4
+#BSUB -n 8
 #BSUB -W 04:00
 #BSUB -o logs/gitcg-train.%J.out
 #BSUB -e logs/gitcg-train.%J.err
-# 玩具/小规模 SoG 轮次（L4/M3 前置）。真训练接 GPU 队列后改用 batched_inference。
-# 提交: GITCG_TRAIN_SEEDS=8 bsub < scripts/cluster/lsf/train.lsf
+# Toy/small SoG round (collect -> train -> eval -> gate) on CPU.
+#   bsub < scripts/cluster/lsf/train.lsf
 
-set -euo pipefail
-mkdir -p logs data/checkpoints reports/train
-cd "${GITCG_REPO:-$HOME/projects/genshin-GITCG}"
-
-if [ -n "${GITCG_CONDA_ENV:-}" ]; then
-  source "$(conda info --base)/etc/profile.d/conda.sh"
-  conda activate "$GITCG_CONDA_ENV"
-fi
-
-export GITCG_ASSETS_OFFLINE=1
-export OMP_NUM_THREADS="${GITCG_OMP_THREADS:-4}"
-export PYTHONUNBUFFERED=1
+REPO="${GITCG_REPO:-$HOME/genshin-GITCG}"
+mkdir -p "$REPO/logs" data/checkpoints reports/train
+# shellcheck disable=SC1091
+source "$REPO/scripts/cluster/env.sh"
 
 python -m train.pipeline \
   --train-seeds "${GITCG_TRAIN_SEEDS:-8}" \
   --eval-seeds "${GITCG_EVAL_SEEDS:-3}" \
   --epochs "${GITCG_EPOCHS:-30}" \
-  --tag "${GITCG_TAG:-cluster}"
+  --tag "${GITCG_TAG:-cluster_cpu}"

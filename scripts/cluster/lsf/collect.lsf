@@ -1,28 +1,20 @@
 #BSUB -J gitcg-collect
-#BSUB -q cpu1
-#BSUB -n 48
+#BSUB -q 7702ib
+#BSUB -n 64
+#BSUB -R "span[hosts=1]"
 #BSUB -W 24:00
 #BSUB -o logs/gitcg-collect.%J.out
 #BSUB -e logs/gitcg-collect.%J.err
-# CPU data plane (PLAN.md §5/§5.1): resumable replay collection for M3.
-# The same command resumes after an interruption (completed games are skipped).
-# Submit: GITCG_SEED_COUNT=500 GITCG_TAG=coldstart bsub < scripts/cluster/lsf/collect.lsf
+# CPU data plane: resumable replay collection for M3. The same command resumes.
+# Submit from the repo root:
+#   GITCG_SEED_COUNT=500 GITCG_TAG=coldstart bsub < scripts/cluster/lsf/collect.lsf
 
-set -euo pipefail
-mkdir -p logs data/replays
-cd "${GITCG_REPO:-$HOME/projects/genshin-GITCG}"
+REPO="${GITCG_REPO:-$HOME/genshin-GITCG}"
+mkdir -p "$REPO/logs" data/replays
+# shellcheck disable=SC1091
+source "$REPO/scripts/cluster/env.sh"
 
-if [ -n "${GITCG_CONDA_ENV:-}" ]; then
-  source "$(conda info --base)/etc/profile.d/conda.sh"
-  conda activate "$GITCG_CONDA_ENV"
-fi
-
-export GITCG_ASSETS_OFFLINE=1
-export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=1
-
-NPROC="${LSB_DJOB_NUMPROC:-12}"
-WORKERS="${GITCG_WORKERS:-$NPROC}"
 
 OPP_ARG=(--all-opponents)
 if [ -n "${GITCG_OPPONENTS:-}" ]; then
@@ -35,5 +27,5 @@ python -m train.collect \
   "${OPP_ARG[@]}" \
   --seed-start "${GITCG_SEED_START:-0}" \
   --seed-count "${GITCG_SEED_COUNT:-200}" \
-  --workers "$WORKERS" \
+  --workers "${GITCG_WORKERS:-$LSB_DJOB_NUMPROC}" \
   --tag "${GITCG_TAG:-collect}"

@@ -10,7 +10,10 @@ from __future__ import annotations
 import platform
 import subprocess
 import sys
-import tomllib
+try:  # Python 3.11+
+    import tomllib
+except ModuleNotFoundError:  # Python <=3.10 (e.g. the cluster): tomli backport
+    import tomli as tomllib  # type: ignore
 from pathlib import Path
 from typing import Any
 

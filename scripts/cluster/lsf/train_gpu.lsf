@@ -1,26 +1,17 @@
 #BSUB -J gitcg-train-gpu
 #BSUB -q 945090ib
-#BSUB -gpu "num=1:mode=exclusive_process"
-#BSUB -n 4
+#BSUB -gpu "num=1"
 #BSUB -W 12:00
 #BSUB -o logs/gitcg-train-gpu.%J.out
 #BSUB -e logs/gitcg-train-gpu.%J.err
-# GPU training leg (PLAN.md §5/§5.1): train the CVPN on CPU-collected replays.
-# GPU only trains/infers; all rollout/search stays on the CPU queue (D7).
-# Checkpoint + report are appended (never overwritten); re-submit resumes by tag.
-# Submit: GITCG_REPLAYS="data/replays/coldstart-1 ... -16" bsub < scripts/cluster/lsf/train_gpu.lsf
+# GPU training leg (PLAN.md §5/§5.1): train the CVPN from CPU-collected replays.
+# GPU only trains/infers; rollout/search stays on the CPU queue (D7).
+#   GITCG_REPLAYS="data/replays/coldstart" bsub < scripts/cluster/lsf/train_gpu.lsf
 
-set -euo pipefail
-mkdir -p logs data/checkpoints reports/train
-cd "${GITCG_REPO:-$HOME/projects/genshin-GITCG}"
-
-if [ -n "${GITCG_CONDA_ENV:-}" ]; then
-  source "$(conda info --base)/etc/profile.d/conda.sh"
-  conda activate "$GITCG_CONDA_ENV"
-fi
-
-export GITCG_ASSETS_OFFLINE=1
-export PYTHONUNBUFFERED=1
+REPO="${GITCG_REPO:-$HOME/genshin-GITCG}"
+mkdir -p "$REPO/logs" data/checkpoints reports/train
+# shellcheck disable=SC1091
+source "$REPO/scripts/cluster/env.sh"
 
 REPLAYS="${GITCG_REPLAYS:-data/replays/collect}"
 

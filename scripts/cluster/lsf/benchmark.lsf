@@ -4,17 +4,12 @@
 #BSUB -W 00:30
 #BSUB -o logs/gitcg-bench.%J.out
 #BSUB -e logs/gitcg-bench.%J.err
-# 单核吞吐基线（L0）。提交: bsub < scripts/cluster/lsf/benchmark.lsf
-# 若集群用模块：先 module load anaconda3，或激活自建 env。
+# Single-core throughput baseline (L0). Submit from the repo root:
+#   bsub < scripts/cluster/lsf/benchmark.lsf
 
-set -euo pipefail
-mkdir -p logs reports/benchmarks
-cd "${GITCG_REPO:-$HOME/projects/genshin-GITCG}"
+REPO="${GITCG_REPO:-$HOME/genshin-GITCG}"
+mkdir -p "$REPO/logs"
+# shellcheck disable=SC1091
+source "$REPO/scripts/cluster/env.sh"
 
-if [ -n "${GITCG_CONDA_ENV:-}" ]; then
-  source "$(conda info --base)/etc/profile.d/conda.sh"
-  conda activate "$GITCG_CONDA_ENV"
-fi
-
-export GITCG_ASSETS_OFFLINE=1
 python -m envs.benchmark --games "${GITCG_BENCH_GAMES:-24}" --workers 1

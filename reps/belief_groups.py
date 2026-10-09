@@ -2,7 +2,10 @@
 # Keep upstream semantics; adapt imports only. See NOTICE.md.
 from __future__ import annotations
 
-import tomllib
+try:  # Python 3.11+
+    import tomllib
+except ModuleNotFoundError:  # Python <=3.10 (e.g. the cluster): tomli backport
+    import tomli as tomllib  # type: ignore
 from collections.abc import Iterable
 from functools import lru_cache
 from pathlib import Path

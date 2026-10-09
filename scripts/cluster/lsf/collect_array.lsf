@@ -1,33 +1,26 @@
-#BSUB -J gitcg-collect[1-16]
-#BSUB -q cpu1
-#BSUB -n 24
+#BSUB -J gitcg-collect[1-8]
+#BSUB -q 7702ib
+#BSUB -n 16
+#BSUB -R "span[hosts=1]"
 #BSUB -W 06:00
 #BSUB -o logs/gitcg-collect-%J-%I.out
 #BSUB -e logs/gitcg-collect-%J-%I.err
-# "海量作业"模式 (PLAN.md §5): N short array elements, each a seed window, each
-# writing its own append-only replay dir (avoids concurrent writers on one file).
-# Resume by re-submitting (completed games per element are skipped).
-# Submit: GITCG_WINDOW=50 GITCG_TAG=coldstart bsub < scripts/cluster/lsf/collect_array.lsf
-# Train on the shards: python -m train.pipeline --replays data/replays/coldstart-1 ... -16
+# 海量作业模式 (PLAN.md §5): N short array elements, each a seed window, each its own
+# append-only replay dir (avoids concurrent writers). Re-submit to resume.
+#   GITCG_WINDOW=50 GITCG_TAG=coldstart bsub < scripts/cluster/lsf/collect_array.lsf
+#   python -m train.pipeline --replays data/replays/coldstart-1 ... -8   # train on shards
 
-set -euo pipefail
-mkdir -p logs data/replays
-cd "${GITCG_REPO:-$HOME/projects/genshin-GITCG}"
+REPO="${GITCG_REPO:-$HOME/genshin-GITCG}"
+mkdir -p "$REPO/logs" data/replays
+# shellcheck disable=SC1091
+source "$REPO/scripts/cluster/env.sh"
 
-if [ -n "${GITCG_CONDA_ENV:-}" ]; then
-  source "$(conda info --base)/etc/profile.d/conda.sh"
-  conda activate "$GITCG_CONDA_ENV"
-fi
-
-export GITCG_ASSETS_OFFLINE=1
-export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=1
 
 IDX="${LSB_JOBINDEX:-1}"
 WINDOW="${GITCG_WINDOW:-50}"
 BASE="${GITCG_SEED_BASE:-0}"
 START=$(( BASE + (IDX - 1) * WINDOW ))
-NPROC="${LSB_DJOB_NUMPROC:-24}"
 TAG="${GITCG_TAG:-collect}-${IDX}"
 
 OPP_ARG=(--all-opponents)
@@ -41,5 +34,5 @@ python -m train.collect \
   "${OPP_ARG[@]}" \
   --seed-start "$START" \
   --seed-count "$WINDOW" \
-  --workers "${GITCG_WORKERS:-$NPROC}" \
+  --workers "${GITCG_WORKERS:-$LSB_DJOB_NUMPROC}" \
   --tag "$TAG"
