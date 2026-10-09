@@ -327,7 +327,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seeds", type=int, default=50, help="number of paired seeds")
     parser.add_argument("--seed-start", type=int, default=0)
     parser.add_argument("--workers", type=int, default=0, help="0 = all cores")
-    parser.add_argument("--opponents", nargs="*", default=None, help="subset of opponent slugs")
+    parser.add_argument("--opponents", nargs="*", default=None, help="pool subset (opponent slugs)")
+    parser.add_argument(
+        "--contestants",
+        nargs="*",
+        default=None,
+        help="contestant decks (default: all scripted); use with --policy0",
+    )
+    parser.add_argument(
+        "--policy0",
+        default=None,
+        help="player-0 policy spec, e.g. expert:<deck> | neural:<ckpt> (default expert:<deck>)",
+    )
+    parser.add_argument(
+        "--policy1",
+        default=None,
+        help="player-1 (pool) policy spec (default expert:<deck>)",
+    )
     parser.add_argument("--swap", action="store_true", help="also play each pairing swapped")
     parser.add_argument("--smoke", action="store_true", help="tiny fast subset")
     parser.add_argument("--no-write", action="store_true", help="do not write artifacts")
@@ -347,8 +363,8 @@ def main(argv: list[str] | None = None) -> int:
         pool = _select_pool(args.opponents)
         seeds = _seeds(args.seeds, args.seed_start)
         tag = args.tag
-    contestants = scripted_opponents()
-    if args.smoke:
+    contestants = _select_pool(args.contestants) if args.contestants else scripted_opponents()
+    if args.smoke and not args.contestants:
         contestants = tuple(c for c in contestants if c.deck in {o.deck for o in pool})
     spec = ArenaSpec(
         contestants=contestants,
@@ -356,6 +372,8 @@ def main(argv: list[str] | None = None) -> int:
         seeds=seeds,
         workers=args.workers,
         swap=args.swap,
+        policy0=args.policy0,
+        policy1=args.policy1,
         tag=tag,
     )
     raw_path = ensure_dir(data_dir("arena")) / f"{tag}.jsonl"

@@ -21,6 +21,19 @@ def test_scripted_registry_is_populated():
     assert all(opp.policy.startswith("expert:") for opp in opponents)
 
 
+def test_arena_policy_override_reaches_tasks():
+    """A checkpoint can be the contestant: --policy0 neural:<ckpt> (cluster eval)."""
+    spec = ArenaSpec(
+        contestants=(opponent_by_name("superconduct_aggro"),),
+        pool=(opponent_by_name("natlan_battleship"),),
+        seeds=(0,),
+        policy0="neural:/tmp/ckpt.pt",
+    )
+    task = spec.tasks()[0]
+    assert task.policy_spec(0) == "neural:/tmp/ckpt.pt"
+    assert task.policy_spec(1) == "expert:natlan_battleship"
+
+
 @pytest.mark.slow
 def test_arena_sequential_summary():
     result = run_arena(_tiny_spec(workers=1))

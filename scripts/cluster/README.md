@@ -50,6 +50,10 @@ GITCG_WINDOW=50 GITCG_TAG=coldstart bsub < scripts/cluster/lsf/collect_array.lsf
 # GPU 训练（消费分片）
 GITCG_REPLAYS="data/replays/coldstart-1 ... -16" bsub < scripts/cluster/lsf/train_gpu.lsf
 
+# 评测 checkpoint：网络 vs 脚本池（多进程 rollout + 流式续跑）
+python -m eval.arena --contestants superconduct_aggro \
+    --policy0 neural:data/checkpoints/<ckpt>.pt --seeds 50 --workers 48 --tag neural_eval
+
 # 兼容旧口径
 bsub < scripts/cluster/lsf/benchmark.lsf
 bsub -J "arena[1-20]" < scripts/cluster/lsf/arena.lsf   # LSF 数组作业(视集群语法)
