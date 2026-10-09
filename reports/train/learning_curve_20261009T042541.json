@@ -1,0 +1,577 @@
+{
+  "deck": "superconduct_aggro",
+  "train_opponents": [
+    "natlan_battleship",
+    "dual_mualani_stacks"
+  ],
+  "train_seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "pool_stats": {
+    "n": 1277,
+    "mean_options": 28.45105716523101,
+    "max_options": 192,
+    "distinct_request_types": [
+      "action",
+      "choose_active",
+      "reroll_dice",
+      "select_card",
+      "switch_hands"
+    ],
+    "win_fraction": 0.6648394675019577
+  },
+  "train_config": {
+    "epochs": 10,
+    "lr": 0.001,
+    "batch_size": 32,
+    "value_coef": 0.5,
+    "seed": 0,
+    "val_fraction": 0.2,
+    "weight_decay": 0.0,
+    "log_every": 0
+  },
+  "sizes": [
+    128,
+    256,
+    512,
+    1024
+  ],
+  "d_models": [
+    64,
+    128
+  ],
+  "points": [
+    {
+      "d_model": 64,
+      "n_samples": 128,
+      "n_train": 103,
+      "n_val": 25,
+      "train_loss": 2.1099,
+      "train_accuracy": 0.5146,
+      "val_loss": 1.863,
+      "val_accuracy": 0.48,
+      "history": [
+        {
+          "epoch": 0,
+          "train_loss": 2.8397,
+          "train_acc": 0.2039
+        },
+        {
+          "epoch": 1,
+          "train_loss": 2.9748,
+          "train_acc": 0.3592
+        },
+        {
+          "epoch": 2,
+          "train_loss": 2.7484,
+          "train_acc": 0.3981
+        },
+        {
+          "epoch": 3,
+          "train_loss": 2.7936,
+          "train_acc": 0.3981
+        },
+        {
+          "epoch": 4,
+          "train_loss": 2.6466,
+          "train_acc": 0.4175
+        },
+        {
+          "epoch": 5,
+          "train_loss": 2.5138,
+          "train_acc": 0.466
+        },
+        {
+          "epoch": 6,
+          "train_loss": 2.4298,
+          "train_acc": 0.5146
+        },
+        {
+          "epoch": 7,
+          "train_loss": 2.0911,
+          "train_acc": 0.5146
+        },
+        {
+          "epoch": 8,
+          "train_loss": 2.1929,
+          "train_acc": 0.5146
+        },
+        {
+          "epoch": 9,
+          "train_loss": 2.1099,
+          "train_acc": 0.5146
+        }
+      ]
+    },
+    {
+      "d_model": 64,
+      "n_samples": 256,
+      "n_train": 205,
+      "n_val": 51,
+      "train_loss": 2.057,
+      "train_accuracy": 0.5902,
+      "val_loss": 1.771,
+      "val_accuracy": 0.5294,
+      "history": [
+        {
+          "epoch": 0,
+          "train_loss": 3.0218,
+          "train_acc": 0.3317
+        },
+        {
+          "epoch": 1,
+          "train_loss": 2.8748,
+          "train_acc": 0.439
+        },
+        {
+          "epoch": 2,
+          "train_loss": 2.6843,
+          "train_acc": 0.4585
+        },
+        {
+          "epoch": 3,
+          "train_loss": 2.4506,
+          "train_acc": 0.5707
+        },
+        {
+          "epoch": 4,
+          "train_loss": 2.2577,
+          "train_acc": 0.5756
+        },
+        {
+          "epoch": 5,
+          "train_loss": 2.1761,
+          "train_acc": 0.5756
+        },
+        {
+          "epoch": 6,
+          "train_loss": 2.1493,
+          "train_acc": 0.5707
+        },
+        {
+          "epoch": 7,
+          "train_loss": 2.0722,
+          "train_acc": 0.5659
+        },
+        {
+          "epoch": 8,
+          "train_loss": 2.0929,
+          "train_acc": 0.5854
+        },
+        {
+          "epoch": 9,
+          "train_loss": 2.057,
+          "train_acc": 0.5902
+        }
+      ]
+    },
+    {
+      "d_model": 64,
+      "n_samples": 512,
+      "n_train": 410,
+      "n_val": 102,
+      "train_loss": 1.5849,
+      "train_accuracy": 0.5756,
+      "val_loss": 1.3453,
+      "val_accuracy": 0.6765,
+      "history": [
+        {
+          "epoch": 0,
+          "train_loss": 2.8756,
+          "train_acc": 0.4024
+        },
+        {
+          "epoch": 1,
+          "train_loss": 2.5473,
+          "train_acc": 0.4707
+        },
+        {
+          "epoch": 2,
+          "train_loss": 2.1435,
+          "train_acc": 0.5512
+        },
+        {
+          "epoch": 3,
+          "train_loss": 2.0924,
+          "train_acc": 0.5561
+        },
+        {
+          "epoch": 4,
+          "train_loss": 2.0041,
+          "train_acc": 0.5561
+        },
+        {
+          "epoch": 5,
+          "train_loss": 1.9543,
+          "train_acc": 0.5707
+        },
+        {
+          "epoch": 6,
+          "train_loss": 1.8809,
+          "train_acc": 0.578
+        },
+        {
+          "epoch": 7,
+          "train_loss": 1.8096,
+          "train_acc": 0.5732
+        },
+        {
+          "epoch": 8,
+          "train_loss": 1.7,
+          "train_acc": 0.5707
+        },
+        {
+          "epoch": 9,
+          "train_loss": 1.5849,
+          "train_acc": 0.5756
+        }
+      ]
+    },
+    {
+      "d_model": 64,
+      "n_samples": 1024,
+      "n_train": 820,
+      "n_val": 204,
+      "train_loss": 1.1113,
+      "train_accuracy": 0.6573,
+      "val_loss": 1.1631,
+      "val_accuracy": 0.6471,
+      "history": [
+        {
+          "epoch": 0,
+          "train_loss": 2.6632,
+          "train_acc": 0.4488
+        },
+        {
+          "epoch": 1,
+          "train_loss": 2.0416,
+          "train_acc": 0.5744
+        },
+        {
+          "epoch": 2,
+          "train_loss": 1.8916,
+          "train_acc": 0.5939
+        },
+        {
+          "epoch": 3,
+          "train_loss": 1.7588,
+          "train_acc": 0.5963
+        },
+        {
+          "epoch": 4,
+          "train_loss": 1.5506,
+          "train_acc": 0.6
+        },
+        {
+          "epoch": 5,
+          "train_loss": 1.3411,
+          "train_acc": 0.6171
+        },
+        {
+          "epoch": 6,
+          "train_loss": 1.2187,
+          "train_acc": 0.6171
+        },
+        {
+          "epoch": 7,
+          "train_loss": 1.1642,
+          "train_acc": 0.628
+        },
+        {
+          "epoch": 8,
+          "train_loss": 1.1334,
+          "train_acc": 0.6415
+        },
+        {
+          "epoch": 9,
+          "train_loss": 1.1113,
+          "train_acc": 0.6573
+        }
+      ]
+    },
+    {
+      "d_model": 128,
+      "n_samples": 128,
+      "n_train": 103,
+      "n_val": 25,
+      "train_loss": 2.0871,
+      "train_accuracy": 0.5631,
+      "val_loss": 1.818,
+      "val_accuracy": 0.52,
+      "history": [
+        {
+          "epoch": 0,
+          "train_loss": 2.8483,
+          "train_acc": 0.3107
+        },
+        {
+          "epoch": 1,
+          "train_loss": 2.9259,
+          "train_acc": 0.4466
+        },
+        {
+          "epoch": 2,
+          "train_loss": 2.6304,
+          "train_acc": 0.4369
+        },
+        {
+          "epoch": 3,
+          "train_loss": 2.5739,
+          "train_acc": 0.4563
+        },
+        {
+          "epoch": 4,
+          "train_loss": 2.3304,
+          "train_acc": 0.4757
+        },
+        {
+          "epoch": 5,
+          "train_loss": 2.1922,
+          "train_acc": 0.4854
+        },
+        {
+          "epoch": 6,
+          "train_loss": 2.1174,
+          "train_acc": 0.5631
+        },
+        {
+          "epoch": 7,
+          "train_loss": 1.9767,
+          "train_acc": 0.5631
+        },
+        {
+          "epoch": 8,
+          "train_loss": 2.0965,
+          "train_acc": 0.5631
+        },
+        {
+          "epoch": 9,
+          "train_loss": 2.0871,
+          "train_acc": 0.5631
+        }
+      ]
+    },
+    {
+      "d_model": 128,
+      "n_samples": 256,
+      "n_train": 205,
+      "n_val": 51,
+      "train_loss": 1.9649,
+      "train_accuracy": 0.6049,
+      "val_loss": 1.6944,
+      "val_accuracy": 0.5294,
+      "history": [
+        {
+          "epoch": 0,
+          "train_loss": 2.9786,
+          "train_acc": 0.3415
+        },
+        {
+          "epoch": 1,
+          "train_loss": 2.7748,
+          "train_acc": 0.4293
+        },
+        {
+          "epoch": 2,
+          "train_loss": 2.4327,
+          "train_acc": 0.4829
+        },
+        {
+          "epoch": 3,
+          "train_loss": 2.2591,
+          "train_acc": 0.5756
+        },
+        {
+          "epoch": 4,
+          "train_loss": 2.1984,
+          "train_acc": 0.5756
+        },
+        {
+          "epoch": 5,
+          "train_loss": 2.1037,
+          "train_acc": 0.5756
+        },
+        {
+          "epoch": 6,
+          "train_loss": 2.0625,
+          "train_acc": 0.5854
+        },
+        {
+          "epoch": 7,
+          "train_loss": 2.0172,
+          "train_acc": 0.6098
+        },
+        {
+          "epoch": 8,
+          "train_loss": 2.0227,
+          "train_acc": 0.6146
+        },
+        {
+          "epoch": 9,
+          "train_loss": 1.9649,
+          "train_acc": 0.6049
+        }
+      ]
+    },
+    {
+      "d_model": 128,
+      "n_samples": 512,
+      "n_train": 410,
+      "n_val": 102,
+      "train_loss": 1.4225,
+      "train_accuracy": 0.5585,
+      "val_loss": 1.1628,
+      "val_accuracy": 0.6569,
+      "history": [
+        {
+          "epoch": 0,
+          "train_loss": 2.814,
+          "train_acc": 0.4024
+        },
+        {
+          "epoch": 1,
+          "train_loss": 2.28,
+          "train_acc": 0.5
+        },
+        {
+          "epoch": 2,
+          "train_loss": 2.0811,
+          "train_acc": 0.5585
+        },
+        {
+          "epoch": 3,
+          "train_loss": 2.0034,
+          "train_acc": 0.561
+        },
+        {
+          "epoch": 4,
+          "train_loss": 1.9268,
+          "train_acc": 0.5634
+        },
+        {
+          "epoch": 5,
+          "train_loss": 1.8555,
+          "train_acc": 0.5756
+        },
+        {
+          "epoch": 6,
+          "train_loss": 1.7508,
+          "train_acc": 0.5707
+        },
+        {
+          "epoch": 7,
+          "train_loss": 1.6543,
+          "train_acc": 0.5732
+        },
+        {
+          "epoch": 8,
+          "train_loss": 1.5353,
+          "train_acc": 0.5634
+        },
+        {
+          "epoch": 9,
+          "train_loss": 1.4225,
+          "train_acc": 0.5585
+        }
+      ]
+    },
+    {
+      "d_model": 128,
+      "n_samples": 1024,
+      "n_train": 820,
+      "n_val": 204,
+      "train_loss": 1.0942,
+      "train_accuracy": 0.661,
+      "val_loss": 1.1457,
+      "val_accuracy": 0.6225,
+      "history": [
+        {
+          "epoch": 0,
+          "train_loss": 2.4894,
+          "train_acc": 0.461
+        },
+        {
+          "epoch": 1,
+          "train_loss": 1.9791,
+          "train_acc": 0.5939
+        },
+        {
+          "epoch": 2,
+          "train_loss": 1.8131,
+          "train_acc": 0.5902
+        },
+        {
+          "epoch": 3,
+          "train_loss": 1.64,
+          "train_acc": 0.6085
+        },
+        {
+          "epoch": 4,
+          "train_loss": 1.4106,
+          "train_acc": 0.5988
+        },
+        {
+          "epoch": 5,
+          "train_loss": 1.2435,
+          "train_acc": 0.6159
+        },
+        {
+          "epoch": 6,
+          "train_loss": 1.1695,
+          "train_acc": 0.6171
+        },
+        {
+          "epoch": 7,
+          "train_loss": 1.1411,
+          "train_acc": 0.6378
+        },
+        {
+          "epoch": 8,
+          "train_loss": 1.1156,
+          "train_acc": 0.6415
+        },
+        {
+          "epoch": 9,
+          "train_loss": 1.0942,
+          "train_acc": 0.661
+        }
+      ]
+    }
+  ],
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-142-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}

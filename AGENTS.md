@@ -10,7 +10,8 @@
   - `envs/`：`PolicyPlayer`（`gitcg.Player` 五类请求 → `Policy` 抽象）+ `run_match` + expert/baseline policy + 牌组装配 + `rollout`（多进程）+ `snapshot`（快照/分叉工具）。
   - `eval/`：`opponents`（20 脚本 + 基线池）+ `arena`（矩阵 + Wilson CI + Elo + 流式落盘/断点续跑）+ `ladder` + `stats`。
   - `common/llm.py`：OpenAI 兼容 LLM 客户端（仅标准库），降级链 local→API→纯策略；`agents/llm_assist.py`（局内辅助）、`coach/replay.py`（复盘教练）、`decklab/sensitivity.py`（换卡敏感性）。
-  - `train/`：CVPN + 采集/训练/评测管线 + `replay_branch.py`（replay-branch MC teacher）+ `resolver.py`；`agents/neural.py` 接回 env。
+  - `scripts/run_llm_matrix.py`：L5.2 全对手池「纯策略 vs LLM 辅助」矩阵（分开报分，逐局流式落盘+断点续跑+spec 指纹护栏）。
+  - `train/`：CVPN + 采集/训练/评测管线 + `replay_branch.py`（replay-branch MC teacher）+ `learning_curve.py`（L5.3 数据量×网络规模扫描）+ `resolver.py`；`agents/neural.py` 接回 env。
   - `tests/`：信息泄漏、adapter 覆盖、重放一致、引擎桥/分叉、arena、LLM、train 全绿（`python -m pytest`；`-m "not slow"` 跳慢测）。
   - 实测基线见 `reports/LOCAL_BASELINE.md`（单核 ~819 局/h；12 核并行 ~4,900 局/h）。
 - `orchestrator/`（WS5）仍为占位，未实现。

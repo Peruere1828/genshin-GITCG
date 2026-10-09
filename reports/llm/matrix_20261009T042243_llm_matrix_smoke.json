@@ -1,0 +1,153 @@
+{
+  "deck": "superconduct_aggro",
+  "modes": [
+    "pure",
+    "llm"
+  ],
+  "opponents": [
+    "natlan_battleship",
+    "double_geo_navia",
+    "skirk_chasca_freeze"
+  ],
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "budget_per_game": 6,
+  "model": "deepseek-chat",
+  "n_matches": 18,
+  "overall": {
+    "pure": {
+      "wins": 6.5,
+      "games": 9,
+      "rate": 0.7222222222222222,
+      "ci_low": 0.40190414061658836,
+      "ci_high": 0.9095835244718742,
+      "errors": 0,
+      "truncated": 0
+    },
+    "llm": {
+      "wins": 7.0,
+      "games": 9,
+      "rate": 0.7777777777777778,
+      "ci_low": 0.4525833436728054,
+      "ci_high": 0.9367762376877727,
+      "errors": 0,
+      "truncated": 0
+    }
+  },
+  "per_opponent": [
+    {
+      "opponent": "natlan_battleship",
+      "pure": {
+        "wins": 3.0,
+        "games": 3,
+        "rate": 1.0,
+        "ci_low": 0.43849391955098227,
+        "ci_high": 1.0,
+        "errors": 0,
+        "truncated": 0
+      },
+      "llm": {
+        "wins": 3.0,
+        "games": 3,
+        "rate": 1.0,
+        "ci_low": 0.43849391955098227,
+        "ci_high": 1.0,
+        "errors": 0,
+        "truncated": 0
+      },
+      "delta": 0.0,
+      "llm_interventions_changed": 15,
+      "llm_calls": 18
+    },
+    {
+      "opponent": "double_geo_navia",
+      "pure": {
+        "wins": 0.5,
+        "games": 3,
+        "rate": 0.16666666666666666,
+        "ci_low": 0.01765226206463416,
+        "ci_high": 0.6900184582347109,
+        "errors": 0,
+        "truncated": 0
+      },
+      "llm": {
+        "wins": 1.0,
+        "games": 3,
+        "rate": 0.3333333333333333,
+        "ci_low": 0.0614903152761605,
+        "ci_high": 0.7923450448735121,
+        "errors": 0,
+        "truncated": 0
+      },
+      "delta": 0.1667,
+      "llm_interventions_changed": 14,
+      "llm_calls": 18
+    },
+    {
+      "opponent": "skirk_chasca_freeze",
+      "pure": {
+        "wins": 3.0,
+        "games": 3,
+        "rate": 1.0,
+        "ci_low": 0.43849391955098227,
+        "ci_high": 1.0,
+        "errors": 0,
+        "truncated": 0
+      },
+      "llm": {
+        "wins": 3.0,
+        "games": 3,
+        "rate": 1.0,
+        "ci_low": 0.43849391955098227,
+        "ci_high": 1.0,
+        "errors": 0,
+        "truncated": 0
+      },
+      "delta": 0.0,
+      "llm_interventions_changed": 16,
+      "llm_calls": 18
+    }
+  ],
+  "overall_delta": 0.0556,
+  "llm_usage": {
+    "calls": 54,
+    "prompt_tokens": 28507,
+    "completion_tokens": 1495,
+    "errors": 0
+  },
+  "interventions": {
+    "matches_using_llm": 9,
+    "total": 54,
+    "changed": 45,
+    "failed": 0,
+    "changed_rate": 0.8333
+  },
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-142-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}

@@ -88,3 +88,39 @@ python -m pytest -q -m "not slow"   # 快速；去掉 -m 跑全量（含慢测�
 - `envs/snapshot.py`：`capture_snapshot` / `fork_game` / `snapshot_roundtrip_is_faithful` + `FORK_LIMITATION`。
 - `train/replay_branch.py`：`capture_trajectory` / `replay_branch` / `evaluate_decision` / `aggregate_option_values`。
 - 验收：`python -m pytest tests/test_engine_bridge.py -q`（含「注入=base 选择时逐局复现 base」分支确定性）。
+
+## L5.2 LLM 矩阵 runner + 冒烟（2026-10-09）
+
+把「纯策略 vs LLM 辅助」从单局小样本放大为**全对手池矩阵**，两模式分开报分（§6.3），结果逐局流式落盘 +
+按 `task_index` 断点续跑 + spec 指纹护栏（D7）；聚合报告落 `reports/llm/matrix_*.json`，逐干预明细只在原始流。
+
+`scripts/run_llm_matrix.py` 冒烟（3 对手 × 3 种子 × 2 模式 = 18 局，budget 6，`deepseek-chat`）：
+
+| 对手 | 纯策略 | LLM 辅助 | Δ |
+|------|--------|----------|---|
+| natlan_battleship | 1.000 | 1.000 | +0.000 |
+| double_geo_navia | 0.167 | 0.333 | +0.167 |
+| skirk_chasca_freeze | 1.000 | 1.000 | +0.000 |
+| **整体** | **0.722** [0.402,0.910] | **0.778** [0.453,0.937] | **+0.056** |
+
+LLM：54 次调用、0 失败；干预改动作 45/54（83%）。样本极小、CI 宽，**不作强度结论**；与 L5.2 早期 5×10 冒烟
+一致（0 API 失败，弱对局提升更明显）。产物：`reports/llm/matrix_<ts>_llm_matrix_smoke.json`。
+放量到池内全部对手：`python -m scripts.run_llm_matrix --seeds 10 --budget 6`（隔夜；可断点续跑）。
+
+## L5.3 CVPN 学习曲线（2026-10-09）
+
+`train/learning_curve.py`：一份样本池（2 脚本 teacher × 12 种子 = 1277 样本），对每个
+(网络规模 `d_model`, 数据量) 组合训练**全新**网络，记录 train/val 损失与一致率。
+
+| d_model | n=128 | n=256 | n=512 | n=1024 |
+|--------:|------:|------:|------:|-------:|
+| 64 val_loss | 1.863 | 1.771 | 1.345 | **1.163** |
+| 64 val_acc | 0.480 | 0.529 | 0.676 | 0.647 |
+| 128 val_loss | 1.818 | 1.694 | 1.163 | **1.146** |
+| 128 val_acc | 0.520 | 0.529 | 0.657 | 0.623 |
+
+数据量↑ → val_loss 单调下降、一致率上升（64 维降幅最大：−0.70），**网络可学、数据有效**；
+两档网络规模差异在小数据量下不明显，符合「本地仅玩具规模、全量放大待 GPU」的定位（M3）。
+产物：`reports/train/learning_curve_<ts>.json/.csv`。复现：
+`python -m train.learning_curve --games 12 --sizes 128 256 512 1024 --d-models 64 128`。
+

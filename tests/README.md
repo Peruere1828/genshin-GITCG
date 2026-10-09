@@ -18,5 +18,8 @@
 - `test_decklab.py`：换卡保持 30 张、候选池排除、换卡评测小样本（slow）。
 - `test_engine_bridge.py`：L5.4/D12——快照往返无损、续跑克隆确定、`InjectionPolicy` 位置/夹取逻辑（快测）；
   replay-branch 注入 base 选择时逐局复现 base、同注入两次一致、`evaluate_decision` 候选覆盖（slow）。
+- `test_llm_matrix.py`（L5.2）：LLM 矩阵任务网格确定性、纯策略/LLM 行结构、干预与用量记录（mock 客户端，无网络）、
+  聚合报分与 delta、流式续跑跳过已完成 + spec 指纹护栏 + 撕裂行容错。
+- `test_learning_curve.py`（L5.3）：曲线数据量过滤/去重/排序、微型端到端扫描（网络可学、history 完整）。
 
 依赖：需要资产缓存（`data/assets/`）；首次运行会联网拉取，CI 可预置缓存并设 `GITCG_ASSETS_OFFLINE=1`。

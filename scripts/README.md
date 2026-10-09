@@ -27,5 +27,14 @@
   ```bash
   python -m scripts.run_replay_branch --seed 3 --rollouts 4 --top-k 4 --rollout-spec legal_random
   ```
+- `run_llm_matrix.py`（L5.2）：把「纯策略 vs LLM 辅助」从小样本单局放大到**全对手池**，两模式分开报分
+  （§6.3），结果逐局流式落 `data/llm/<tag>.jsonl`（按 `task_index` 断点续跑 + spec 指纹护栏），
+  聚合报告落 `reports/llm/matrix_<ts>_<tag>.json`；逐干预明细只在原始流里。
+  ```bash
+  python -m scripts.run_llm_matrix --smoke                    # 3 对手 x 3 种子冒烟
+  python -m scripts.run_llm_matrix --seeds 10 --budget 6      # 全 20 套对手，隔夜
+  python -m scripts.run_llm_matrix --no-llm --seeds 10        # 只跑纯策略（不耗 API）
+  ```
+  无 key/网络不可用时以退出码报错（纯策略用 `--no-llm`），不会静默退化成错误口径。
 
 待办：`run_iteration`（采集→训练→评测→落盘，断点续跑）。依赖 `train/` 落地。
