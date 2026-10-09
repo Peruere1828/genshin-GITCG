@@ -35,6 +35,8 @@
   python -m scripts.run_llm_matrix --seeds 10 --budget 6      # 全 20 套对手，隔夜
   python -m scripts.run_llm_matrix --no-llm --seeds 10        # 只跑纯策略（不耗 API）
   ```
-  无 key/网络不可用时以退出码报错（纯策略用 `--no-llm`），不会静默退化成错误口径。
+  无 key/网络不可用时 LLM 模式以退出码报错（纯策略用 `--no-llm`）；全部跑完后重跑只重新聚合，不再需要 key。
+  客户端失败的比赛逐局标 `degraded` 并在报告 `llm_quality` 中单列（含非降级 `clean` 胜率）；连续 N 次
+  （默认 5，`--max-consecutive-errors`）客户端失败即中止待续跑，避免一次网络中断把 llm 列悄悄变成纯策略口径。
 
 待办：`run_iteration`（采集→训练→评测→落盘，断点续跑）。依赖 `train/` 落地。

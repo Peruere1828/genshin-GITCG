@@ -6,9 +6,12 @@ Scales the L4 toy validation to thousands of samples and answers two questions:
 2. how do model size (``d_model``) and data size interact?
 
 It collects one sample pool with the scripted teachers, then trains a *fresh*
-network per (d_model, sample size) point on a deterministic subset, and writes an
-aggregate curve to ``reports/train/`` (committed). Checkpoints are not persisted
-(the curve is the artifact); set ``--save-checkpoints`` to keep the largest model.
+network per (d_model, training-size) point on a deterministic nested subset, and
+writes an aggregate curve to ``reports/train/`` (committed). The validation split
+is **reserved once** from the pool before subsetting, so every grid point is scored
+on the same fixed holdout (otherwise cross-point deltas are confounded by the
+holdout changing size/content). Checkpoints are not persisted (the curve is the
+artifact).
 
 Usage::
 
@@ -24,7 +27,7 @@ import csv
 import datetime as _dt
 import json
 import random
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Sequence
 
 from common.lock import load_engine_lock, runtime_metadata
@@ -37,7 +40,7 @@ from envs.policy import expert_policy
 from eval.stats import estimate_rate, outcome_score
 from train.data import Sample, collect_samples, sample_stats
 from train.model import CVPN, config_for_encoder
-from train.train_loop import TrainConfig, train_bc
+from train.train_loop import TrainConfig, evaluate_loss_accuracy, train_bc
 
 
 @dataclass
@@ -95,6 +98,24 @@ def _subset(pool: Sequence[Sample], size: int, *, seed: int) -> list[Sample]:
     return data[:size]
 
 
+def _fixed_split(
+    pool: Sequence[Sample], *, val_fraction: float, seed: int
+) -> tuple[list[Sample], list[Sample]]:
+    """Reserve one holdout from ``pool`` before any subsetting.
+
+    Returns ``(train_pool, val_pool)``. The same ``val_pool`` scores every grid
+    point, so points are directly comparable; subsets are drawn only from
+    ``train_pool`` and are therefore never evaluated on their own training data.
+    """
+    data = list(pool)
+    rng = random.Random(seed)
+    rng.shuffle(data)
+    if val_fraction <= 0 or len(data) <= 4:
+        return data, []
+    n_val = max(1, int(len(data) * val_fraction))
+    return data[n_val:], data[:n_val]
+
+
 def run_learning_curve(
     *,
     deck: str = "superconduct_aggro",
@@ -113,27 +134,38 @@ def run_learning_curve(
 
     pool = collect_pool(deck, train_opponents, train_seeds, encoder=encoder)
     stats = sample_stats(pool)
-    sizes = curve_sizes(len(pool), sizes)
+    train_pool, val_pool = _fixed_split(
+        pool, val_fraction=base_config.val_fraction, seed=base_config.seed
+    )
+    sizes = curve_sizes(len(train_pool), sizes)
     if not sizes:
         raise SystemExit(
-            f"sample pool too small ({len(pool)}); increase --games/--train-opponents"
+            f"sample pool too small ({len(pool)} samples, "
+            f"{len(train_pool)} trainable); increase --games/--train-opponents"
         )
+    # Fixed holdout: train on everything in the subset, score on val_pool below.
+    train_config = replace(base_config, val_fraction=0.0)
 
     points: list[CurvePoint] = []
     for d_model in d_models:
         for size in sizes:
-            samples = _subset(pool, size, seed=base_config.seed)
+            samples = _subset(train_pool, size, seed=base_config.seed)
             model = CVPN(config_for_encoder(encoder, d_model=int(d_model)))
-            metrics = train_bc(samples, model, base_config)
+            metrics = train_bc(samples, model, train_config)
+            val_loss, val_acc = (
+                evaluate_loss_accuracy(model, val_pool, base_config.value_coef)
+                if val_pool
+                else (0.0, 0.0)
+            )
             point = CurvePoint(
                 d_model=int(d_model),
                 n_samples=len(samples),
-                n_train=metrics.n_train,
-                n_val=metrics.n_val,
+                n_train=len(samples),
+                n_val=len(val_pool),
                 train_loss=metrics.train_loss,
                 train_accuracy=metrics.train_accuracy,
-                val_loss=metrics.val_loss,
-                val_accuracy=metrics.val_accuracy,
+                val_loss=val_loss,
+                val_accuracy=val_acc,
                 history=metrics.history,
             )
             points.append(point)
@@ -150,6 +182,8 @@ def run_learning_curve(
         "train_opponents": list(train_opponents),
         "train_seeds": list(train_seeds),
         "pool_stats": stats,
+        "n_train_pool": len(train_pool),
+        "n_val_holdout": len(val_pool),
         "train_config": asdict(base_config),
         "sizes": sizes,
         "d_models": [int(d) for d in d_models],
@@ -159,13 +193,15 @@ def run_learning_curve(
     }
 
     if eval_opponents and eval_seeds:
-        report["eval"] = _evaluate_best(pool, encoder, base_config, sizes, d_models,
-                                        deck, eval_opponents, eval_seeds)
+        report["eval"] = _evaluate_best(
+            train_pool, encoder, train_config, sizes, d_models,
+            deck, eval_opponents, eval_seeds,
+        )
     return report
 
 
 def _evaluate_best(
-    pool, encoder, config, sizes, d_models, deck, eval_opponents, eval_seeds
+    train_pool, encoder, config, sizes, d_models, deck, eval_opponents, eval_seeds
 ) -> dict:
     """Train one model at the largest (d_model, size) and report pool win rate.
 
@@ -174,7 +210,7 @@ def _evaluate_best(
     d_model = max(int(d) for d in d_models)
     size = max(sizes)
     model = CVPN(config_for_encoder(encoder, d_model=d_model))
-    train_bc(_subset(pool, size, seed=config.seed), model, config)
+    train_bc(_subset(train_pool, size, seed=config.seed), model, config)
     from agents.neural import NeuralPolicy
 
     scores: list[float] = []
@@ -247,6 +283,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.eval_opponents and args.eval_seeds <= 0:
+        raise SystemExit("--eval-opponents requires --eval-seeds > 0")
     if args.smoke:
         report = run_learning_curve(
             deck=args.deck,

@@ -105,22 +105,26 @@ python -m pytest -q -m "not slow"   # 快速；去掉 -m 跑全量（含慢测�
 
 LLM：54 次调用、0 失败；干预改动作 45/54（83%）。样本极小、CI 宽，**不作强度结论**；与 L5.2 早期 5×10 冒烟
 一致（0 API 失败，弱对局提升更明显）。产物：`reports/llm/matrix_<ts>_llm_matrix_smoke.json`。
+报告区分 `llm_quality`：客户端失败的比赛逐局标 `degraded` 并单列（`clean` 为非降级胜率）；
+连续 N 次（默认 5，`--max-consecutive-errors`）客户端失败即中止，已完成的流式行保留，重跑续跑——
+避免一次网络中断把 llm 列的后半段悄悄变成纯策略测量。
 放量到池内全部对手：`python -m scripts.run_llm_matrix --seeds 10 --budget 6`（隔夜；可断点续跑）。
 
 ## L5.3 CVPN 学习曲线（2026-10-09）
 
-`train/learning_curve.py`：一份样本池（2 脚本 teacher × 12 种子 = 1277 样本），对每个
-(网络规模 `d_model`, 数据量) 组合训练**全新**网络，记录 train/val 损失与一致率。
+`train/learning_curve.py`：采集一份样本池（2 脚本 teacher × 14 种子 = 1465 样本），**先固定一份验证
+留出集（20%）**，再对每个 (网络规模 `d_model`, 训练样本量) 组合在**同一留出集**上训练/评测一个全新网络。
+固定 holdout 使各数据点直接可比（此前每点重抽 val 会让点间差异被 holdout 组成差异混淆）。
 
-| d_model | n=128 | n=256 | n=512 | n=1024 |
-|--------:|------:|------:|------:|-------:|
-| 64 val_loss | 1.863 | 1.771 | 1.345 | **1.163** |
-| 64 val_acc | 0.480 | 0.529 | 0.676 | 0.647 |
-| 128 val_loss | 1.818 | 1.694 | 1.163 | **1.146** |
-| 128 val_acc | 0.520 | 0.529 | 0.657 | 0.623 |
+| d_model | 128 | 256 | 512 | 1024 |
+|--------:|----:|----:|----:|-----:|
+| 64 val_loss | 2.107 | 1.845 | 1.343 | **1.106** |
+| 64 val_acc | 0.495 | 0.590 | 0.625 | **0.665** |
+| 128 val_loss | 2.041 | 1.746 | 1.257 | **1.083** |
+| 128 val_acc | 0.468 | 0.584 | 0.621 | **0.662** |
 
-数据量↑ → val_loss 单调下降、一致率上升（64 维降幅最大：−0.70），**网络可学、数据有效**；
+数据量↑ → val_loss 单调下降、val_acc 单调上升（64 维 val_loss 降 ~1.0），**网络可学、数据有效**；
 两档网络规模差异在小数据量下不明显，符合「本地仅玩具规模、全量放大待 GPU」的定位（M3）。
-产物：`reports/train/learning_curve_<ts>.json/.csv`。复现：
-`python -m train.learning_curve --games 12 --sizes 128 256 512 1024 --d-models 64 128`。
+产物：`reports/train/learning_curve_<ts>.json/.csv`（含 `n_train_pool`/`n_val_holdout`）。复现：
+`python -m train.learning_curve --games 14 --sizes 128 256 512 1024 --d-models 64 128`。
 

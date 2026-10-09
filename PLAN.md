@@ -188,8 +188,8 @@ L0–L4 已完成（§0.1）。算力解锁前在本地继续推进，均为可�
 | # | 工作项 | 对应 | 验收 |
 |---|--------|------|------|
 | L5.1 | 对手池全矩阵底座：20×20×50 局双向（约 49 核·时，隔夜） | M0/M2 底座 | 胜率矩阵 + Elo + Wilson CI 落盘，含 `engine.lock` 元数据（D4） |
-| L5.2 | LLM 小样本胜率矩阵（纯策略 vs LLM 辅助分开报分，§6.3） | L3 独立研究产出 | 对池内全部对手出报表；干预全量记录；先 5 对手×10 局冒烟再放量。**◐ 2026-10-09：全池矩阵 runner `scripts/run_llm_matrix.py` 已交付（流式落盘+断点续跑+spec 指纹护栏，纯策略/LLM 分开聚合），3×3 冒烟跑通（整体 0.722→0.778，54 调用 0 失败）；放量到全 20 套为单命令隔夜任务** |
-| L5.3 | CVPN 学习曲线放大（数千~数万样本） | L4→M3 | 训练/验证损失与一致率曲线，确认网络规模-数据量关系。**◐ 2026-10-09：`train/learning_curve.py` 已交付（数据量×网络规模网格、新网络逐点训练、json/csv 落盘），1277 样本扫 128/256/512/1024 × d_model 64/128：val_loss 单调下降（64 维 1.86→1.16）、一致率上升；全量放大待 GPU（M3）** |
+| L5.2 | LLM 小样本胜率矩阵（纯策略 vs LLM 辅助分开报分，§6.3） | L3 独立研究产出 | 对池内全部对手出报表；干预全量记录；先 5 对手×10 局冒烟再放量。**◐ 2026-10-09：全池矩阵 runner `scripts/run_llm_matrix.py` 已交付（流式落盘+断点续跑+spec 指纹护栏，纯策略/LLM 分开聚合，降级比赛单列+连续失败中止），3×3 冒烟跑通（整体 0.722→0.778，54 调用 0 失败）；放量到全 20 套为单命令隔夜任务** |
+| L5.3 | CVPN 学习曲线放大（数千~数万样本） | L4→M3 | 训练/验证损失与一致率曲线，确认网络规模-数据量关系。**◐ 2026-10-09：`train/learning_curve.py` 已交付（数据量×网络规模网格、每点全新网络、**固定验证留出集**使点间可比、json/csv 落盘），1465 样本扫 128/256/512/1024 × d_model 64/128：val_loss 单调下降（64 维 2.11→1.11）、val_acc 单调上升（0.50→0.66）；全量放大待 GPU（M3）** |
 | L5.4 | **S1 引擎桥**（D12/D13）：中局快照/克隆/分支 | M3 前置 | 分支续跑确定性测试过；Python 侧以 JSON-lines 子进程接入。**✅ 2026-10-09：实测钉死可行性（I9/I10）——`canResume:true` 边界快照即精确分叉（13/13），无需重写 pybinding/TS server/引擎手术；S1 缩减为薄 fork 桥（`fork_game` 补游戏级 attrs + 子进程暴露）；replay-branch MC teacher 已交付** |
 | L5.5 | （可选）评测池扩容：补齐对手至 22 套（另找 deck share code） | D11 | 新卡组入池并出对位报表，不阻塞任何验收 |
 
@@ -216,10 +216,11 @@ L0–L4 已完成（§0.1）。算力解锁前在本地继续推进，均为可�
   `evaluate_decision` 对整决策候选做 MC）作批量离线 teacher 与对照；验收测试
   `tests/test_engine_bridge.py`（新增「边界快照分叉复现活体终局」）。剩余可选项：JS 侧批量
   fork/rollout 吞吐优化（归入 batched_inference，非前置）。
-- **L5.3 ◐ CVPN 学习曲线**：`train/learning_curve.py` 交付——采集一份样本池后，对每个
-  (网络规模 `d_model`, 数据量) 组合训练全新网络，记录 train/val 损失与一致率（json/csv 落盘，不含 checkpoint）。
-  1277 样本扫 128/256/512/1024 × d_model 64/128：val_loss 单调下降（64 维 1.86→1.16）、一致率上升，
-  网络可学、数据有效；全量放大待 GPU（M3）。测试 `tests/test_learning_curve.py`。
+- **L5.3 ◐ CVPN 学习曲线**：`train/learning_curve.py` 交付——采集一份样本池后**先固定验证留出集**，
+  再对每个 (网络规模 `d_model`, 训练样本量) 组合在同一留出集上训练全新网络，记录 train/val 损失与一致率
+  （json/csv 落盘，不含 checkpoint）。1465 样本（留出 20%）扫 128/256/512/1024 × d_model 64/128：
+  val_loss 单调下降（64 维 2.11→1.11）、val_acc 单调上升（0.50→0.66），网络可学、数据有效；
+  全量放大待 GPU（M3）。测试 `tests/test_learning_curve.py`。
 - L5.5 未启动（可选）。长作业运行方式见 §0.1 I7（tmux + 流式断点）。
 
 ---
@@ -323,8 +324,8 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
    （`scripts/run_llm_matrix.py`：纯策略/LLM 分开聚合、流式落盘、断点续跑、指纹护栏；3×3 冒烟跑通）。
    剩余：单命令放量到全 20 套对手（`--seeds 10`，隔夜，可断点续跑）；
 3. **L5.3 CVPN 学习曲线放大**（数千~数万样本）——**◐ 2026-10-09 扫描器交付**
-   （`train/learning_curve.py`，数据量×网络规模网格；1277 样本验证 val_loss 随数据单调下降）；
-   剩余：在 GPU 算力上放大到数万样本（并入 M3）；
+   （`train/learning_curve.py`，数据量×网络规模网格、**固定验证留出集**；1465 样本验证 val_loss
+   随数据单调下降、val_acc 单调上升）；剩余：在 GPU 算力上放大到数万样本（并入 M3）；
 4. ~~**L5.4 S1 引擎桥**~~（✅ 2026-10-09 完成，I9/I10/D13）：快照/分叉可行性彻底钉死——
    `canResume:true` 边界快照即精确分叉（record-replay 13/13），**无需重写 pybinding/TS server/引擎手术**；
    已交付 replay-branch MC teacher（`train/replay_branch.py`）+ 快照工具（`envs/snapshot.fork_game`

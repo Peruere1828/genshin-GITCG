@@ -116,7 +116,11 @@ def run_task(spec: MatrixSpec, task: MatrixTask, *, client: Any) -> dict[str, An
         usage_before = dict(client.usage.as_dict())
         config = AssistConfig(budget_per_game=spec.budget, model=spec.model)
         policy = build_llm_assist_policy(
-            spec.deck, client=client, seed=p0_seed, config=config
+            spec.deck,
+            client=client,
+            seed=p0_seed,
+            config=config,
+            opponent_name=task.opponent,
         )
 
     record = run_match(
@@ -143,8 +147,13 @@ def run_task(spec: MatrixSpec, task: MatrixTask, *, client: Any) -> dict[str, An
     }
     if task.mode == LLM:
         usage_after = dict(client.usage.as_dict())
+        delta = _usage_delta(usage_before, usage_after)
         interventions = [iv.as_dict() for iv in getattr(policy, "interventions", [])]
-        row["llm_usage"] = _usage_delta(usage_before, usage_after)
+        row["llm_usage"] = delta
+        # A match is "degraded" when the client itself failed (timeout / rate limit
+        # / network drop): LLMAssistPolicy then falls back to the base action, so the
+        # row would otherwise look like a normal LLM-assisted game in the rate column.
+        row["degraded"] = delta["errors"] > 0
         row["interventions"] = interventions
         row["interventions_changed"] = sum(1 for iv in interventions if iv["changed"])
         row["interventions_failed"] = sum(
@@ -202,24 +211,36 @@ def run_matrix(
     client: Any = None,
     raw_path: Path | None = None,
     progress: bool = True,
+    max_consecutive_errors: int = 5,
 ) -> list[dict[str, Any]]:
-    """Run every pending (opponent, seed, mode) task, streaming results to disk."""
+    """Run every pending (opponent, seed, mode) task, streaming results to disk.
+
+    The LLM client is built lazily only when a pending LLM task exists, so a
+    pure-policy run (or an all-done resume that only re-aggregates) never needs a
+    key. If ``max_consecutive_errors > 0`` and that many LLM matches in a row come
+    back degraded (client failures), the run aborts so a mid-run outage cannot turn
+    the tail of the ``llm`` column into a silent pure-policy measurement; completed
+    rows are already on disk, so re-running resumes where it stopped.
+    """
     done, handle = _open_stream(spec, raw_path)
     rows: list[dict[str, Any]] = list(done.values())
     if done and progress:
         print(f"[llm-matrix] resuming: {len(done)} matches already done")
-    total = len(spec.tasks())
-    if client is None and LLM in spec.modes:
+    tasks = spec.tasks()
+    total = len(tasks)
+    pending = [task for task in tasks if task.index not in done]
+
+    if client is None and any(task.mode == LLM for task in pending):
         client = build_llm_client()
         if client is None:
             raise SystemExit(
                 "[llm-matrix] no LLM config; cannot run 'llm' mode "
                 "(use --no-llm for pure-policy only)"
             )
+
+    consecutive_degraded = 0
     try:
-        for task in spec.tasks():
-            if task.index in done:
-                continue
+        for task in pending:
             row = run_task(spec, task, client=client)
             rows.append(row)
             if handle is not None:
@@ -232,11 +253,21 @@ def run_matrix(
                         f" changed={row.get('interventions_changed')}/"
                         f"{row.get('llm_usage', {}).get('calls')}calls"
                     )
+                    if row.get("degraded"):
+                        extra += " DEGRADED"
                 print(
                     f"[llm-matrix] {len(rows)}/{total} "
                     f"{task.opponent} seed={task.seed} {task.mode} "
                     f"winner={row['winner']}{extra}"
                 )
+            if task.mode == LLM:
+                consecutive_degraded = consecutive_degraded + 1 if row.get("degraded") else 0
+                if max_consecutive_errors and consecutive_degraded >= max_consecutive_errors:
+                    raise SystemExit(
+                        f"[llm-matrix] aborting after {consecutive_degraded} consecutive "
+                        "degraded LLM matches (client failures). Fix connectivity and "
+                        "re-run the same command to resume; completed rows are kept."
+                    )
     finally:
         if handle is not None:
             handle.close()
@@ -264,6 +295,7 @@ def aggregate(rows: Sequence[dict[str, Any]], spec: MatrixSpec) -> dict[str, Any
             entry[PURE] = _rate(pure)
         if llm:
             entry[LLM] = _rate(llm)
+            entry["llm_degraded"] = sum(1 for r in llm if r.get("degraded"))
         if pure and llm:
             entry["delta"] = round(entry[LLM]["rate"] - entry[PURE]["rate"], 4)
             changed = sum(int(r.get("interventions_changed", 0)) for r in llm)
@@ -294,6 +326,19 @@ def aggregate(rows: Sequence[dict[str, Any]], spec: MatrixSpec) -> dict[str, Any
             interventions["changed"] / interventions["total"], 4
         )
 
+    degraded_rows = [r for r in llm_rows if r.get("degraded")]
+    llm_quality: dict[str, Any] = {
+        "matches_using_llm": len(llm_rows),
+        "degraded_matches": len(degraded_rows),
+        "degraded_rate": (
+            round(len(degraded_rows) / len(llm_rows), 4) if llm_rows else 0.0
+        ),
+    }
+    clean_rows = [r for r in llm_rows if not r.get("degraded")]
+    if clean_rows:
+        # Win rate excluding matches where the client failed (fell back to base).
+        llm_quality["clean"] = _rate(clean_rows)
+
     return {
         "deck": spec.deck,
         "modes": list(spec.modes),
@@ -311,6 +356,7 @@ def aggregate(rows: Sequence[dict[str, Any]], spec: MatrixSpec) -> dict[str, Any
         ),
         "llm_usage": llm_usage,
         "interventions": interventions,
+        "llm_quality": llm_quality,
         "engine_lock": load_engine_lock(),
         "runtime": runtime_metadata(),
     }
@@ -342,6 +388,20 @@ def _print_report(rep: dict[str, Any]) -> None:
             f"interventions changed={iv['changed']}/{iv['total']} "
             f"({iv.get('changed_rate', 0):.0%})"
         )
+    quality = rep.get("llm_quality", {})
+    degraded = quality.get("degraded_matches", 0)
+    if degraded:
+        print(
+            f"[llm-matrix] WARNING {degraded}/{quality['matches_using_llm']} LLM "
+            f"matches degraded (client failures fell back to base)"
+        )
+    if quality.get("clean"):
+        clean = quality["clean"]
+        print(
+            f"[llm-matrix] llm clean (non-degraded) {clean['rate']:.3f} "
+            f"[{clean['ci_low']:.3f},{clean['ci_high']:.3f}] "
+            f"({clean['wins']:.1f}/{clean['games']})"
+        )
 
 
 def _select_opponents(names: Sequence[str] | None) -> tuple[str, ...]:
@@ -366,6 +426,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tag", default="llm_matrix")
     parser.add_argument("--smoke", action="store_true", help="3 opponents x 3 seeds")
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument(
+        "--max-consecutive-errors",
+        type=int,
+        default=5,
+        help="abort after N consecutive degraded LLM matches (0 = disable)",
+    )
     return parser
 
 
@@ -396,7 +462,9 @@ def main(argv: list[str] | None = None) -> int:
     raw_path = None
     if not args.no_write:
         raw_path = ensure_dir(data_dir("llm")) / f"{tag}.jsonl"
-    rows = run_matrix(spec, raw_path=raw_path)
+    rows = run_matrix(
+        spec, raw_path=raw_path, max_consecutive_errors=args.max_consecutive_errors
+    )
     report = aggregate(rows, spec)
     _print_report(report)
 

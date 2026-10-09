@@ -300,25 +300,30 @@ class LLMAssistPolicy:
 
 
 def build_llm_assist_policy(
-    opponent_slug: str,
+    deck_slug: str,
     *,
     client: Any,
     base: Policy | None = None,
     config: AssistConfig | None = None,
     seed: int | None = None,
+    opponent_name: str | None = None,
 ) -> LLMAssistPolicy:
     """Build an LLM-assisted policy for one scripted deck slug.
 
     The base (pure-policy) proposer defaults to that deck's scripted expert, which
     keeps the LLM in a re-ranking role rather than a generator (PLAN.md WS4).
+
+    ``deck_slug`` is *our* deck (the base proposer). Pass ``opponent_name`` with the
+    actual adversary's name so prompts label the opponent correctly; it defaults to
+    ``deck_slug`` only for the single-pairing case where the two coincide.
     """
     from envs.policy import _asset_catalog, expert_policy
 
-    base_policy = base or expert_policy(opponent_slug, seed=seed)
+    base_policy = base or expert_policy(deck_slug, seed=seed)
     return LLMAssistPolicy(
         base_policy,
         client,
         assets=_asset_catalog(),
-        opponent_name=opponent_slug,
+        opponent_name=opponent_name or deck_slug,
         config=config,
     )

@@ -15,10 +15,10 @@ cvpn_training + sog_pipeline（搜索蒸馏外环 + 门禁）、batched_inferenc
   checkpoint 落 `data/checkpoints/`（gitignore），报告落 `reports/train/`。
 - `agents/neural.py`：`NeuralPolicy`——把训练好的 checkpoint 接回 `envs.Policy`，可与脚本专家同台评测/自博弈（纯策略模式）。
 - `replay_branch.py`：replay-branch MC teacher（D12 兜底，见下）——离线从任意决策点重放+注入候选+rollout 求动作价值。
-- `learning_curve.py`（L5.3）：CVPN 学习曲线扫描——采集一份样本池，对每个 (网络规模 `d_model`, 数据量)
-  组合训练一个**全新**网络，记录 train/val 损失与一致率曲线；可选对脚本对手小样本评测。
-  产物 `reports/train/learning_curve_<ts>.json/.csv`（不含 checkpoint）。CLI：
-  `python -m train.learning_curve --games 12 --sizes 128 256 512 1024 --d-models 64 128`。
+- `learning_curve.py`（L5.3）：CVPN 学习曲线扫描——采集一份样本池后**先固定验证留出集**，再对每个
+  (网络规模 `d_model`, 训练样本量) 组合在同一留出集上训练一个**全新**网络，记录 train/val 损失与一致率曲线
+  （点间可比）；可选对脚本对手小样本评测。产物 `reports/train/learning_curve_<ts>.json/.csv`（不含 checkpoint）。CLI：
+  `python -m train.learning_curve --games 14 --sizes 128 256 512 1024 --d-models 64 128`。
 
 实测：`--overfit`（1 局采集、60 epoch）零报错完成，训练集一致率 ~0.74–0.88（多数类 ~0.3），说明网络可学。
 

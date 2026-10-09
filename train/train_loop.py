@@ -97,6 +97,17 @@ def _evaluate(model: CVPN, samples: Sequence[Sample], value_coef: float) -> tupl
     return sum(losses) / len(losses), correct / len(samples)
 
 
+def evaluate_loss_accuracy(
+    model: CVPN, samples: Sequence[Sample], value_coef: float
+) -> tuple[float, float]:
+    """Mean loss and accuracy of ``model`` on ``samples`` (no gradients).
+
+    Public so the learning-curve sweep can score every grid point on one *fixed*
+    holdout instead of a freshly re-drawn validation split (PLAN.md L5.3).
+    """
+    return _evaluate(model, samples, value_coef)
+
+
 def train_bc(
     samples: Sequence[Sample],
     model: CVPN,

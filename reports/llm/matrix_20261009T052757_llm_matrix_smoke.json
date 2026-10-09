@@ -58,6 +58,7 @@
         "errors": 0,
         "truncated": 0
       },
+      "llm_degraded": 0,
       "delta": 0.0,
       "llm_interventions_changed": 15,
       "llm_calls": 18
@@ -82,6 +83,7 @@
         "errors": 0,
         "truncated": 0
       },
+      "llm_degraded": 0,
       "delta": 0.1667,
       "llm_interventions_changed": 14,
       "llm_calls": 18
@@ -106,6 +108,7 @@
         "errors": 0,
         "truncated": 0
       },
+      "llm_degraded": 0,
       "delta": 0.0,
       "llm_interventions_changed": 16,
       "llm_calls": 18
@@ -124,6 +127,20 @@
     "changed": 45,
     "failed": 0,
     "changed_rate": 0.8333
+  },
+  "llm_quality": {
+    "matches_using_llm": 9,
+    "degraded_matches": 0,
+    "degraded_rate": 0.0,
+    "clean": {
+      "wins": 7.0,
+      "games": 9,
+      "rate": 0.7777777777777778,
+      "ci_low": 0.4525833436728054,
+      "ci_high": 0.9367762376877727,
+      "errors": 0,
+      "truncated": 0
+    }
   },
   "engine_lock": {
     "engine": {

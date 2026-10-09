@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from common.llm import MockLLMClient
+from common.llm import LLMUsage, MockLLMClient
 from scripts.run_llm_matrix import (
     LLM,
     PURE,
@@ -20,6 +20,17 @@ from scripts.run_llm_matrix import (
     run_matrix,
     run_task,
 )
+
+
+class _ErroringClient:
+    """Client whose every ``chat`` fails like a client-side API error."""
+
+    def __init__(self) -> None:
+        self.usage = LLMUsage()
+
+    def chat(self, *args, **kwargs):
+        self.usage.errors += 1
+        return None
 
 
 def _spec(**overrides) -> MatrixSpec:
@@ -74,6 +85,14 @@ def test_run_llm_task_records_interventions_and_usage():
     assert row["llm_usage"]["calls"] <= 2  # budget respected
     assert row["interventions_changed"] >= 0
     assert all("changed" in iv for iv in row["interventions"])
+    assert row["degraded"] is False  # mock returns content, no client errors
+
+
+def test_run_llm_task_flags_client_failures_as_degraded():
+    spec = _spec(modes=(LLM,), budget=2)
+    row = run_task(spec, spec.tasks()[0], client=_ErroringClient())
+    assert row["llm_usage"]["errors"] >= 1
+    assert row["degraded"] is True
 
 
 def test_aggregate_reports_modes_and_delta():
@@ -95,6 +114,44 @@ def test_aggregate_reports_modes_and_delta():
     assert rep["llm_usage"]["calls"] == 3
     assert rep["interventions"]["changed"] == 1
     assert rep["interventions"]["changed_rate"] == 1.0
+
+
+def test_aggregate_surfaces_degraded_matches():
+    spec = _spec(modes=(PURE, LLM))
+    rows = [
+        {"task_index": 0, "opponent": "natlan_battleship", "seed": 0, "mode": PURE,
+         "score0": 1.0, "winner": 0, "error": None, "truncated": False},
+        {"task_index": 1, "opponent": "natlan_battleship", "seed": 0, "mode": LLM,
+         "score0": 1.0, "winner": 0, "error": None, "truncated": False,
+         "degraded": True, "interventions": [], "interventions_changed": 0,
+         "interventions_failed": 0,
+         "llm_usage": {"calls": 1, "prompt_tokens": 0, "completion_tokens": 0, "errors": 1}},
+        {"task_index": 2, "opponent": "natlan_battleship", "seed": 1, "mode": LLM,
+         "score0": 0.0, "winner": 1, "error": None, "truncated": False,
+         "degraded": False, "interventions": [], "interventions_changed": 0,
+         "interventions_failed": 0,
+         "llm_usage": {"calls": 2, "prompt_tokens": 5, "completion_tokens": 2, "errors": 0}},
+    ]
+    rep = aggregate(rows, _spec(opponents=("natlan_battleship",), seeds=(0, 1)))
+    assert rep["llm_quality"]["matches_using_llm"] == 2
+    assert rep["llm_quality"]["degraded_matches"] == 1
+    assert rep["llm_quality"]["degraded_rate"] == 0.5
+    # Clean rate excludes the degraded match (1.0 vs 0.0 -> 0.5 overall).
+    assert rep["llm_quality"]["clean"]["games"] == 1
+    assert rep["per_opponent"][0]["llm_degraded"] == 1
+
+
+def test_abort_after_consecutive_degraded(tmp_path):
+    spec = _spec(opponents=("natlan_battleship",), seeds=(0,), modes=(LLM,))
+    raw = tmp_path / "degraded.jsonl"
+    with pytest.raises(SystemExit):
+        run_matrix(
+            spec, client=_ErroringClient(), raw_path=raw, progress=False,
+            max_consecutive_errors=1,
+        )
+    lines = [line for line in raw.read_text(encoding="utf-8").splitlines() if line]
+    assert len(lines) == 1
+    assert json.loads(lines[0])["degraded"] is True
 
 
 def test_stream_resume_skips_done_and_guards_fingerprint(tmp_path):
