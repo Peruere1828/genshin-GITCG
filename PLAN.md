@@ -1,6 +1,6 @@
 # 七圣召唤 AI + Agent 工程 — 需求与实现路径（PLAN.md）
 
-> 状态：v1.2（2026-10-09：本地先行 L0–L5.4 已完成，含子进程 fork 桥 + 实用版搜索 resolver，见 §0.1 I1–I11；口径/路线修订见 §0 的 D11–D13）
+> 状态：v1.3（2026-10-09：本地先行 L0–L5.6 已完成——含子进程 fork 桥 + 实用版搜索 resolver + 集群数据平面，见 §0.1 I1–I11 与 §4.2 L5.6；口径/路线修订见 §0 的 D11–D13）
 > 决策记录见 §0；里程碑按阶段推进、不绑定日期。
 
 ---
@@ -193,6 +193,7 @@ L0–L4 已完成（§0.1）。算力解锁前在本地继续推进，均为可�
 | L5.3 | CVPN 学习曲线放大（数千~数万样本） | L4→M3 | 训练/验证损失与一致率曲线，确认网络规模-数据量关系。**◐ 2026-10-09：`train/learning_curve.py` 已交付（数据量×网络规模网格、每点全新网络、**固定验证留出集**使点间可比、json/csv 落盘），1465 样本扫 128/256/512/1024 × d_model 64/128：val_loss 单调下降（64 维 2.11→1.11）、val_acc 单调上升（0.50→0.66）；全量放大待 GPU（M3）** |
 | L5.4 | **S1 引擎桥**（D12/D13）：中局快照/克隆/分支 | M3 前置 | 分支续跑确定性测试过；Python 侧以 JSON-lines 子进程接入。**✅ 2026-10-09：实测钉死可行性（I9/I10）——`canResume:true` 边界快照即精确分叉（13/13），无需重写 pybinding/TS server/引擎手术；子进程 fork 桥（`envs/fork_bridge.py`/`fork_worker.py`）与实用版 fork 搜索 resolver（`envs/fork_search.py` + `scripts/run_search_agent.py`）已交付，跨进程重放逐字节复现活体终局（I11）** |
 | L5.5 | （可选）评测池扩容：补齐对手至 22 套（另找 deck share code） | D11 | 新卡组入池并出对位报表，不阻塞任何验收 |
+| L5.6 | **集群数据平面**（算力前置）：可续跑分片采集 + 从 replay 训练/学习曲线 | M3 / §5.1 | 采集中断续跑不重复；CPU 采集与 GPU 训练解耦；LSF 模板齐备（`collect`/`collect_array`/`train_gpu`）。**✅ 2026-10-09** |
 
 **L5 进度（2026-10-08）**：
 
@@ -228,6 +229,12 @@ L0–L4 已完成（§0.1）。算力解锁前在本地继续推进，均为可�
   （json/csv 落盘，不含 checkpoint）。1465 样本（留出 20%）扫 128/256/512/1024 × d_model 64/128：
   val_loss 单调下降（64 维 2.11→1.11）、val_acc 单调上升（0.50→0.66），网络可学、数据有效；
   全量放大待 GPU（M3）。测试 `tests/test_learning_curve.py`。
+- **L5.6 ✅ 集群数据平面（2026-10-09，算力解锁前置）**：`train/collect.py` + `train/collect_worker.py`
+  ——可续跑分片采集（一行一局、manifest 指纹护栏 + engine.lock、逐局流式落盘）；`train.pipeline --replays`
+  与 `train.learning_curve --replays` 从磁盘训练/扫曲线，使 **CPU 队列采集与 GPU 队列训练解耦**（§5.1）。
+  LSF 模板补齐 `collect.lsf`（单节点多 worker）、`collect_array.lsf`（海量数组作业，每元素独立分片目录）、
+  `train_gpu.lsf`（`--replays` 训练）。测试 `tests/test_collect.py`（序列化无损、撕裂行容错、指纹稳定、
+  并行采集 + 续跑不重复）。
 - L5.5 未启动（可选）。长作业运行方式见 §0.1 I7（tmux + 流式断点）。
 
 ---
@@ -343,7 +350,10 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
    **剩余（非前置，M3）**：JS 侧批量 fork/rollout 吞吐优化（batched_inference 范畴）；
    CVPN 网络接入搜索（算力解锁后）；
 5. **L5.5**（可选）评测池扩容补对手（D11）；
-6. 并行调研项（M3 输入）不变：读 `docs/SOG_GT_CFR_CONTINUAL_RESOLVING_CHARTER.md` + `continual_resolving.py`，产出"实用 resolver → GT-CFR"差距清单；算力解锁后回 M3 全量训练。
+6. ~~**L5.6 集群数据平面**~~（✅ 2026-10-09，算力前置）：`train.collect`（可续跑分片采集）+
+   `train.pipeline`/`train.learning_curve` 的 `--replays` 读盘 + LSF 模板 `collect.lsf`/`collect_array.lsf`/`train_gpu.lsf`，
+   使 CPU 采集与 GPU 训练解耦（§5.1）；
+7. 并行调研项（M3 输入）不变：读 `docs/SOG_GT_CFR_CONTINUAL_RESOLVING_CHARTER.md` + `continual_resolving.py`，产出"实用 resolver → GT-CFR"差距清单；算力解锁后回 M3 全量训练。
 
 ---
 *本文档随决策变化更新；重大变更（改主线、改验收口径）需在 §0 追加决策记录。*

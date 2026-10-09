@@ -38,7 +38,7 @@ from envs.match import run_match
 from envs.observation import default_encoder
 from envs.policy import expert_policy
 from eval.stats import estimate_rate, outcome_score
-from train.data import Sample, collect_samples, sample_stats
+from train.data import Sample, collect_samples, load_samples, sample_stats
 from train.model import CVPN, config_for_encoder
 from train.train_loop import TrainConfig, evaluate_loss_accuracy, train_bc
 
@@ -128,11 +128,18 @@ def run_learning_curve(
     train_config: TrainConfig | None = None,
     encoder=None,
     verbose: bool = False,
+    replays_dirs: Sequence[str] | None = None,
 ) -> dict:
     encoder = encoder or default_encoder()
     base_config = train_config or TrainConfig(epochs=12, batch_size=32, val_fraction=0.2)
 
-    pool = collect_pool(deck, train_opponents, train_seeds, encoder=encoder)
+    replays_dirs = list(replays_dirs) if replays_dirs else []
+    if replays_dirs:
+        pool = [sample for path in replays_dirs for sample in load_samples(path)]
+        data_source = "replays"
+    else:
+        pool = collect_pool(deck, train_opponents, train_seeds, encoder=encoder)
+        data_source = "collected"
     stats = sample_stats(pool)
     train_pool, val_pool = _fixed_split(
         pool, val_fraction=base_config.val_fraction, seed=base_config.seed
@@ -181,6 +188,8 @@ def run_learning_curve(
         "deck": deck,
         "train_opponents": list(train_opponents),
         "train_seeds": list(train_seeds),
+        "replays_dirs": list(replays_dirs),
+        "data_source": data_source,
         "pool_stats": stats,
         "n_train_pool": len(train_pool),
         "n_val_holdout": len(val_pool),
@@ -273,6 +282,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sizes", type=int, nargs="*",
                         default=[128, 256, 512, 1024])
     parser.add_argument("--d-models", type=int, nargs="*", default=[128])
+    parser.add_argument("--replays", nargs="*", default=None,
+                        help="replay dir(s) from train.collect (use instead of collecting)")
     parser.add_argument("--epochs", type=int, default=12)
     parser.add_argument("--eval-opponents", nargs="*", default=None)
     parser.add_argument("--eval-seeds", type=int, default=0)
@@ -306,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
             eval_opponents=args.eval_opponents or (),
             eval_seeds=tuple(range(args.eval_seeds)),
             verbose=True,
+            replays_dirs=args.replays,
         )
     _print_report(report)
     if not args.no_write:

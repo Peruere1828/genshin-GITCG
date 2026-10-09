@@ -24,7 +24,7 @@ from envs.match import run_match
 from envs.observation import default_encoder
 from envs.policy import expert_policy
 from eval.stats import estimate_rate, outcome_score
-from train.data import collect_samples, sample_stats
+from train.data import collect_samples, load_samples, sample_stats
 from train.model import CVPN, config_for_encoder
 from train.train_loop import TrainConfig, train_bc
 
@@ -87,13 +87,27 @@ def run_round(
     train_config: TrainConfig | None = None,
     tolerance: float = 0.05,
     tag: str = "toy",
+    replays_dirs: Sequence[str] | None = None,
+    samples: Sequence | None = None,
 ) -> dict:
     encoder = default_encoder()
-    train_samples = []
-    for opponent in train_opponents:
-        train_samples.extend(
-            collect_samples(deck, opponent, train_seeds, encoder=encoder)
-        )
+    replays_dirs = list(replays_dirs) if replays_dirs else []
+    if samples is not None:
+        data_source = "samples"
+    elif replays_dirs:
+        # Cluster path: CPU nodes collected replay dirs; train from them.
+        collected = [sample for path in replays_dirs for sample in load_samples(path)]
+        samples = collected
+        data_source = "replays"
+    else:
+        collected = []
+        for opponent in train_opponents:
+            collected.extend(
+                collect_samples(deck, opponent, train_seeds, encoder=encoder)
+            )
+        samples = collected
+        data_source = "collected"
+    train_samples = list(samples)
     stats = sample_stats(train_samples)
 
     model = CVPN(config_for_encoder(encoder))
@@ -123,6 +137,8 @@ def run_round(
         "eval_opponents": list(eval_opponents),
         "train_seeds": list(train_seeds),
         "eval_seeds": list(eval_seeds),
+        "replays_dirs": list(replays_dirs),
+        "data_source": data_source,
         "sample_stats": stats,
         "train_config": asdict(config),
         "train_metrics": metrics.as_dict(),
@@ -147,6 +163,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--epochs", type=int, default=8)
     parser.add_argument("--tag", default="toy")
     parser.add_argument("--overfit", action="store_true", help="tiny overfit sanity mode")
+    parser.add_argument(
+        "--replays",
+        nargs="+",
+        default=None,
+        help="replay dir(s) from train.collect (train from disk instead of collecting)",
+    )
     return parser
 
 
@@ -165,6 +187,7 @@ def main(argv: list[str] | None = None) -> int:
             eval_seeds=tuple(range(100, 100 + args.eval_seeds)),
             train_config=TrainConfig(epochs=args.epochs),
             tag=args.tag,
+            replays_dirs=args.replays,
         )
     print(json.dumps({k: v for k, v in report.items() if k != "encoder_config"}, ensure_ascii=False, indent=2)[:3000])
     return 0

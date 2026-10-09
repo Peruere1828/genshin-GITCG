@@ -11,7 +11,7 @@
 - `reports/search/<tag>_<ts>.json`：fork 搜索 resolver 对池评测聚合（配对种子 search vs expert 消融 + Wilson CI；L5.4）。
 - `reports/LOCAL_BASELINE.md`：本地先行（L0/L1）实测基线与验收换算。
 
-原始逐局记录（大体积）写入 `data/arena/<run_id>.jsonl`、`data/llm/<tag>.jsonl`、`data/search/<tag>.jsonl`（gitignore，不入库）；
+原始逐局记录（大体积）写入 `data/arena/<run_id>.jsonl`、`data/llm/<tag>.jsonl`、`data/search/<tag>.jsonl`、`data/replays/<tag>/`（gitignore，不入库）；
 逐干预明细（LLM probe 日志）同样不入库，`reports/` 只保留聚合摘要。
 
 命令：

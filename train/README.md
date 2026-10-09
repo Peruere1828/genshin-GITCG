@@ -11,8 +11,10 @@ cvpn_training + sog_pipeline（搜索蒸馏外环 + 门禁）、batched_inferenc
   teacher 动作用 **option 位置索引**保存，价值目标=该局结果。
 - `train_loop.py`：行为克隆/蒸馏（masked CE + value MSE），train/val 切分与指标。
 - `pipeline.py`：一轮「采集 → 训练 → 评测（在真引擎里对脚本对手）→ 门禁 → 落盘」。
-  CLI：`python -m train.pipeline --train-seeds 6 --eval-seeds 3` / `--overfit`。
+  CLI：`python -m train.pipeline --train-seeds 6 --eval-seeds 3` / `--overfit` / `--replays data/replays/<tag>`。
   checkpoint 落 `data/checkpoints/`（gitignore），报告落 `reports/train/`。
+- `collect.py` + `collect_worker.py`（L5.6 集群数据平面）：可续跑分片采集（`python -m train.collect`），
+  一行一局、manifest 指纹护栏 + engine.lock、逐局流式落盘；`--replays` 供 `pipeline`/`learning_curve` 读盘。
 - `agents/neural.py`：`NeuralPolicy`——把训练好的 checkpoint 接回 `envs.Policy`，可与脚本专家同台评测/自博弈（纯策略模式）。
 - `replay_branch.py`：replay-branch MC teacher（D12 兜底，见下）——离线从任意决策点重放+注入候选+rollout 求动作价值。
 - `learning_curve.py`（L5.3）：CVPN 学习曲线扫描——采集一份样本池后**先固定验证留出集**，再对每个
@@ -55,6 +57,25 @@ Python 回调开销；需要时再做 JS 侧批量 fork/rollout（归 `batched_i
   `rollouts`/`top_k`/`search_every`/`max_searches` 控预算；每次决策落 `SearchDecision`（喂教练/蒸馏）。
 - 跨进程按**位置选项索引**重放已验证：新进程 fork 边界快照 + 前缀**逐字节复现活体终局**
   （`tests/test_fork_bridge.py`）。`scripts/run_search_agent.py` 做配对种子 search vs expert 消融评测。
+
+## 集群数据平面（CPU 采集 → 存储 → GPU 训练，L5.6，算力前置）
+
+`train/collect.py`（+ `train/collect_worker.py`）把对局编码成样本写入**可续跑**的 replay 目录：
+
+- 一行 = 一局（含该局全部样本），撕裂的尾行只让那一局视为未完成 → 续跑重放该局，不会污染已完成数据；
+- `manifest.json` 钉住 spec 指纹（deck/对手/种子/teacher spec/encoder 配置）+ `engine.lock`，指纹漂移拒续跑；
+- 逐局流式落盘（`on_result`），作业被打断也保住已完成部分；
+- 采集与训练解耦：`train.pipeline --replays <dir...>` 与 `train.learning_curve --replays <dir...>` 直接读盘，
+  CPU 队列采集、GPU 队列训练（PLAN §5.1）。
+
+```bash
+python -m train.collect --deck superconduct_aggro --all-opponents \
+    --seed-start 0 --seed-count 500 --workers 48 --tag coldstart
+python -m train.pipeline --replays data/replays/coldstart --epochs 30 --tag cluster
+```
+
+LSF 模板：`scripts/cluster/lsf/collect.lsf`（单节点多 worker）、`collect_array.lsf`（海量数组作业，
+每元素独立分片目录）、`train_gpu.lsf`（`--replays` 训练）。
 
 ### replay-branch MC teacher（已实现，批量离线/兜底）
 

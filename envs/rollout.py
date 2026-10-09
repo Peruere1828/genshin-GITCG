@@ -177,6 +177,68 @@ def _run_shard_in_subprocess(
     return results
 
 
+def run_task_shard(
+    shard: list[Any],
+    *,
+    worker_module: str,
+    workers: int | None = None,
+    on_result: Callable[[dict[str, Any]], None] | None = None,
+) -> list[dict[str, Any]]:
+    """Run a list of ``as_dict()``-able tasks through a JSON-lines worker module.
+
+    A thin public wrapper over the (deadlock-safe) subprocess plumbing used by
+    rollout, so other task types (e.g. ``train.collect``) reuse it instead of
+    re-implementing the two-pipe drain. Results are merged and sorted by ``index``.
+    """
+    import os as _os
+    import sys
+
+    from common.paths import repo_root
+
+    shard = list(shard)
+    if not shard:
+        return []
+    resolved = workers if workers is not None else (_os.cpu_count() or 1)
+    resolved = max(1, min(int(resolved), len(shard)))
+    env = dict(_os.environ)
+    root = str(repo_root())
+    env["PYTHONPATH"] = root + _os.pathsep + env.get("PYTHONPATH", "")
+    python = sys.executable
+
+    if resolved == 1:
+        return _run_shard_in_subprocess(
+            shard,
+            python=python,
+            env=env,
+            repo_root=root,
+            worker_module=worker_module,
+            on_result=on_result,
+        )
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    chunks = [shard[i::resolved] for i in range(resolved)]
+    chunks = [chunk for chunk in chunks if chunk]
+    results: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=len(chunks)) as pool:
+        futures = [
+            pool.submit(
+                _run_shard_in_subprocess,
+                chunk,
+                python=python,
+                env=env,
+                repo_root=root,
+                worker_module=worker_module,
+                on_result=on_result,
+            )
+            for chunk in chunks
+        ]
+        for future in futures:
+            results.extend(future.result())
+    results.sort(key=lambda item: item.get("index", 0))
+    return results
+
+
 def run_tasks(
     tasks: Iterable[MatchTask],
     *,
