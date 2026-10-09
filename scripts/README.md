@@ -16,6 +16,12 @@
   ```bash
   python -m scripts.probe_engine_snapshot --seed 3 --sample 8
   ```
+- `probe_boundary_fork.py`（L5.4，D13 依据）：record-replay 判定分叉保真——边界快照
+  （`is_resumable()` + attrs 镜像）复现活体终局、phase 内部点不复现，产出
+  `reports/engine/probe_boundary_fork_*.json`。
+  ```bash
+  python -m scripts.probe_boundary_fork --seed 3 --sample 8
+  ```
 - `run_replay_branch.py`（L5.4/D12）：对某决策做 replay-branch MC 动作价值估计，产出
   `reports/train/replay_branch_*.json`。
   ```bash

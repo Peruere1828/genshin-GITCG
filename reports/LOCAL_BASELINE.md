@@ -75,15 +75,16 @@ python -m pytest -q -m "not slow"   # 快速；去掉 -m 跑全量（含慢测�
 
 对手池强度分层清晰（0.175–0.831），作为 M2/M4 门禁的固定底座合适。
 
-**注意（2026-10-09 修正）**：搜索（continual resolving）不能靠 pybinding 分叉——快照 JSON 往返无损、
-可载入续跑、克隆确定，但**不是活体决策点的忠实分叉**（续跑重放 phase；`canResume` 不可靠）。
-证据 `reports/engine/probe_snapshot_*.json`（9/9 往返、9/9 克隆、1/9 复现活体轨迹）。已落 D12 兜底
-replay-branch MC teacher（`train/replay_branch.py`）；真活体分叉桥（TS server）仍待做。详见
-`train/README.md`、PLAN §0.1 I9。
+**注意（2026-10-09，I10/D13）**：搜索分叉能力已钉死——`canResume:true` 边界暂停点的快照**即精确分叉**
+（record-replay 决策序列复现活体终局 13/13，证据 `reports/engine/probe_boundary_fork_*.json`；早期
+"不能分叉"结论系探针混淆，见 PLAN §0.1 I9/I10）。纪律：只在 `is_resumable()` 点取快照 + fork 补
+游戏级 attrs（`envs/snapshot.fork_game`）；`canResume:false` phase 内部点不可分叉。批量离线 teacher
+用 replay-branch MC（`train/replay_branch.py`）。
 
 ## L5.4 引擎桥实测 + replay-branch teacher（2026-10-09）
 
-- 无 `njugit` 依赖，纯本地；证据与命令见 `scripts/probe_engine_snapshot.py`（`--all` 可扫全部快照）。
+- 无 `njugit` 依赖，纯本地；证据与命令见 `scripts/probe_engine_snapshot.py`（`--all` 可扫全部快照）、
+  `scripts/probe_boundary_fork.py`（record-replay 分叉保真判定）。
 - `envs/snapshot.py`：`capture_snapshot` / `fork_game` / `snapshot_roundtrip_is_faithful` + `FORK_LIMITATION`。
 - `train/replay_branch.py`：`capture_trajectory` / `replay_branch` / `evaluate_decision` / `aggregate_option_values`。
 - 验收：`python -m pytest tests/test_engine_bridge.py -q`（含「注入=base 选择时逐局复现 base」分支确定性）。

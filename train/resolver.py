@@ -1,18 +1,17 @@
 """Resolver / search teacher (PLAN.md WS3) -- scaffold + engine-bridge note.
 
-**Engine bridge (re-verified 2026-10-09 on gitcg 0.21.0):** the pybinding CAN
-snapshot a mid-game state, round-trip it faithfully, and resume it
-clone-deterministically -- but resume replays phase-internal work, so a snapshot
-is **not** an exact fork of a live decision point (pauses are not all phase
-boundaries; ``canResume`` does not reliably mark a replay-safe point). See
-``envs/snapshot.py`` (``FORK_LIMITATION``) and ``scripts/probe_engine_snapshot.py``.
+**Engine bridge (verified 2026-10-09 on gitcg 0.21.0, PLAN D13/I10):** snapshots
+taken at ``canResume:true`` boundary pauses (``Game.is_resumable()``) are exact
+forks -- resume plus the same decisions reproduces the live terminal
+byte-for-byte. Two rules: only snapshot at boundary pauses (``canResume:false``
+mid-phase pauses replay phase-internal work and are not fork-safe), and mirror
+game-level attrs on the fork (``envs/snapshot.fork_game(game_attrs=...)``). See
+``envs/snapshot.py`` (``FORK_LIMITATION``) and ``scripts/probe_boundary_fork.py``.
 
-Consequence for M3: continual resolving cannot fork the live game through the
-pybinding. The D12 fallback, ``train/replay_branch.py``, is the supported
-search teacher today: it *replays* to any decision point (the full game is
-deterministic), injects a candidate action, and finishes with a rollout policy,
-giving a Monte-Carlo action value. A true live-fork bridge (TS server, non-async
-serialization contract) remains future work.
+Consequence for M3: continual resolving forks the live game directly (O(1) fork +
+injected candidate + rollout). For bulk offline labeling there is also
+``train/replay_branch.py`` (replay to the decision point, inject, rollout -> MC
+action value) at O(depth) per branch.
 
 ``PriorResolver`` (no search, greedy network prior) stays usable for cold start
 and self-distillation; the real resolver replaces it behind the same interface.
@@ -26,10 +25,11 @@ from typing import Any
 from reps.action_adapter import BuiltDecisionContext
 
 SEARCH_BLOCKED_REASON = (
-    "gitcg 0.21.0 pybinding snapshots round-trip faithfully but resume replays "
-    "phase-internal work, so a snapshot is not an exact fork of a live decision "
-    "point. Use train.replay_branch (D12 replay-branch MC) as the teacher. See "
-    "envs/snapshot.py / train/README.md."
+    "The fork-based search resolver is not implemented yet (PriorResolver is the "
+    "no-search placeholder). Forking itself is available and exact: snapshot at "
+    "canResume:true boundary pauses and fork via envs/snapshot.fork_game"
+    "(game_attrs=...) (PLAN D13/I10). Use train.replay_branch (replay-branch MC) "
+    "for offline teacher labeling."
 )
 
 

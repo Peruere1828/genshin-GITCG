@@ -1,19 +1,22 @@
-"""Replay-branch Monte-Carlo teacher (PLAN.md D12 fallback / L5.4 / WS3).
+"""Replay-branch Monte-Carlo teacher (PLAN.md D12/D13, L5.4, WS3).
 
-Why replay branching instead of live-game forking
--------------------------------------------------
+Why replay branching alongside live-game forking
+------------------------------------------------
 Continual resolving needs to evaluate several candidate actions from one decision
-point. The pybinding cannot *fork a live game* (see
-``envs/snapshot.py`` / ``envs.snapshot.FORK_LIMITATION``), but a full game is
-deterministic given ``(decks, engine seed, action sequence)``. So we reproduce any
-decision point by replaying from the initial state and injecting one candidate
-action there, then finishing the game with a rollout policy. Averaging the outcome
-over rollout seeds gives a Monte-Carlo action-value estimate that can be used as a
-search/distillation target.
+point. Live-game forking is available and exact at ``canResume:true`` boundary
+snapshots (``envs/snapshot.fork_game``; see ``envs.snapshot.FORK_LIMITATION``),
+but a fork stays inside one process and carries snapshot/attr bookkeeping. A full
+game is also deterministic given ``(decks, engine seed, action sequence)``, so any
+decision point can be reproduced by replaying from the initial state and injecting
+one candidate action there, then finishing the game with a rollout policy.
+Averaging the outcome over rollout seeds gives a Monte-Carlo action-value estimate
+that can be used as a search/distillation target.
 
-Cost is ``(1 + option_count * rollouts)`` full games per evaluated decision, so
-this is an *offline* teacher for M3, not an in-game search. When a true engine
-bridge lands, it replaces the replay loop without changing the call sites.
+Cost is ``(1 + option_count * rollouts)`` full games per evaluated decision
+(O(depth) replay per branch vs O(1) fork), so this is an *offline* / bulk-labeling
+teacher and the fork path's determinism control, not the in-game search. The
+fork-based resolver and this teacher expose the same call shape, so switching is
+a backend change.
 
 Determinism notes (AGENTS.md "重放确定性坑")
 -------------------------------------------
