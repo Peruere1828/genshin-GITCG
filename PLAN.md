@@ -1,6 +1,6 @@
 # 七圣召唤 AI + Agent 工程 — 需求与实现路径（PLAN.md）
 
-> 状态：v1.1（2026-10-07：本地先行 L0–L4 已完成，见 §0.1；后续口径/路线修订见 §0 的 D11–D12）
+> 状态：v1.2（2026-10-09：本地先行 L0–L5.4 已完成，含子进程 fork 桥 + 实用版搜索 resolver，见 §0.1 I1–I11；口径/路线修订见 §0 的 D11–D13）
 > 决策记录见 §0；里程碑按阶段推进、不绑定日期。
 
 ---
@@ -37,6 +37,7 @@
 | I8 | 日志入库口径 | `reports/` 只进聚合摘要；逐事件/逐干预明细（LLM probe 日志等）gitignore；原始逐局 JSONL 一直在 `data/`（不入库） |
 | I9 | 引擎桥实测（2026-10-09，L5.4，修正 I5） | 对 gitcg 0.21.0 pybinding 中局快照做系统实测（`scripts/probe_engine_snapshot.py`、`reports/engine/`、`envs/snapshot.py`）：① `State` JSON **往返无损**；② 快照**能载入续跑到 FINISHED**；③ 同快照续跑**克隆确定**；④ 但**不是活体决策点的忠实分叉**——续跑从 `state.phase` 重入 phase 循环，而引擎暂停点也在 phase 内部（`initHands`/`skill_executor`/`gotWinner`），序列化不含被挂起的 async continuation，`canResume` 不能可靠标记可重放边界（126 步探针里除末尾外全部与活体轨迹分叉）。TS server 亦不从 JSON 恢复（持活体 JS 对象，`stateLog` 仅回放用）。**落实 D12 兜底**：`train/replay_branch.py` replay-branch MC teacher（从初始态重放到决策点+注入候选+rollout，求动作价值），关键确定性「注入=base 选择且 rollout=base 逐局复现」已测（`tests/test_engine_bridge.py`）。真活体分叉桥（TS server + 非 async-continuation 契约）仍待做，不阻塞 M3 teacher |
 | I10 | 分叉可行性再实测（2026-10-09，修正 I9，D13 依据） | 用 **record-replay 决策序列 + 镜像游戏级 attrs** 的对照实验（`scripts/probe_boundary_fork.py`、`reports/engine/probe_boundary_fork_*.json`）剥离两个混淆因素后：**`canResume:true` 边界快照 13/13（+9/9 复跑）精确复现活体终局**（终局逐字节相等、请求序列全等）；`canResume:false` 点 0/3。I9 的"边界点也不可分叉"系探针混淆：① 复现测试用全新 expert 策略（内部 RNG 已前进，决策必漂）；② fork 丢游戏级 attrs（全元素骰→普通骰，重掷选项集直接不同，45 vs 108 选项）。**结论：`canResume` 位是可靠的可重放边界标记**；残余限制只有（a）phase 内部暂停点不可分叉（搜索不需要在那里分叉）、（b）`Promise.all` 并发 RPC（switchHands/chooseActive/rollPhase）的交错依赖 JS 调度（实测确定，跨引擎版本不保证，D4 版本冻结覆盖） |
+| I11 | 薄 fork 桥落地（2026-10-09，L5.4 剩余项，D13） | 子进程 fork 桥交付（`envs/fork_bridge.py` + `envs/fork_worker.py`，JSON-lines，沿用 rollout 形态；`run_fork_task` 为进程内参考实现）与实用版 continual-resolving 搜索（`envs/fork_search.py`：`ForkSearchPolicy` + `run_search_match`）。**关键实测约束：fork 必须在子进程运行**——在活体 `game.step()` 回调内再跑一个引擎（`ForkBridge(workers=0)`）会撞引擎 JS 运行时（"step() returned a promise still pending" + cffi 句柄 GC 崩溃），故 `run_search_match` 显式拒绝 `workers==0`。跨进程按**位置选项索引**重放已验证（新进程 fork 边界快照 + 前缀复现活体终局逐字节相等，`tests/test_fork_bridge.py`）。搜索策略保证**基座策略的选项恒为候选之一**（基座每决策恰好调用一次，RNG 前进与纯基座一致），`top_k`/`search_every`/`max_searches` 控制预算；评测脚本 `scripts/run_search_agent.py`（配对种子 search vs expert 消融、流式落盘、指纹护栏、断点续跑）。`train/resolver.py` 由"未实现"改为指向该 resolver |
 
 ---
 
@@ -190,7 +191,7 @@ L0–L4 已完成（§0.1）。算力解锁前在本地继续推进，均为可�
 | L5.1 | 对手池全矩阵底座：20×20×50 局双向（约 49 核·时，隔夜） | M0/M2 底座 | 胜率矩阵 + Elo + Wilson CI 落盘，含 `engine.lock` 元数据（D4） |
 | L5.2 | LLM 小样本胜率矩阵（纯策略 vs LLM 辅助分开报分，§6.3） | L3 独立研究产出 | 对池内全部对手出报表；干预全量记录；先 5 对手×10 局冒烟再放量。**◐ 2026-10-09：全池矩阵 runner `scripts/run_llm_matrix.py` 已交付（流式落盘+断点续跑+spec 指纹护栏，纯策略/LLM 分开聚合，降级比赛单列+连续失败中止），3×3 冒烟跑通（整体 0.722→0.778，54 调用 0 失败）；放量到全 20 套为单命令隔夜任务** |
 | L5.3 | CVPN 学习曲线放大（数千~数万样本） | L4→M3 | 训练/验证损失与一致率曲线，确认网络规模-数据量关系。**◐ 2026-10-09：`train/learning_curve.py` 已交付（数据量×网络规模网格、每点全新网络、**固定验证留出集**使点间可比、json/csv 落盘），1465 样本扫 128/256/512/1024 × d_model 64/128：val_loss 单调下降（64 维 2.11→1.11）、val_acc 单调上升（0.50→0.66）；全量放大待 GPU（M3）** |
-| L5.4 | **S1 引擎桥**（D12/D13）：中局快照/克隆/分支 | M3 前置 | 分支续跑确定性测试过；Python 侧以 JSON-lines 子进程接入。**✅ 2026-10-09：实测钉死可行性（I9/I10）——`canResume:true` 边界快照即精确分叉（13/13），无需重写 pybinding/TS server/引擎手术；S1 缩减为薄 fork 桥（`fork_game` 补游戏级 attrs + 子进程暴露）；replay-branch MC teacher 已交付** |
+| L5.4 | **S1 引擎桥**（D12/D13）：中局快照/克隆/分支 | M3 前置 | 分支续跑确定性测试过；Python 侧以 JSON-lines 子进程接入。**✅ 2026-10-09：实测钉死可行性（I9/I10）——`canResume:true` 边界快照即精确分叉（13/13），无需重写 pybinding/TS server/引擎手术；子进程 fork 桥（`envs/fork_bridge.py`/`fork_worker.py`）与实用版 fork 搜索 resolver（`envs/fork_search.py` + `scripts/run_search_agent.py`）已交付，跨进程重放逐字节复现活体终局（I11）** |
 | L5.5 | （可选）评测池扩容：补齐对手至 22 套（另找 deck share code） | D11 | 新卡组入池并出对位报表，不阻塞任何验收 |
 
 **L5 进度（2026-10-08）**：
@@ -207,15 +208,21 @@ L0–L4 已完成（§0.1）。算力解锁前在本地继续推进，均为可�
   **2026-10-09 续**：全池矩阵 runner `scripts/run_llm_matrix.py` 交付（纯策略/LLM 分开聚合、逐局流式落盘、
   按 `task_index` 断点续跑 + spec 指纹护栏、逐干预明细只在原始流）；3×3 冒烟跑通（整体纯 0.722 / LLM 0.778，
   54 调用 0 失败，改动作 45/54）。放量到全 20 套为单命令隔夜任务（`--seeds 10`）。
-- **L5.4 ✅ 引擎桥可行性钉死（2026-10-09，I9→I10/D13 修正）**：中局快照行为系统实测——往返无损、可续跑、
+- **L5.4 ✅ 引擎桥可行性钉死 + 薄 fork 桥落地（2026-10-09，I9→I10/I11，D13）**：中局快照行为系统实测——往返无损、可续跑、
   克隆确定，且**边界快照即精确分叉**：record-replay 对照实验（`scripts/probe_boundary_fork.py`）
   13/13 个 `canResume:true` 边界快照逐字节复现活体终局，`canResume:false` phase 内部点 0/3
-  （I9 早期否定结论源于探针混淆，见 I10）。**结论：不需要重写 pybinding/TS server/引擎手术**；
-  S1 缩减为薄 fork 桥（`envs/snapshot.fork_game` 已支持游戏级 attrs 镜像，子进程暴露给搜索即完备）。
-  同时已交付 **replay-branch MC teacher**（`train/replay_branch.py`：重放+注入+rollout 求动作价值，
-  `evaluate_decision` 对整决策候选做 MC）作批量离线 teacher 与对照；验收测试
-  `tests/test_engine_bridge.py`（新增「边界快照分叉复现活体终局」）。剩余可选项：JS 侧批量
-  fork/rollout 吞吐优化（归入 batched_inference，非前置）。
+  （I9 早期否定结论源于探针混淆，见 I10）。**结论：不需要重写 pybinding/TS server/引擎手术**。
+  已交付：**子进程 fork 桥**（`envs/fork_bridge.py` + `envs/fork_worker.py`，JSON-lines，
+  `run_fork_task` 进程内参考实现 + `ForkBridge` 子进程池；跨进程按位置选项索引重放逐字节复现
+  活体终局，`tests/test_fork_bridge.py`）；**实用版 continual-resolving 搜索**
+  （`envs/fork_search.py`：`ForkSearchPolicy` 在最近 `is_resumable()` 边界 fork+注入候选+rollout，
+  基座选项恒为候选之一、basal RNG 不漂移；`run_search_match` 驱动整局；`top_k`/`search_every`/
+  `max_searches`/`rollouts` 控预算）；**评测脚本** `scripts/run_search_agent.py`（配对种子
+  search vs expert 消融、流式落盘 + 指纹护栏 + 断点续跑）。**关键约束（I11）**：fork 必须跑在
+  子进程——活体回调内嵌套引擎会崩（`run_search_match` 拒绝 `workers==0`）。
+  replay-branch MC teacher（`train/replay_branch.py`）保留为批量离线 teacher 与对照。
+  剩余可选项：JS 侧批量 fork/rollout 吞吐优化（归 `batched_inference`，非前置）；真实网络
+  （CVPN）接入搜索（M3，算力解锁后）。
 - **L5.3 ◐ CVPN 学习曲线**：`train/learning_curve.py` 交付——采集一份样本池后**先固定验证留出集**，
   再对每个 (网络规模 `d_model`, 训练样本量) 组合在同一留出集上训练全新网络，记录 train/val 损失与一致率
   （json/csv 落盘，不含 checkpoint）。1465 样本（留出 20%）扫 128/256/512/1024 × d_model 64/128：
@@ -326,11 +333,15 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
 3. **L5.3 CVPN 学习曲线放大**（数千~数万样本）——**◐ 2026-10-09 扫描器交付**
    （`train/learning_curve.py`，数据量×网络规模网格、**固定验证留出集**；1465 样本验证 val_loss
    随数据单调下降、val_acc 单调上升）；剩余：在 GPU 算力上放大到数万样本（并入 M3）；
-4. ~~**L5.4 S1 引擎桥**~~（✅ 2026-10-09 完成，I9/I10/D13）：快照/分叉可行性彻底钉死——
-   `canResume:true` 边界快照即精确分叉（record-replay 13/13），**无需重写 pybinding/TS server/引擎手术**；
-   已交付 replay-branch MC teacher（`train/replay_branch.py`）+ 快照工具（`envs/snapshot.fork_game`
-   含游戏级 attrs 镜像）+ 探针与确定性测试（`scripts/probe_boundary_fork.py`、`tests/test_engine_bridge.py`）。
-   **剩余（非前置）**：薄 fork 桥的子进程接入（搜索在线用）、JS 侧批量 fork/rollout 吞吐优化（batched_inference 范畴）；
+4. ~~**L5.4 S1 引擎桥**~~（✅ 2026-10-09 完成，I9/I10/I11/D13）：快照/分叉可行性彻底钉死——
+   `canResume:true` 边界快照即精确分叉（record-replay 13/13），**无需重写 pybinding/TS server/引擎手术**。
+   已交付：子进程 fork 桥（`envs/fork_bridge.py` + `envs/fork_worker.py`）、快照工具
+   （`envs/snapshot.fork_game` 含游戏级 attrs 镜像）、实用版 fork 搜索 resolver
+   （`envs/fork_search.py`）、评测脚本（`scripts/run_search_agent.py`）、replay-branch MC teacher
+   （`train/replay_branch.py`）+ 探针与确定性测试（`scripts/probe_boundary_fork.py`、
+   `tests/test_engine_bridge.py`、`tests/test_fork_bridge.py`）。关键约束：fork 必须在子进程跑（I11）。
+   **剩余（非前置，M3）**：JS 侧批量 fork/rollout 吞吐优化（batched_inference 范畴）；
+   CVPN 网络接入搜索（算力解锁后）；
 5. **L5.5**（可选）评测池扩容补对手（D11）；
 6. 并行调研项（M3 输入）不变：读 `docs/SOG_GT_CFR_CONTINUAL_RESOLVING_CHARTER.md` + `continual_resolving.py`，产出"实用 resolver → GT-CFR"差距清单；算力解锁后回 M3 全量训练。
 

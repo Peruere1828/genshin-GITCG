@@ -21,5 +21,6 @@
 - `test_llm_matrix.py`（L5.2）：LLM 矩阵任务网格确定性、纯策略/LLM 行结构、干预与用量记录（mock 客户端，无网络）、
   客户端失败标 `degraded` + 连续失败中止、聚合报分/delta/`llm_quality`、流式续跑跳过已完成 + spec 指纹护栏 + 撕裂行容错。
 - `test_learning_curve.py`（L5.3）：曲线数据量过滤/去重/排序、固定验证留出集（各点同 holdout）、微型端到端扫描、`--eval-opponents` 缺 `--eval-seeds` 报错。
+- `test_fork_bridge.py`（L5.4）：fork 桥单元（位置重放 / 注入 / 前缀-rollout 策略、`ForkTask` JSON 往返、候选选取、搜索策略选优/平局取基座/预算开关）；慢测——纯重放 fork 进程内与**子进程桥**均逐字节复现活体终局、`run_search_match` 冒烟、在线搜索拒绝 `workers==0`。
 
 依赖：需要资产缓存（`data/assets/`）；首次运行会联网拉取，CI 可预置缓存并设 `GITCG_ASSETS_OFFLINE=1`。

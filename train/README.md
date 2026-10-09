@@ -43,6 +43,19 @@ cvpn_training + sog_pipeline（搜索蒸馏外环 + 门禁）、batched_inferenc
 无需重写 pybinding/TS server/引擎手术（D13）。吞吐瓶颈不在 fork，在 rollout 本身（秒级/局）与
 Python 回调开销；需要时再做 JS 侧批量 fork/rollout（归 `batched_inference`）。
 
+### 薄 fork 桥 + 实用搜索 resolver（已实现，L5.4，2026-10-09，I11）
+
+- `envs/fork_bridge.py` + `envs/fork_worker.py`：**子进程 fork 桥**（JSON-lines，沿用 `envs.rollout` 形态）。
+  `ForkTask` 描述一次「边界快照 + 双方前缀（位置选项索引）+ 注入候选 + rollout」；`run_fork_task` 是进程内
+  参考实现，`ForkBridge` 是子进程池（`evaluate` 批量并行）。**fork 必须在子进程**：在活体 `game.step()`
+  回调内再跑引擎会撞 JS 运行时崩溃，故在线搜索不支持 `workers==0`。
+- `envs/fork_search.py`：**实用版 continual-resolving**——`ForkSearchPolicy` 在最近 `is_resumable()`
+  边界快照 fork + 注入候选 + rollout 求均值；驱动 `run_search_match` 每步前记录边界与双方前缀。
+  基座策略每决策恰好调用一次且其选项恒为候选之一（RNG 不漂移，搜索不会忽略专家动作）；
+  `rollouts`/`top_k`/`search_every`/`max_searches` 控预算；每次决策落 `SearchDecision`（喂教练/蒸馏）。
+- 跨进程按**位置选项索引**重放已验证：新进程 fork 边界快照 + 前缀**逐字节复现活体终局**
+  （`tests/test_fork_bridge.py`）。`scripts/run_search_agent.py` 做配对种子 search vs expert 消融评测。
+
 ### replay-branch MC teacher（已实现，批量离线/兜底）
 
 `train/replay_branch.py`：整局对 `(卡组, 引擎种子, 动作序列)` 确定，所以任意决策点都能
@@ -61,7 +74,8 @@ Python 回调开销；需要时再做 JS 侧批量 fork/rollout（归 `batched_i
 
 CVPN 放大（bf16/transformer）、`batched_inference`（按作业拉起，无常驻服务）、
 搜索-蒸馏外环（候选 checkpoint 门禁：单测+泄漏+冒烟+评测不劣于）。
-分叉能力已解锁（D13/I10）；剩余非前置项：薄 fork 桥子进程接入、JS 侧批量 fork/rollout 吞吐优化。
+分叉能力已解锁（D13/I10）且薄 fork 桥 + 实用搜索 resolver 已交付（I11）；
+剩余非前置项：JS 侧批量 fork/rollout 吞吐优化、CVPN 网络接入搜索（M3，算力解锁后）。
 
 L5.3（学习曲线扫描）已交付 `train/learning_curve.py`，端到端跑通；本地只做千/万级样本的
 正确性与规模-数据关系验证，全量放大仍待 GPU 算力（M3）。

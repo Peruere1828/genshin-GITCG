@@ -35,3 +35,6 @@ jobs:
             tests/test_llm.py \
             tests/test_stats.py \
             tests/test_ladder.py
+      - name: Fork bridge unit tests (fast; engine tests are slow-gated)
+        run: |
+          GITCG_ASSETS_OFFLINE=1 python -m pytest -q tests/test_fork_bridge.py -m "not slow"

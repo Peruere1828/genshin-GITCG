@@ -1,20 +1,26 @@
-"""Resolver / search teacher (PLAN.md WS3) -- scaffold + engine-bridge note.
+"""Resolver / search teacher (PLAN.md WS3).
 
-**Engine bridge (verified 2026-10-09 on gitcg 0.21.0, PLAN D13/I10):** snapshots
-taken at ``canResume:true`` boundary pauses (``Game.is_resumable()``) are exact
-forks -- resume plus the same decisions reproduces the live terminal
-byte-for-byte. Two rules: only snapshot at boundary pauses (``canResume:false``
-mid-phase pauses replay phase-internal work and are not fork-safe), and mirror
-game-level attrs on the fork (``envs/snapshot.fork_game(game_attrs=...)``). See
-``envs/snapshot.py`` (``FORK_LIMITATION``) and ``scripts/probe_boundary_fork.py``.
+**Practical fork search (delivered 2026-10-09, L5.4/D13/I10):** the fork-based
+resolver now exists as ``envs.fork_search.ForkSearchPolicy``: at a decision it
+forks the latest ``is_resumable()`` boundary snapshot (``envs.fork_bridge``,
+subprocess pool), injects each candidate, rolls out, and averages outcomes. The
+base policy is always one of the evaluated candidates, so a search never ignores
+the expert action. ``run_search_match`` drives a full game with it.
 
-Consequence for M3: continual resolving forks the live game directly (O(1) fork +
-injected candidate + rollout). For bulk offline labeling there is also
-``train/replay_branch.py`` (replay to the decision point, inject, rollout -> MC
-action value) at O(depth) per branch.
+**Engine bridge (verified 2026-10-09 on gitcg 0.21.0):** snapshots taken at
+``canResume:true`` boundary pauses (``Game.is_resumable()``) are exact forks --
+resume plus the same decisions reproduces the live terminal byte-for-byte. Two
+rules: only snapshot at boundary pauses (``canResume:false`` mid-phase pauses
+replay phase-internal work and are not fork-safe), and mirror game-level attrs on
+the fork (``envs/snapshot.fork_game(game_attrs=...)``); the driver and bridge
+handle both. See ``scripts/probe_boundary_fork.py``.
+
+For bulk offline labeling there is also ``train/replay_branch.py`` (replay to the
+decision point, inject, rollout -> MC action value) at O(depth) per branch; the
+fork bridge is the O(1) online counterpart.
 
 ``PriorResolver`` (no search, greedy network prior) stays usable for cold start
-and self-distillation; the real resolver replaces it behind the same interface.
+and self-distillation; the fork resolver is the real search behind the same idea.
 """
 
 from __future__ import annotations
@@ -24,12 +30,12 @@ from typing import Any
 
 from reps.action_adapter import BuiltDecisionContext
 
-SEARCH_BLOCKED_REASON = (
-    "The fork-based search resolver is not implemented yet (PriorResolver is the "
-    "no-search placeholder). Forking itself is available and exact: snapshot at "
-    "canResume:true boundary pauses and fork via envs/snapshot.fork_game"
-    "(game_attrs=...) (PLAN D13/I10). Use train.replay_branch (replay-branch MC) "
-    "for offline teacher labeling."
+SEARCH_UNAVAILABLE_REASON = (
+    "No fork bridge was provided. Fork search is available: use "
+    "envs.fork_search.run_search_match / ForkSearchPolicy with a subprocess "
+    "envs.fork_bridge.ForkBridge(workers>=1). Forking must run in a subprocess "
+    "(nesting two engines in one live callback corrupts the JS runtime). Use "
+    "train.replay_branch for offline teacher labeling."
 )
 
 
@@ -76,5 +82,8 @@ class PriorResolver:
         return codes[max(range(len(codes)), key=lambda i: probs[i])]
 
 
-def require_search_available() -> None:
-    raise SearchUnavailable(SEARCH_BLOCKED_REASON)
+def require_search_available(bridge: Any | None = None) -> None:
+    """Raise unless a subprocess fork bridge is available for online search."""
+    if bridge is not None and getattr(bridge, "workers", 0) != 0:
+        return
+    raise SearchUnavailable(SEARCH_UNAVAILABLE_REASON)

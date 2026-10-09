@@ -7,10 +7,11 @@
 - WS0/WS1 + 本地先行 L0–L4 已有可运行代码（2026-10-07–09，明细见 git log）：
   - `reps/`：从 `refs/Rebel_base_RL/.../gitcg_world_model` 逐模块移植的表示层（schema/snapshot/action_hierarchy/action_adapter/public_state/semantic_priors/agents/replay + 对应 toml），导入路径 `reps.*`；来源与许可见 `NOTICE.md`。
   - `agents/scripted/`：从 `gitcg_expert_system` 移植的 20 套脚本卡组规则，可跑完整对局。
-  - `envs/`：`PolicyPlayer`（`gitcg.Player` 五类请求 → `Policy` 抽象）+ `run_match` + expert/baseline policy + 牌组装配 + `rollout`（多进程）+ `snapshot`（快照/分叉工具）。
+  - `envs/`：`PolicyPlayer`（`gitcg.Player` 五类请求 → `Policy` 抽象）+ `run_match` + expert/baseline policy + 牌组装配 + `rollout`（多进程）+ `snapshot`（快照/分叉工具）+ `fork_bridge`/`fork_worker`（L5.4 子进程 fork 桥，JSON-lines）+ `fork_search`（实用版 continual-resolving：`ForkSearchPolicy` + `run_search_match`）。
   - `eval/`：`opponents`（20 脚本 + 基线池）+ `arena`（矩阵 + Wilson CI + Elo + 流式落盘/断点续跑）+ `ladder` + `stats`。
   - `common/llm.py`：OpenAI 兼容 LLM 客户端（仅标准库），降级链 local→API→纯策略；`agents/llm_assist.py`（局内辅助）、`coach/replay.py`（复盘教练）、`decklab/sensitivity.py`（换卡敏感性）。
   - `scripts/run_llm_matrix.py`：L5.2 全对手池「纯策略 vs LLM 辅助」矩阵（分开报分，逐局流式落盘+断点续跑+spec 指纹护栏）。
+  - `scripts/run_search_agent.py`：L5.4 fork 搜索 resolver 对池评测（配对种子 search vs expert 消融，流式落盘+指纹护栏+断点续跑）。
   - `train/`：CVPN + 采集/训练/评测管线 + `replay_branch.py`（replay-branch MC teacher）+ `learning_curve.py`（L5.3 数据量×网络规模扫描）+ `resolver.py`；`agents/neural.py` 接回 env。
   - `tests/`：信息泄漏、adapter 覆盖、重放一致、引擎桥/分叉、arena、LLM、train 全绿（`python -m pytest`；`-m "not slow"` 跳慢测）。
   - 实测基线见 `reports/LOCAL_BASELINE.md`（单核 ~819 局/h；12 核并行 ~4,900 局/h）。
@@ -41,7 +42,7 @@
 - 长任务结果流式落盘 + 按 `task_index` 断点续跑（arena 已实现）；长作业挂 tmux/setsid 跑。
 - 对局确定性：`envs/match.py` 在 Python 侧按种子预洗牌并传 `NO_SHUFFLE=1`；每局开始调用 `reset_default_hierarchical_action_codebook()`。
 - 训练标签/embedding 用语义 key（`low_level_semantic_key_for_code`），不用裸 `action_code`（仅单局内稳定）。
-- 搜索分叉：只在 `Game.is_resumable()` 边界点取快照，fork 用 `envs/snapshot.fork_game(game_attrs=...)` 补游戏级 attrs；批量 teacher 用 `train/replay_branch.py`。
+- 搜索分叉：只在 `Game.is_resumable()` 边界点取快照，fork 用 `envs/snapshot.fork_game(game_attrs=...)` 补游戏级 attrs；批量 teacher 用 `train/replay_branch.py`。**在线搜索用 `envs/fork_bridge.py`（fork 必须在子进程，`workers>=1`）**：活体回调内嵌套引擎会崩，`run_search_match` 拒 `workers==0`。
 - 局内 LLM 辅助用 `deepseek-chat`；深度复盘用推理模型 + 大 max_tokens。
 - 评测池口径以 `eval.opponents` 注册为准（当前 20 套，PLAN D11）。
 - `reports/` 只提交聚合摘要；逐事件/逐干预明细放 `data/` 或走 gitignore。
