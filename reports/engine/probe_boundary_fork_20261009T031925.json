@@ -1,0 +1,96 @@
+{
+  "deck": "superconduct_aggro",
+  "opponent": "natlan_battleship",
+  "seed": 3,
+  "steps": 79,
+  "boundary_snapshots": 67,
+  "non_boundary_snapshots": 12,
+  "boundary_terminal_match": "1/9",
+  "boundary_request_match": "1/9",
+  "contrast_terminal_match": "0/2",
+  "details": [
+    {
+      "kind": "boundary",
+      "step": 1,
+      "terminal_matches": false,
+      "requests_match": false,
+      "error": null
+    },
+    {
+      "kind": "boundary",
+      "step": 11,
+      "terminal_matches": false,
+      "requests_match": false,
+      "error": null
+    },
+    {
+      "kind": "boundary",
+      "step": 20,
+      "terminal_matches": false,
+      "requests_match": false,
+      "error": null
+    },
+    {
+      "kind": "boundary",
+      "step": 28,
+      "terminal_matches": false,
+      "requests_match": false,
+      "error": null
+    },
+    {
+      "kind": "boundary",
+      "step": 37,
+      "terminal_matches": false,
+      "requests_match": false,
+      "error": null
+    },
+    {
+      "kind": "boundary",
+      "step": 46,
+      "terminal_matches": false,
+      "requests_match": false,
+      "error": null
+    },
+    {
+      "kind": "boundary",
+      "step": 55,
+      "terminal_matches": false,
+      "requests_match": false,
+      "error": null
+    },
+    {
+      "kind": "boundary",
+      "step": 65,
+      "terminal_matches": false,
+      "requests_match": false,
+      "error": null
+    },
+    {
+      "kind": "boundary",
+      "step": 77,
+      "terminal_matches": true,
+      "requests_match": true,
+      "error": null
+    },
+    {
+      "kind": "contrast",
+      "step": 4,
+      "terminal_matches": false,
+      "requests_match": false,
+      "error": null
+    },
+    {
+      "kind": "contrast",
+      "step": 7,
+      "terminal_matches": false,
+      "requests_match": false,
+      "error": null
+    }
+  ],
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-142-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}

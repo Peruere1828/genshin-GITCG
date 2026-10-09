@@ -14,24 +14,45 @@ cvpn_training + sog_pipeline（搜索蒸馏外环 + 门禁）、batched_inferenc
   CLI：`python -m train.pipeline --train-seeds 6 --eval-seeds 3` / `--overfit`。
   checkpoint 落 `data/checkpoints/`（gitignore），报告落 `reports/train/`。
 - `agents/neural.py`：`NeuralPolicy`——把训练好的 checkpoint 接回 `envs.Policy`，可与脚本专家同台评测/自博弈（纯策略模式）。
+- `replay_branch.py`：replay-branch MC teacher（D12 兜底，见下）——离线从任意决策点重放+注入候选+rollout 求动作价值。
 
 实测：`--overfit`（1 局采集、60 epoch）零报错完成，训练集一致率 ~0.74–0.88（多数类 ~0.3），说明网络可学。
 
-## ⚠️ 搜索（continual resolving）的引擎阻塞（M3 关键前置）
+## 搜索引擎：快照能载入，但不能"精确分叉"（L5.4 实测，2026-10-09）
 
-**gitcg 0.21.0 pybinding 无法克隆/恢复中局状态**：`State.toJson` 写 `canResume: false`
-（`packages/core/src/game.ts`、`cbinding/js/main.ts`），`State(json=...)`+`Game` 往返后
-`Game.is_resumable()==False`，对局无法续跑。搜索结果需要从同一状态分叉评估多个候选动作。
+对 `gitcg` 0.21.0 pybinding 的中局快照行为做了系统实测（证据：
+`scripts/probe_engine_snapshot.py`、`reports/engine/`；文档/常量见 `envs/snapshot.py`）。
+结论比早期记录更精确：
 
-因此 M3 的搜索必须先解决其一：
-1. 扩展 pybinding / 用 TS server 的 `canResume:true` 暂停路径，暴露可恢复快照；
-2. 在活对局的回调内做搜索（但无克隆仍不能分叉）；
-3. 用学到的模型做 rollout（研究项）。
+- ✅ **往返无损**：`State(json=snap).json() == snap` 逐字节相等（RNG/id 迭代器、整张实体图都在）。
+- ✅ **能载入续跑**：`Game(state=State(json=snap))` + `start()/step()` 能跑到 `FINISHED`，不报错。
+- ✅ **克隆确定**：同一快照两次续跑（同策略）逐字节一致。
+- ❌ **不是活体决策点的忠实分叉**：续跑从 `state.phase` 重新进入 phase 循环，而引擎的暂停点在
+  phase 内部也有（`initHands` 抽牌后、`skill_executor` 加充能后、`gotWinner`），序列化的
+  `GameState` 不含被挂起的 async continuation，于是续跑会重放一段 phase。`canResume`
+  （TS server 日志 / `Game.is_resumable()`）**并不能可靠标记可重放边界**：126 步的探针对局里，
+  除最后 2 个快照外全部与活体轨迹分叉。
 
-在此之前，蒸馏的 teacher 只能是**非搜索**策略：脚本专家（BC，已实现）或网络自身先验（自蒸馏）。
-`resolver.py` 提供 `PriorResolver`（先验分布/贪心）与 `SEARCH_BLOCKED_REASON`，真 resolver 落地时替换。
+因此 continual resolving **不能**通过 pybinding 分叉活体对局。TS server 也不从 JSON 恢复
+对局（它始终持有活体 JS 对象，`stateLog` 只用于回放/观战）。真活体分叉需要一个
+以非 async-continuation 契约序列化的新引擎桥（D12 主路线，未完成）。
+
+### D12 兜底：replay-branch MC teacher（已实现）
+
+`train/replay_branch.py`：整局对 `(卡组, 引擎种子, 动作序列)` 确定，所以任意决策点都能
+**从初始态重放到达**，在那里注入候选动作、再用 rollout 策略打完一局。对 rollout 种子求均值
+即为蒙特卡洛动作价值估计，可直接作 M3 的搜索蒸馏 target。
+
+- 代价 `(1 + 候选数 × rollouts)` 局/决策 → **离线** teacher，非局内搜索。
+- 选择以**选项位置索引**记录（非裸 low-level code），规避进程全局 codebook 漂移。
+- 关键确定性：注入动作 = base 自身选择且 rollout = base 时，逐局复现 base（L5.4 分支续跑确定性验收，
+  `tests/test_engine_bridge.py` 断言）。同注入两次逐字节一致。
+- `evaluate_decision(...)` 对某决策的全部候选做 MC；`aggregate_option_values(...)` 汇总。
+- `resolver.py` 的 `PriorResolver`（先验/贪心，非搜索）仍保留作冷启动；真 resolver 落地时替换接口。
 
 ## 待办（算力解锁后）
 
 CVPN 放大（bf16/transformer）、`batched_inference`（按作业拉起，无常驻服务）、真搜索 teacher、
 搜索-蒸馏外环（候选 checkpoint 门禁：单测+泄漏+冒烟+评测不劣于）。
+真活体分叉的引擎桥（D12 主路线）仍欠：需要以非 async-continuation 契约序列化的 TS server 快照；
+在此之前 replay-branch MC（`replay_branch.py`）即 teacher。

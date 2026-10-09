@@ -75,5 +75,15 @@ python -m pytest -q -m "not slow"   # 快速；去掉 -m 跑全量（含慢测�
 
 对手池强度分层清晰（0.175–0.831），作为 M2/M4 门禁的固定底座合适。
 
-**注意**：搜索（continual resolving）被引擎阻塞——pybinding 不能克隆/恢复中局状态
-（`canResume:false`），无法分叉评估候选动作。M3 前需先暴露可恢复快照。详见 `train/README.md`。
+**注意（2026-10-09 修正）**：搜索（continual resolving）不能靠 pybinding 分叉——快照 JSON 往返无损、
+可载入续跑、克隆确定，但**不是活体决策点的忠实分叉**（续跑重放 phase；`canResume` 不可靠）。
+证据 `reports/engine/probe_snapshot_*.json`（9/9 往返、9/9 克隆、1/9 复现活体轨迹）。已落 D12 兜底
+replay-branch MC teacher（`train/replay_branch.py`）；真活体分叉桥（TS server）仍待做。详见
+`train/README.md`、PLAN §0.1 I9。
+
+## L5.4 引擎桥实测 + replay-branch teacher（2026-10-09）
+
+- 无 `njugit` 依赖，纯本地；证据与命令见 `scripts/probe_engine_snapshot.py`（`--all` 可扫全部快照）。
+- `envs/snapshot.py`：`capture_snapshot` / `fork_game` / `snapshot_roundtrip_is_faithful` + `FORK_LIMITATION`。
+- `train/replay_branch.py`：`capture_trajectory` / `replay_branch` / `evaluate_decision` / `aggregate_option_values`。
+- 验收：`python -m pytest tests/test_engine_bridge.py -q`（含「注入=base 选择时逐局复现 base」分支确定性）。

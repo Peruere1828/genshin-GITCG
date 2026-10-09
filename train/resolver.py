@@ -1,24 +1,21 @@
-"""Resolver / search teacher (PLAN.md WS3) -- scaffold + engine-limitation note.
+"""Resolver / search teacher (PLAN.md WS3) -- scaffold + engine-bridge note.
 
-**Blocker (verified 2026-10-07 on gitcg 0.21.0):** branching search (continual
-resolving needs to evaluate multiple candidate actions from the same state)
-requires cloning a mid-game state. The pybinding exports state via
-``State.toJson`` which serializes the log entry with ``canResume: false``
-(``packages/core/src/game.ts`` / ``cbinding/js/main.ts``), and a round-trip
-through ``State(json=...)`` + ``Game`` does **not** resume play
-(``Game.is_resumable() == False``). The TS server pause path does support
-``canResume: true``; the Python binding does not expose it.
+**Engine bridge (re-verified 2026-10-09 on gitcg 0.21.0):** the pybinding CAN
+snapshot a mid-game state, round-trip it faithfully, and resume it
+clone-deterministically -- but resume replays phase-internal work, so a snapshot
+is **not** an exact fork of a live decision point (pauses are not all phase
+boundaries; ``canResume`` does not reliably mark a replay-safe point). See
+``envs/snapshot.py`` (``FORK_LIMITATION``) and ``scripts/probe_engine_snapshot.py``.
 
-Consequences for M3:
-- A continual-resolving search must either (a) run fully inside a live game
-  callback using the *real* engine without cloning (not possible: search needs
-  branching), (b) get resumable snapshots exposed by extending the pybinding /
-  using the TS server, or (c) use a learned model for rollouts (research).
+Consequence for M3: continual resolving cannot fork the live game through the
+pybinding. The D12 fallback, ``train/replay_branch.py``, is the supported
+search teacher today: it *replays* to any decision point (the full game is
+deterministic), injects a candidate action, and finishes with a rollout policy,
+giving a Monte-Carlo action value. A true live-fork bridge (TS server, non-async
+serialization contract) remains future work.
 
-Until then, the "teacher" for distillation is a non-search policy: the scripted
-expert (behavior cloning, implemented in ``train/pipeline.py``) or the current
-network's own prior (self-distillation). This module provides the interface the
-real resolver will implement, plus a prior-based resolver usable today.
+``PriorResolver`` (no search, greedy network prior) stays usable for cold start
+and self-distillation; the real resolver replaces it behind the same interface.
 """
 
 from __future__ import annotations
@@ -29,9 +26,10 @@ from typing import Any
 from reps.action_adapter import BuiltDecisionContext
 
 SEARCH_BLOCKED_REASON = (
-    "gitcg 0.21.0 pybinding cannot clone/resume mid-game state "
-    "(State.toJson writes canResume:false; Game.is_resumable()==False), so "
-    "branching search over candidate actions is unsupported. See train/README.md."
+    "gitcg 0.21.0 pybinding snapshots round-trip faithfully but resume replays "
+    "phase-internal work, so a snapshot is not an exact fork of a live decision "
+    "point. Use train.replay_branch (D12 replay-branch MC) as the teacher. See "
+    "envs/snapshot.py / train/README.md."
 )
 
 

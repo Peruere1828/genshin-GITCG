@@ -1,0 +1,83 @@
+{
+  "deck": "superconduct_aggro",
+  "opponent": "natlan_battleship",
+  "seed": 3,
+  "steps": 79,
+  "live_winner": 0,
+  "snapshots_tested": 9,
+  "roundtrip_faithful": "9/9",
+  "clone_deterministic": "9/9",
+  "reproduces_live_terminal": "1/9",
+  "limitation": "gitcg 0.21.0 pybinding snapshots round-trip faithfully and resumed branches are clone-deterministic, but resume replays phase-internal work (pauses are not all phase boundaries) so a snapshot is NOT an exact fork of a live decision point. Use train.replay_branch instead. See envs/snapshot.py.",
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-142-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  },
+  "details": [
+    {
+      "step": 1,
+      "can_resume_flag": true,
+      "roundtrip_faithful": true,
+      "clone_deterministic": true,
+      "reproduces_live_terminal": false
+    },
+    {
+      "step": 10,
+      "can_resume_flag": true,
+      "roundtrip_faithful": true,
+      "clone_deterministic": true,
+      "reproduces_live_terminal": false
+    },
+    {
+      "step": 19,
+      "can_resume_flag": true,
+      "roundtrip_faithful": true,
+      "clone_deterministic": true,
+      "reproduces_live_terminal": false
+    },
+    {
+      "step": 28,
+      "can_resume_flag": true,
+      "roundtrip_faithful": true,
+      "clone_deterministic": true,
+      "reproduces_live_terminal": false
+    },
+    {
+      "step": 37,
+      "can_resume_flag": true,
+      "roundtrip_faithful": true,
+      "clone_deterministic": true,
+      "reproduces_live_terminal": false
+    },
+    {
+      "step": 46,
+      "can_resume_flag": true,
+      "roundtrip_faithful": true,
+      "clone_deterministic": true,
+      "reproduces_live_terminal": false
+    },
+    {
+      "step": 55,
+      "can_resume_flag": true,
+      "roundtrip_faithful": true,
+      "clone_deterministic": true,
+      "reproduces_live_terminal": false
+    },
+    {
+      "step": 64,
+      "can_resume_flag": false,
+      "roundtrip_faithful": true,
+      "clone_deterministic": true,
+      "reproduces_live_terminal": false
+    },
+    {
+      "step": 79,
+      "can_resume_flag": false,
+      "roundtrip_faithful": true,
+      "clone_deterministic": true,
+      "reproduces_live_terminal": true
+    }
+  ]
+}

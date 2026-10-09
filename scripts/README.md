@@ -11,5 +11,15 @@
   python -m scripts.run_llm_agent --seeds 3 --no-llm            # 纯策略
   ```
   网络不可用/无 key 时自动退化为纯策略（不报错）。
+- `probe_engine_snapshot.py`（L5.4）：实测 pybinding 中局快照行为（往返无损 / 克隆确定 / 活体复现率），
+  产出 `reports/engine/probe_snapshot_*.json`。`--all` 扫全部快照。
+  ```bash
+  python -m scripts.probe_engine_snapshot --seed 3 --sample 8
+  ```
+- `run_replay_branch.py`（L5.4/D12）：对某决策做 replay-branch MC 动作价值估计，产出
+  `reports/train/replay_branch_*.json`。
+  ```bash
+  python -m scripts.run_replay_branch --seed 3 --rollouts 4 --top-k 4 --rollout-spec legal_random
+  ```
 
 待办：`run_iteration`（采集→训练→评测→落盘，断点续跑）。依赖 `train/` 落地。
