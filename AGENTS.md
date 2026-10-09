@@ -43,6 +43,7 @@
 - 集群数据平面（CPU 采集 → 存储 → GPU 训练）：`python -m train.collect`（可续跑、一行一局、manifest 指纹护栏）写 `data/replays/<tag>/`；训练/学习曲线用 `--replays <dir...>` 读盘。LSF 模板见 `scripts/cluster/lsf/`，海量作业用 `collect_array.lsf`（每数组元素独立分片目录）。
 - 对局确定性：`envs/match.py` 在 Python 侧按种子预洗牌并传 `NO_SHUFFLE=1`；每局开始调用 `reset_default_hierarchical_action_codebook()`。
 - 训练标签/embedding 用语义 key（`low_level_semantic_key_for_code`），不用裸 `action_code`（仅单局内稳定）。
+- policy spec 统一走 `envs.policy.build_policy`：`expert:<slug>` / `neural:<ckpt>[#t=<temp>]` / `heuristic` / `legal_random` / `random`；checkpoint 自带 encoder 配置，多进程 rollout/采集可直接用训练网络。
 - 搜索分叉：只在 `Game.is_resumable()` 边界点取快照，fork 用 `envs/snapshot.fork_game(game_attrs=...)` 补游戏级 attrs；批量 teacher 用 `train/replay_branch.py`。**在线搜索用 `envs/fork_bridge.py`（fork 必须在子进程，`workers>=1`）**：活体回调内嵌套引擎会崩，`run_search_match` 拒 `workers==0`。
 - 局内 LLM 辅助用 `deepseek-chat`；深度复盘用推理模型 + 大 max_tokens。
 - 评测池口径以 `eval.opponents` 注册为准（当前 20 套，PLAN D11）。

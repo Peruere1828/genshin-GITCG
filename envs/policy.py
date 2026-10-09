@@ -117,11 +117,37 @@ def expert_policy(slug: str, *, seed: int | None = None) -> ScriptedPolicy:
     return ScriptedPolicy(agent, name=f"expert:{slug}")
 
 
+def _neural_policy(spec: str, *, seed: int) -> Policy:
+    """Load a CVPN checkpoint as a greedy/sampled policy (``<path>[#t=<temp>]``)."""
+    path, _, suffix = spec.partition("#")
+    temperature = 0.0
+    if suffix.startswith("t="):
+        temperature = float(suffix[2:])
+    from agents.neural import load_neural_policy
+    from train.model import checkpoint_encoder_config
+
+    encoder_config = checkpoint_encoder_config(path)
+    if encoder_config is not None:
+        from reps.observation_encoder import TokenObservationEncoder
+
+        encoder = TokenObservationEncoder.from_dict(encoder_config)
+    else:
+        from envs.observation import default_encoder
+
+        encoder = default_encoder()
+    return load_neural_policy(path, encoder, temperature=temperature)
+
+
 def build_policy(spec: str, *, seed: int, role: str) -> Policy:
     """Build a policy from a serializable spec string (used by multiprocess rollout).
 
     ``seed``/``role`` are folded into the policy RNG seed so the same task always
     reproduces the same agents (M0 replay consistency).
+
+    Specs: ``expert:<slug>`` | ``neural:<checkpoint>[#t=<temp>]`` | ``heuristic``
+    | ``legal_random`` | ``random``. The ``neural`` spec loads the CVPN from a
+    checkpoint (with the encoder config saved beside it) so a trained checkpoint
+    can run through rollout / arena / collectors like any scripted opponent.
     """
     from common.seeding import derive_seed
 
@@ -129,6 +155,8 @@ def build_policy(spec: str, *, seed: int, role: str) -> Policy:
     if spec.startswith("expert:"):
         slug = spec.split(":", 1)[1]
         return expert_policy(slug, seed=derive_seed(seed, role, "expert", slug))
+    if spec.startswith("neural:"):
+        return _neural_policy(spec.split(":", 1)[1], seed=derive_seed(seed, role, "neural"))
     if spec == "heuristic":
         return heuristic_policy()
     if spec == "legal_random":

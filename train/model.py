@@ -70,8 +70,16 @@ class CVPN(nn.Module):
         return logits, value
 
     # -- persistence ------------------------------------------------------------
-    def save(self, path: str) -> None:
-        torch.save({"config": asdict(self.config), "state_dict": self.state_dict()}, path)
+    def save(self, path: str, encoder_config: dict | None = None) -> None:
+        """Persist weights + config, optionally the encoder config (for reload)."""
+        torch.save(
+            {
+                "config": asdict(self.config),
+                "state_dict": self.state_dict(),
+                "encoder_config": encoder_config,
+            },
+            path,
+        )
 
     @classmethod
     def load(cls, path: str) -> "CVPN":
@@ -80,6 +88,16 @@ class CVPN(nn.Module):
         model.load_state_dict(payload["state_dict"])
         model.eval()
         return model
+
+
+def checkpoint_encoder_config(path: str) -> dict | None:
+    """Return the encoder config stored in a checkpoint, or ``None`` if absent.
+
+    Training saves it so a checkpoint can be reloaded as a policy without also
+    knowing which encoder vocabulary produced its inputs (``neural:<path>`` spec).
+    """
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    return payload.get("encoder_config")
 
 
 def config_for_encoder(encoder, **overrides) -> CVPNConfig:

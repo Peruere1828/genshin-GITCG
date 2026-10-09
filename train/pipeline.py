@@ -124,7 +124,7 @@ def run_round(
     run_id = f"{stamp}_{tag}"
     ckpt_dir = ensure_dir(data_dir("checkpoints"))
     ckpt_path = ckpt_dir / f"{run_id}.pt"
-    model.save(str(ckpt_path))
+    model.save(str(ckpt_path), encoder_config=encoder.to_dict())
     (ckpt_dir / "latest.json").write_text(
         json.dumps({"checkpoint": str(ckpt_path), "deck": deck, "run_id": run_id}),
         encoding="utf-8",

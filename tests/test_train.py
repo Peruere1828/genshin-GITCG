@@ -79,3 +79,56 @@ def test_trained_network_plays_a_legal_game(collected):
     assert record.error is None
     assert record.io_errors0 == ()
     assert record.fallbacks0 == 0
+
+
+@pytest.mark.slow
+def test_neural_spec_runs_through_rollout_worker(collected, tmp_path):
+    """A ``neural:<ckpt>`` spec is usable by the multiprocess rollout (cluster eval)."""
+    from envs.rollout import MatchTask, run_tasks
+
+    encoder, _samples = collected
+    model = CVPN(config_for_encoder(encoder))
+    path = tmp_path / "ckpt.pt"
+    model.save(str(path), encoder_config=encoder.to_dict())
+
+    result = run_tasks(
+        [
+            MatchTask(
+                index=0,
+                deck0="superconduct_aggro",
+                deck1="natlan_battleship",
+                seed=7,
+                policy0=f"neural:{path}",
+                policy1="expert",
+            )
+        ],
+        workers=1,
+    )[0]
+    assert result["error"] is None
+    assert result["fallbacks0"] == 0 and result["fallbacks1"] == 0
+    assert result["io_errors0"] == []
+
+
+@pytest.mark.slow
+def test_neural_policy_spec_loads_checkpoint(collected, tmp_path):
+    """A checkpoint with a saved encoder config can be rebuilt from a spec string."""
+    from envs.policy import build_policy
+    from train.model import checkpoint_encoder_config
+
+    encoder, _samples = collected
+    model = CVPN(config_for_encoder(encoder))
+    path = tmp_path / "ckpt.pt"
+    model.save(str(path), encoder_config=encoder.to_dict())
+    assert checkpoint_encoder_config(str(path)) == encoder.to_dict()
+
+    policy = build_policy(f"neural:{path}", seed=0, role="p0")
+    record = run_match(
+        deck_spec("superconduct_aggro"),
+        deck_spec("natlan_battleship"),
+        policy,
+        expert_policy("natlan_battleship", seed=1),
+        seed=7,
+    )
+    assert record.error is None
+    assert record.io_errors0 == ()
+    assert record.fallbacks0 == 0

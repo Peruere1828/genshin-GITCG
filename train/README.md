@@ -16,6 +16,8 @@ cvpn_training + sog_pipeline（搜索蒸馏外环 + 门禁）、batched_inferenc
 - `collect.py` + `collect_worker.py`（L5.6 集群数据平面）：可续跑分片采集（`python -m train.collect`），
   一行一局、manifest 指纹护栏 + engine.lock、逐局流式落盘；`--replays` 供 `pipeline`/`learning_curve` 读盘。
 - `agents/neural.py`：`NeuralPolicy`——把训练好的 checkpoint 接回 `envs.Policy`，可与脚本专家同台评测/自博弈（纯策略模式）。
+  checkpoint 保存时一并写入 encoder 配置，故 `envs.policy.build_policy("neural:<ckpt>")` 可在 rollout/arena/采集
+  等多进程路径中直接用训练好的网络（无需在调用处重建 encoder）。
 - `replay_branch.py`：replay-branch MC teacher（D12 兜底，见下）——离线从任意决策点重放+注入候选+rollout 求动作价值。
 - `learning_curve.py`（L5.3）：CVPN 学习曲线扫描——采集一份样本池后**先固定验证留出集**，再对每个
   (网络规模 `d_model`, 训练样本量) 组合在同一留出集上训练一个**全新**网络，记录 train/val 损失与一致率曲线
@@ -76,6 +78,9 @@ python -m train.pipeline --replays data/replays/coldstart --epochs 30 --tag clus
 
 LSF 模板：`scripts/cluster/lsf/collect.lsf`（单节点多 worker）、`collect_array.lsf`（海量数组作业，
 每元素独立分片目录）、`train_gpu.lsf`（`--replays` 训练）。
+
+`--teacher-spec`/`--opponent-spec` 支持任意 `build_policy` spec（含 `neural:<ckpt>`），
+故同一采集器可做脚本预热、网络自博弈、以及网络 vs 脚本 anchor 数据。
 
 ### replay-branch MC teacher（已实现，批量离线/兜底）
 
