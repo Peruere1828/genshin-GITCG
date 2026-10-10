@@ -28,6 +28,7 @@ class NeuralPolicy:
         import torch
 
         self._torch = torch
+        self.model.to(self.device)
         self.model.eval()
 
     def choose(self, built: BuiltDecisionContext) -> int:
@@ -40,6 +41,11 @@ class NeuralPolicy:
         if not observation.option_features:
             return codes[0]
         tokens, token_mask, options, option_mask = collate([observation])
+        device = next(self.model.parameters()).device
+        tokens = tokens.to(device)
+        token_mask = token_mask.to(device)
+        options = options.to(device)
+        option_mask = option_mask.to(device)
         with self._torch.no_grad():
             logits, value = self.model(tokens, token_mask, options, option_mask)
         self.last_value = float(value.item())

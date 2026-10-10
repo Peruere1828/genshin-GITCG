@@ -1,0 +1,10 @@
+deck0,deck1,games,wins0,wins1,draws,errors,rate0_wins,rate0_games,rate0_rate,rate0_ci_low,rate0_ci_high
+dual_mualani_stacks,dual_mualani_stacks,2,1,1,0,0,1.0,2,0.5,0.09452865480086614,0.9054713451991339
+dual_mualani_stacks,natlan_battleship,2,1,1,0,0,1.0,2,0.5,0.09452865480086614,0.9054713451991339
+dual_mualani_stacks,superconduct_aggro,2,1,0,1,0,1.5,2,0.75,0.19786250921045673,0.9733234672343529
+natlan_battleship,dual_mualani_stacks,2,1,1,0,0,1.0,2,0.5,0.09452865480086614,0.9054713451991339
+natlan_battleship,natlan_battleship,2,0,0,2,0,1.0,2,0.5,0.09452865480086614,0.9054713451991339
+natlan_battleship,superconduct_aggro,2,0,2,0,0,0.0,2,0.0,0.0,0.6576280471103807
+superconduct_aggro,dual_mualani_stacks,2,1,1,0,0,1.0,2,0.5,0.09452865480086614,0.9054713451991339
+superconduct_aggro,natlan_battleship,2,2,0,0,0,2.0,2,1.0,0.34237195288961925,1.0
+superconduct_aggro,superconduct_aggro,2,2,0,0,0,2.0,2,1.0,0.34237195288961925,1.0

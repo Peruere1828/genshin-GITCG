@@ -125,3 +125,33 @@ LLM：54 次调用、0 失败；干预改动作 45/54（83%）。样本极小、
 产物：`reports/train/learning_curve_<ts>.json/.csv`（含 `n_train_pool`/`n_val_holdout`）。复现：
 `python -m train.learning_curve --games 14 --sizes 128 256 512 1024 --d-models 64 128`。
 
+## WSL / MX550 设备对照（D14 小网络训练试验，2026-10-10）
+
+WSL 侧（4 核 / 8G / MX550 2G）装 **torch 2.6.0+cu124**（注意：PyPI 默认 `torch 2.14.1` 是 CUDA 13
+构建，WSL 驱动 560.94 只到 CUDA 12.6，装不上；cu124 档在 download.pytorch.org 有到 2.6.0）。
+`torch.cuda` 可用：MX550、cc 7.5、2.15 GB。实测（`scripts/bench_device.py`，同池 **615 样本**、
+d_model 64/128、15 epoch）：
+
+| 口径 | CPU | CUDA(MX550) | 加速 |
+|------|----:|------------:|-----:|
+| 端到端（含逐 batch collate） | 5.60s / 6.17s | 5.35s / 6.07s | **~1.02–1.05×** |
+| 预 collate 后纯训练（隔离 CPU 侧 collate） | 5.29s / 6.42s | 3.39s / 4.23s | **~1.52–1.56×** |
+
+train/val 指标两设备一致（val_loss、val_acc 逐位相同/近似），device 支持无回归。产物
+`reports/train/device_bench_<ts>.json`；复现 `python -m scripts.bench_device --games 6 --d-models 64 128`。
+
+**瓶颈诊断（为什么只有 1.5× 而非 10×）**：
+
+- 负载下 SM 能升到 1.4–1.8 GHz、100% util、~15 W，但**显存时钟被锁在 810 MHz**（最大 7001 MHz，P8 空闲态）。
+  按 810 MHz×2×64bit 算出的带宽 ~10 GB/s，正对上实测 **9–10 GB/s**（MX550 规格 ~96 GB/s）。根因是
+  **WSL/Windows 侧 GPU 电源管理**把显存压在最低档（Windows 电源计划已是「高性能」，问题在 NVIDIA
+  控制面板的 3D 电源管理模式）；WSL 内无 `sudo` 且本 GPU `-lmc` 不受支持，改不动。
+- 小矩阵下 **cuBLAS 选核病态**：n=256 时 0.108 TFLOPS，而自写 Triton 内核 0.388（**3.6×**）；
+  n≥512 时 cuBLAS 反而更快。即「重写算子」只对 n≤256 有意义，且上限受显存带宽压制。
+- 引擎对局/采集是纯 CPU，WSL 作为**并行采集/评测节点**价值明确。
+
+**结论（训练节点归属）**：本规模（d_model ≤ 128、1e3–1e4 样本）下 MX550 **无稳定训练优势**
+（端到端与 CPU 打平；预 collate 后 1.5×，被显存降频压制），故**训练默认仍放本机 CPU**；
+WSL 定位 = 并行采集/评测 + 「频控修好后的训练备选」。要用满 MX550 需在 **Windows 侧**把
+NVIDIA 控制面板 → 管理 3D 设置 → 电源管理模式设为「首选最大性能」，再复跑本对照。
+

@@ -28,6 +28,9 @@ class TrainConfig:
     val_fraction: float = 0.2
     weight_decay: float = 0.0
     log_every: int = 0
+    # Torch device the model/tensors are moved to (D14: WSL MX550 small-net
+    # experiments). Defaults to CPU so behaviour is unchanged where no GPU exists.
+    device: str = "cpu"
 
 
 @dataclass
@@ -66,13 +69,18 @@ def split_samples(
 
 
 def _batch_loss(model: CVPN, batch: Sequence[Sample], value_coef: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    device = next(model.parameters()).device
     tokens, token_mask, options, option_mask = collate([s.observation for s in batch])
+    tokens = tokens.to(device)
+    token_mask = token_mask.to(device)
+    options = options.to(device)
+    option_mask = option_mask.to(device)
     logits, value = model(tokens, token_mask, options, option_mask)
-    teacher = torch.tensor([s.teacher_index for s in batch], dtype=torch.long)
+    teacher = torch.tensor([s.teacher_index for s in batch], dtype=torch.long, device=device)
     # Guard: teacher index must be within the option count we actually encoded.
     teacher = teacher.clamp(min=0)
     ce = nn.functional.cross_entropy(logits, teacher)
-    targets = torch.tensor([s.value_target for s in batch], dtype=torch.float32)
+    targets = torch.tensor([s.value_target for s in batch], dtype=torch.float32, device=device)
     mse = nn.functional.mse_loss(value, targets)
     loss = ce + value_coef * mse
     with torch.no_grad():
@@ -114,6 +122,7 @@ def train_bc(
     config: TrainConfig,
 ) -> TrainMetrics:
     torch.manual_seed(config.seed)
+    model.to(config.device)
     train, val = split_samples(samples, val_fraction=config.val_fraction, seed=config.seed)
     optimizer = torch.optim.Adam(
         model.parameters(), lr=config.lr, weight_decay=config.weight_decay
