@@ -22,7 +22,7 @@
   - `refs/genius-invokation` — 引擎 + Python 绑定 `packages/pybinding`（即 `gitcg`）+ IO 协议 `docs/development/io.md`；
   - `refs/Rebel_base_RL` — SoG 蓝本 `gitcg_world_model/`、20 套脚本专家 `gitcg_expert_system/deck_rules/`、`agent_vs_agent.py` 示例；
   - `refs/AI` — DouZero 式 DMC 基线参考。
-- Git remote：`origin` = GitHub（`https://github.com/Peruere1828/genshin-GITCG.git`）；`njugit` = 南大 GitLab（`git@git.nju.edu.cn:Fmyh1828/genshin-GITCG.git`，SSH）。
+- Git remote：`origin` = GitHub（`git@github.com:Peruere1828/genshin-GITCG.git`，SSH，**主远程**：代码提交/分支都走这里）；`njugit` = 南大 GitLab（`git@git.nju.edu.cn:Fmyh1828/genshin-GITCG.git`，SSH，**仅镜像 origin 的 master**，供集群离线取代码；另有 `vendor` 分支存离线依赖 gitcg wheel + 资产缓存）。
 
 ## 环境
 

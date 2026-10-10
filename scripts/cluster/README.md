@@ -14,15 +14,15 @@
 - Python：集群**无 conda 频道访问**（`conda create` 拉不到包），复用已装 torch 的已有环境
   （默认 `$HOME/.conda/envs/fa_env`，Python 3.10 + torch 2.6.0）。代码已做 3.10 兼容
   （`tomllib` → `tomli` 回退）。
-- 集群**不通外网**：代码走 njugit；`gitcg` 预编译 wheel 与专家**资产缓存**走 njugit 的 `vendor` 分支。
+- 集群**不通外网**：代码走 njugit（master 镜像，同步 origin）；`gitcg` 预编译 wheel 与专家**资产缓存**走 njugit 的 `vendor` 分支。
 - 包镜像：`https://mirror.nju.edu.cn/pypi/web/simple`（内网可达，用于 cffi/protobuf/tomli 等）。
 
 ## 一次性准备（登录节点）
 
 ```bash
 cd ~
-git clone -b feat/cluster-prep git@git.nju.edu.cn:Fmyh1828/genshin-GITCG.git genshin-GITCG
-git clone -b vendor           git@git.nju.edu.cn:Fmyh1828/genshin-GITCG.git genshin-GITCG-vendor
+git clone              git@git.nju.edu.cn:Fmyh1828/genshin-GITCG.git genshin-GITCG        # master 镜像（同步 origin）
+git clone -b vendor    git@git.nju.edu.cn:Fmyh1828/genshin-GITCG.git genshin-GITCG-vendor # 离线依赖（wheel + 资产缓存）
 cd genshin-GITCG
 GITCG_VENDOR_DIR=$HOME/genshin-GITCG-vendor bash scripts/cluster/bootstrap.sh
 ```
