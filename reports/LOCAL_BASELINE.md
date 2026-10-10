@@ -142,10 +142,14 @@ train/val 指标两设备一致（val_loss、val_acc 逐位相同/近似），de
 
 **瓶颈诊断（为什么只有 1.5× 而非 10×）**：
 
-- 负载下 SM 能升到 1.4–1.8 GHz、100% util、~15 W，但**显存时钟被锁在 810 MHz**（最大 7001 MHz，P8 空闲态）。
-  按 810 MHz×2×64bit 算出的带宽 ~10 GB/s，正对上实测 **9–10 GB/s**（MX550 规格 ~96 GB/s）。根因是
-  **WSL/Windows 侧 GPU 电源管理**把显存压在最低档（Windows 电源计划已是「高性能」，问题在 NVIDIA
-  控制面板的 3D 电源管理模式）；WSL 内无 `sudo` 且本 GPU `-lmc` 不受支持，改不动。
+- 负载下 SM 升到 ~1.4–1.6 GHz、100% util，但显存停在 **810 MHz**（最大 7001），实测带宽 **9–10 GB/s**
+  （规格 ~96）。根因经 **Windows 侧 `nvidia-smi.exe` 交叉确认（非 WSL 误报）**：负载时 **P5（不进 P0）**、
+  `SW Power Cap: Active`，**enforced power limit = 15 W**（default 40 / max 60）——GPU 被功率墙卡死，
+  没有余量给显存升频。命令行改不动：`-pl` 报「not supported in current scope」、`-lmc` 本 GPU 不支持、
+  `-lgc` 需管理员；Windows 电源计划已是「高性能」、且 AC 供电、电池充电中。
+  **修法只能走 Windows 侧**：NVIDIA 控制面板 → 管理 3D 设置 → 电源管理模式 = 「首选最大性能」，
+  叠加 Windows「电源模式」滑块 = 最佳性能、笔记本 OEM 性能档（Lenovo Vantage / MSI Center 等的
+  安静/均衡档会压 dGPU TDP）。改完 `enforced.power.limit` 应升向 40 W、显存升向 7001 MHz。
 - 小矩阵下 **cuBLAS 选核病态**：n=256 时 0.108 TFLOPS，而自写 Triton 内核 0.388（**3.6×**）；
   n≥512 时 cuBLAS 反而更快。即「重写算子」只对 n≤256 有意义，且上限受显存带宽压制。
 - 引擎对局/采集是纯 CPU，WSL 作为**并行采集/评测节点**价值明确。

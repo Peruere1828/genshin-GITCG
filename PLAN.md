@@ -297,8 +297,9 @@ GPU 放大前的 go/no-go——**「信念根化 MCCFR 搜索 + 小网」纯策�
 **WSL/MX550 小网络训练试验（2026-10-10 完成）**：WSL 装 torch 2.6.0+cu124（PyPI 默认 2.14.1 为
 CUDA 13，WSL 驱动 560.94 只到 CUDA 12.6，不可用），MX550（cc 7.5）可被 torch 识别。同池 615 样本、
 d_model 64/128：端到端 GPU/CPU **~1.02–1.05×（打平）**，预 collate 后纯训练 **~1.55×**；指标与 CPU 一致。
-瓶颈是 **WSL/Windows 电源管理把显存时钟锁在 810 MHz（最大 7001）**，实测带宽 ~10 GB/s（规格 ~96），
-叠加小矩阵 cuBLAS 选核病态（n=256 时 0.11 TFLOPS vs 自写 Triton 0.39，3.6×）。
+瓶颈是 **GPU 被功率墙卡在 15 W**（default 40 / max 60）→ 负载时 P5（不进 P0）、显存 810 MHz（最大 7001）、
+实测带宽 ~10 GB/s（规格 ~96）；Windows 侧 `nvidia-smi` 交叉确认、CLI 改不动，需 Windows 侧把 NVIDIA 电源模式
+设为「首选最大性能」。叠加小矩阵 cuBLAS 选核病态（n=256 时 0.11 TFLOPS vs 自写 Triton 0.39，3.6×）。
 **结论：训练节点归属 = 本机 CPU**（此规模 MX550 无稳定优势，需 Windows 侧把 NVIDIA 电源模式设为
 「首选最大性能」再复评）；WSL 定位保持并行采集/评测节点。明细 `reports/LOCAL_BASELINE.md#wsl--mx550-设备对照`、
 证据 `reports/train/device_bench_*.json`、`scripts/bench_device.py`。
