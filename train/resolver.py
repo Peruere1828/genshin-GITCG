@@ -87,3 +87,34 @@ def require_search_available(bridge: Any | None = None) -> None:
     if bridge is not None and getattr(bridge, "workers", 0) != 0:
         return
     raise SearchUnavailable(SEARCH_UNAVAILABLE_REASON)
+
+
+def prior_resolver_from_checkpoint(checkpoint: str, *, temperature: float = 1.0) -> PriorResolver:
+    """Build a ``PriorResolver`` (policy prior + greedy) from a CVPN checkpoint.
+
+    The encoder is rebuilt from the config saved beside the checkpoint (see
+    ``train.model.checkpoint_encoder_config``), falling back to the default encoder
+    for older checkpoints. Feed it to ``ForkSearchPolicy.prior``/``base`` or pass it
+    as a ``base_policies`` entry of ``envs.fork_search.run_search_match``.
+    """
+    from train.model import CVPN, checkpoint_encoder_config
+
+    model = CVPN.load(checkpoint)
+    config = checkpoint_encoder_config(checkpoint)
+    if config is not None:
+        from reps.observation_encoder import TokenObservationEncoder
+
+        encoder = TokenObservationEncoder.from_dict(config)
+    else:
+        from envs.observation import default_encoder
+
+        encoder = default_encoder()
+    return PriorResolver(model=model, encoder=encoder, temperature=temperature)
+
+
+def neural_rollout_spec(checkpoint: str, *, temperature: float | None = None) -> str:
+    """Policy spec string for using a checkpoint as a rollout policy in the workers."""
+    spec = f"neural:{checkpoint}"
+    if temperature is not None:
+        spec = f"{spec}#t={temperature}"
+    return spec

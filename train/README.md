@@ -59,6 +59,12 @@ Python 回调开销；需要时再做 JS 侧批量 fork/rollout（归 `batched_i
   `rollouts`/`top_k`/`search_every`/`max_searches` 控预算；每次决策落 `SearchDecision`（喂教练/蒸馏）。
 - 跨进程按**位置选项索引**重放已验证：新进程 fork 边界快照 + 前缀**逐字节复现活体终局**
   （`tests/test_fork_bridge.py`）。`scripts/run_search_agent.py` 做配对种子 search vs expert 消融评测。
+- **CVPN 接入搜索**：`ForkSearchPolicy.prior` 接收带 `distribution(built)` 的打分器
+  （`train.resolver.PriorResolver` / `prior_resolver_from_checkpoint`），使 `top_k` 选**先验最高的候选**
+  而非均匀铺（base 选择恒为候选之一；先验只排序、不删除合法动作）；`base` 与 rollout 也可用
+  `neural:<ckpt>`（`neural_rollout_spec`）。先验即 base 时只前向一次。
+- **M3 输入**：`train/CONTINUAL_RESOLVING.md` —— 实用 resolver（确定化 MC）到 charter GT-CFR 的
+  差距清单 + 最小落地顺序（信念根化 → 外采 MCCFR 脚手架 → search-as-teacher）。
 
 ## 集群数据平面（CPU 采集 → 存储 → GPU 训练，L5.6，算力前置）
 

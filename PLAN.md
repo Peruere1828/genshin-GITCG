@@ -354,7 +354,11 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
 6. ~~**L5.6 集群数据平面**~~（✅ 2026-10-09，算力前置）：`train.collect`（可续跑分片采集）+
    `train.pipeline`/`train.learning_curve` 的 `--replays` 读盘 + LSF 模板 `collect.lsf`/`collect_array.lsf`/`train_gpu.lsf`，
    使 CPU 采集与 GPU 训练解耦（§5.1）；
-7. 并行调研项（M3 输入）不变：读 `docs/SOG_GT_CFR_CONTINUAL_RESOLVING_CHARTER.md` + `continual_resolving.py`，产出"实用 resolver → GT-CFR"差距清单；算力解锁后回 M3 全量训练。
+7. 并行调研项（M3 输入）：读 `docs/SOG_GT_CFR_CONTINUAL_RESOLVING_CHARTER.md` + `continual_resolving.py`，
+   **✅ 2026-10-10 差距清单 `train/CONTINUAL_RESOLVING.md` 已交付**（实用 resolver → GT-CFR 的 G1–G10 差距
+   + 最小落地顺序：信念根化 → 外采 MCCFR 脚手架 → search-as-teacher）；同批交付 **CVPN 接入搜索**
+   （`ForkSearchPolicy.prior` 先验排序候选 + `neural:<ckpt>` base/rollout；`train.resolver.prior_resolver_from_checkpoint`）。
+   算力解锁后按清单回 M3 全量训练。
 
 ---
 *本文档随决策变化更新；重大变更（改主线、改验收口径）需在 §0 追加决策记录。*

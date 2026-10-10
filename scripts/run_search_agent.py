@@ -56,6 +56,7 @@ class SearchSpec:
     top_k: int = 2
     search_every: int = 1
     max_searches: int = 5
+    checkpoint: str | None = None
     tag: str = "search_agent"
 
     def tasks(self) -> list["SearchTask"]:
@@ -81,6 +82,7 @@ class SearchSpec:
                 "top_k": self.top_k,
                 "search_every": self.search_every,
                 "max_searches": self.max_searches,
+                "checkpoint": self.checkpoint,
             },
             sort_keys=True,
             ensure_ascii=False,
@@ -100,8 +102,17 @@ class SearchTask:
         return f"{self.opponent}|{self.seed}|{self.mode}"
 
 
-def run_task(spec: SearchSpec, task: SearchTask, *, bridge: ForkBridge) -> dict[str, Any]:
+def run_task(
+    spec: SearchSpec, task: SearchTask, *, bridge: ForkBridge, prior: Any = None
+) -> dict[str, Any]:
     rollouts = spec.rollouts if task.mode == SEARCH else 0
+    kwargs: dict[str, Any] = {}
+    if spec.checkpoint:
+        from train.resolver import neural_rollout_spec
+
+        kwargs["base_policies"] = (prior, None)
+        kwargs["prior_policies"] = (prior, None)
+        kwargs["rollout_specs"] = (neural_rollout_spec(spec.checkpoint), None)
     result = run_search_match(
         spec.deck,
         task.opponent,
@@ -111,6 +122,7 @@ def run_task(spec: SearchSpec, task: SearchTask, *, bridge: ForkBridge) -> dict[
         top_k=spec.top_k,
         search_every=spec.search_every,
         max_searches=spec.max_searches if task.mode == SEARCH else 0,
+        **kwargs,
     )
     record = result.record
     return {
@@ -181,6 +193,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--top-k", type=int, default=2)
     parser.add_argument("--search-every", type=int, default=1)
     parser.add_argument("--max-searches", type=int, default=5)
+    parser.add_argument(
+        "--checkpoint",
+        default=None,
+        help="CVPN checkpoint: use it as base+prior (expert mode = pure network) and "
+        "as the neural rollout, so 'search - expert' isolates the effect of search.",
+    )
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--smoke", action="store_true", help="3 opponents x 2 seeds")
     parser.add_argument("--tag", default="search_agent")
@@ -204,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         top_k=args.top_k,
         search_every=args.search_every,
         max_searches=args.max_searches,
+        checkpoint=args.checkpoint,
         tag=args.tag,
     )
 
@@ -231,6 +250,7 @@ def main(argv: list[str] | None = None) -> int:
                     "top_k": spec.top_k,
                     "search_every": spec.search_every,
                     "max_searches": spec.max_searches,
+                    "checkpoint": spec.checkpoint,
                 },
                 "engine_lock": load_engine_lock(),
                 "runtime": runtime_metadata(),
@@ -243,9 +263,15 @@ def main(argv: list[str] | None = None) -> int:
           f"({len(spec.opponents)} opponents x {len(spec.seeds)} seeds x {len(spec.modes)} modes)")
 
     bridge = ForkBridge(workers=args.workers)
+    prior = None
+    if spec.checkpoint:
+        from train.resolver import prior_resolver_from_checkpoint
+
+        prior = prior_resolver_from_checkpoint(spec.checkpoint)
+        print(f"[search] checkpoint as base+prior+rollout: {spec.checkpoint}")
     try:
         for task in tasks:
-            row = run_task(spec, task, bridge=bridge)
+            row = run_task(spec, task, bridge=bridge, prior=prior)
             append_jsonl(stream_path, row)
             print(f"[search] {task.opponent:<24} seed={task.seed:<3} {task.mode:<6} "
                   f"winner={row['winner']} outcome={row['outcome']} "
@@ -267,6 +293,7 @@ def main(argv: list[str] | None = None) -> int:
             "top_k": spec.top_k,
             "search_every": spec.search_every,
             "max_searches": spec.max_searches,
+            "checkpoint": spec.checkpoint,
         },
         "aggregate": _aggregate(spec, rows),
         "engine_lock": load_engine_lock(),

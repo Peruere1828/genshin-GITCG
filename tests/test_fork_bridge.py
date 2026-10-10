@@ -124,6 +124,14 @@ def test_select_candidates_spreads_and_caps():
     assert spread[0] == 0 and spread[-1] == 10 and len(spread) == 4
 
 
+def test_select_candidates_uses_prior_and_keeps_required():
+    # top-2 by prior are indices 1 and 3; the required base choice 0 is kept too.
+    chosen = _select_candidates(5, 2, prior=[0.1, 0.9, 0.2, 0.8, 0.3], required=0)
+    assert chosen == [0, 1, 3]
+    # top_k None -> all options regardless of prior.
+    assert _select_candidates(5, None, prior=[0.1, 0.9, 0.2, 0.8, 0.3]) == [0, 1, 2, 3, 4]
+
+
 def test_fork_task_json_roundtrip():
     task = ForkTask(
         index=7,
@@ -199,6 +207,65 @@ def test_search_policy_budget_knobs_skip_search():
     capped.choose(_Built(_Ctx(codes)))
     capped.choose(_Built(_Ctx(codes)))
     assert len(context.searches) == 1
+
+
+class _FakePrior:
+    """Prior scorer over the legal options (mirrors PriorResolver.distribution)."""
+
+    def __init__(self, probs) -> None:
+        self.probs = list(probs)
+        self.calls = 0
+
+    def distribution(self, built):
+        self.calls += 1
+        return list(self.probs)
+
+
+def test_search_policy_prior_ranks_candidates_and_keeps_base():
+    codes = (10, 11, 12, 13, 14)
+    base = _Base(0)
+    prior = _FakePrior([0.05, 0.6, 0.1, 0.2, 0.05])  # top-2 = indices 1, 3
+    bridge = _FakeBridge({0: 0, 1: 1, 2: 0, 3: 1, 4: 0})
+    context = SearchContext(
+        bridge=bridge, game_attrs={}, rollout_specs=(None, None), base_seed=2
+    )
+    context.update_boundary("snap")
+    policy = ForkSearchPolicy(
+        player=0, context=context, deck0=A, deck1=B, base=base, prior=prior,
+        rollouts=1, top_k=2,
+    )
+    policy.choose(_Built(_Ctx(codes)))
+    decision = context.searches[0]
+    assert decision.candidates == (0, 1, 3)  # top-2 prior + required base 0
+    assert decision.prior is not None and set(decision.prior) == {0, 1, 3}
+    assert decision.base_option == 0
+    assert prior.calls == 1  # prior != base -> consulted once for ranking
+
+
+def test_search_policy_prior_equals_base_uses_one_forward():
+    codes = (10, 11, 12)
+
+    class _PriorBase(_FakePrior):
+        name = "prior_base"
+
+        def choose(self, built):
+            probs = self.distribution(built)
+            return built.context.legal_low_level_codes[
+                max(range(len(probs)), key=lambda i: probs[i])
+            ]
+
+    base = _PriorBase([0.2, 0.7, 0.1])
+    bridge = _FakeBridge({0: 0, 1: 1, 2: 0})
+    context = SearchContext(
+        bridge=bridge, game_attrs={}, rollout_specs=(None, None), base_seed=3
+    )
+    context.update_boundary("snap")
+    policy = ForkSearchPolicy(
+        player=0, context=context, deck0=A, deck1=B, base=base, prior=base,
+        rollouts=1, top_k=2,
+    )
+    assert policy.choose(_Built(_Ctx(codes))) in codes
+    assert base.calls == 1  # prior IS base -> a single distribution forward
 
 
 # --------------------------------------------------------------------------- #
@@ -315,6 +382,41 @@ def test_search_match_is_deterministic():
         )
 
     assert run() == run()
+
+
+@pytest.mark.slow
+def test_search_match_with_cvpn_prior(tmp_path):
+    """CVPN 接入搜索: checkpoint as base+prior (candidate ranking) + neural rollout."""
+    from envs.observation import default_encoder
+    from train.model import CVPN, config_for_encoder
+    from train.resolver import PriorResolver, neural_rollout_spec
+
+    encoder = default_encoder()
+    path = tmp_path / "ckpt.pt"
+    CVPN(config_for_encoder(encoder)).save(str(path), encoder_config=encoder.to_dict())
+    prior = PriorResolver(model=CVPN.load(str(path)), encoder=encoder, temperature=1.0)
+
+    with ForkBridge(workers=2) as bridge:
+        result = run_search_match(
+            A,
+            B,
+            bridge=bridge,
+            seed=SEED,
+            rollouts=1,
+            top_k=2,
+            max_searches=2,
+            base_policies=(prior, None),
+            prior_policies=(prior, None),
+            rollout_specs=(neural_rollout_spec(str(path)), "legal_random"),
+        )
+    record = result.record
+    assert record.error is None, record.error
+    assert record.fallbacks0 == 0 and record.fallbacks1 == 0
+    assert result.searches
+    for decision in result.searches:
+        assert decision.base_option in decision.candidates  # base always a candidate
+        assert decision.prior is not None
+        assert set(decision.prior).issubset(set(decision.candidates))
 
 
 def test_search_match_rejects_inprocess_bridge():

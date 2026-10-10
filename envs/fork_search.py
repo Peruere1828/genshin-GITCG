@@ -24,6 +24,17 @@ runs, so the expert's own RNG advances exactly as it would without search. Its
 choice is always one of the evaluated candidates, so a search with enough
 rollouts cannot be surprised into ignoring the expert action.
 
+CVPN integration (prior + rollout)
+----------------------------------
+``ForkSearchPolicy.prior`` is an optional scorer exposing
+``distribution(built) -> Sequence[float]`` over the legal options (e.g.
+``train.resolver.PriorResolver`` around a CVPN checkpoint). When set, ``top_k``
+selects the highest-prior options (instead of an even spread) -- the network prior
+*ranks* candidates, it does not delete options from the reachable set (the base
+choice is always kept; the charter's "prior is an ordering signal, not a deletion
+rule", §5.4). ``base`` and the rollout policies can themselves be the network
+(``neural:<ckpt>`` specs), so both the leaf rollout and the prior can be CVPN.
+
 Cost is ``candidates x rollouts`` full games per searched decision; ``top_k`` and
 ``search_every`` bound it. Every decision is logged (``SearchDecision``) for the
 coach/teacher and for distillation features.
@@ -59,6 +70,7 @@ class SearchDecision:
     counts: dict[int, int]
     chosen_option: int
     searched: bool
+    prior: dict[int, float] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -72,6 +84,7 @@ class SearchDecision:
             "counts": {str(k): v for k, v in self.counts.items()},
             "chosen_option": self.chosen_option,
             "searched": self.searched,
+            "prior": None if self.prior is None else {str(k): v for k, v in self.prior.items()},
         }
 
 
@@ -97,14 +110,34 @@ class SearchContext:
         self.boundary = (snapshot, len(self.records[0]), len(self.records[1]))
 
 
-def _select_candidates(option_count: int, top_k: int | None) -> list[int]:
+def _select_candidates(
+    option_count: int,
+    top_k: int | None,
+    *,
+    prior: Sequence[float] | None = None,
+    required: int | None = None,
+) -> list[int]:
+    """Pick candidate option indices.
+
+    With ``prior`` (a score/policy over the options) the ``top_k`` highest-prior
+    options are chosen; otherwise an even spread of ``top_k`` indices. ``required``
+    (e.g. the base policy's choice) is always included. The result is sorted.
+    """
     if option_count <= 0:
         return []
     if top_k is None or top_k >= option_count:
-        return list(range(option_count))
-    if top_k <= 1:
-        return [0]
-    return sorted({round(i * (option_count - 1) / (top_k - 1)) for i in range(top_k)})
+        keep = list(range(option_count))
+    elif prior is not None:
+        keep = sorted(range(option_count), key=lambda i: (-float(prior[i]), i))[
+            : max(0, int(top_k))
+        ]
+    elif top_k <= 1:
+        keep = [0]
+    else:
+        keep = sorted({round(i * (option_count - 1) / (top_k - 1)) for i in range(top_k)})
+    if required is not None:
+        keep.append(int(required))
+    return sorted(set(keep))
 
 
 @dataclass
@@ -116,6 +149,7 @@ class ForkSearchPolicy:
     deck0: str = ""
     deck1: str = ""
     base: Policy | None = None
+    prior: Any = None
     rollouts: int = 1
     top_k: int | None = 4
     search_every: int = 1
@@ -138,13 +172,32 @@ class ForkSearchPolicy:
         spec = self.context.rollout_specs[opp]
         return spec or self._default_rollout
 
+    def _prior_distribution(self, built, option_count: int) -> list[float] | None:
+        if self.prior is None or not hasattr(self.prior, "distribution"):
+            return None
+        dist = list(self.prior.distribution(built))
+        if len(dist) != option_count:
+            return None
+        return [float(value) for value in dist]
+
     def choose(self, built) -> int:
         codes = [int(c) for c in built.context.legal_low_level_codes]
         if not codes:
             return -1
         self._calls += 1
-        base_code = int(self.base.choose(built)) if self.base is not None else codes[0]
-        base_idx = codes.index(base_code) if base_code in codes else 0
+
+        prior_probs: list[float] | None = None
+        if self.prior is not None and self.prior is self.base:
+            # Prior *is* the base network: one forward, base choice = prior argmax.
+            prior_probs = self._prior_distribution(built, len(codes))
+        if prior_probs is not None:
+            base_idx = max(range(len(codes)), key=lambda i: prior_probs[i])
+            base_code = int(codes[base_idx])
+        else:
+            base_code = int(self.base.choose(built)) if self.base is not None else codes[0]
+            base_idx = codes.index(base_code) if base_code in codes else 0
+            if self.prior is not None:
+                prior_probs = self._prior_distribution(built, len(codes))
 
         if (
             self.context.boundary is None
@@ -156,9 +209,15 @@ class ForkSearchPolicy:
             return base_code
 
         self._n_searched += 1
-        return self._search(built, codes, base_code, base_idx)
+        return self._search(built, codes, base_idx, prior_probs)
 
-    def _search(self, built, codes: list[int], base_code: int, base_idx: int) -> int:
+    def _search(
+        self,
+        built,
+        codes: list[int],
+        base_idx: int,
+        prior_probs: list[float] | None,
+    ) -> int:
         context = self.context
         snapshot = context.boundary[0]  # type: ignore[index]
         acting = self.player
@@ -166,9 +225,9 @@ class ForkSearchPolicy:
         prefix_self = context.prefix(acting)
         prefix_opp = context.prefix(1 - acting)
 
-        candidates = _select_candidates(len(codes), self.top_k)
-        if base_idx not in candidates:
-            candidates = sorted(set(candidates) | {base_idx})
+        candidates = _select_candidates(
+            len(codes), self.top_k, prior=prior_probs, required=base_idx
+        )
 
         roll_spec = self._rollout_spec()
         opp_spec = self._opp_rollout_spec()
@@ -233,6 +292,9 @@ class ForkSearchPolicy:
                 counts=counts,
                 chosen_option=best,
                 searched=True,
+                prior=None
+                if prior_probs is None
+                else {opt: prior_probs[opt] for opt in candidates},
             )
         )
         return chosen_code
@@ -290,13 +352,17 @@ def run_search_match(
     max_steps: int = 5000,
     version: str | None = None,
     base_policies: tuple[Policy | None, Policy | None] | None = None,
+    prior_policies: tuple[Any | None, Any | None] | None = None,
     record_final_state: bool = False,
 ) -> SearchMatchResult:
     """Play one game in which ``search_players`` refine their moves with fork search.
 
     Non-search players use an expert policy for their own deck; search players use
-    their base policy plus fork search. Decisions are recorded as positional option
-    indices so the fork tasks replay exactly.
+    their base policy plus fork search. ``prior_policies`` (per player) are optional
+    scorers with ``distribution(built)`` (e.g. ``train.resolver.PriorResolver`` over
+    a CVPN) that rank the candidates; ``rollout_specs`` may be ``neural:<ckpt>``.
+    Decisions are recorded as positional option indices so the fork tasks replay
+    exactly.
     """
     from reps.action_hierarchy import reset_default_hierarchical_action_codebook
 
@@ -315,6 +381,7 @@ def run_search_match(
         game.set_attr(int(attr), int(value))
 
     overrides = base_policies or (None, None)
+    priors = prior_policies or (None, None)
     search_set = set(int(p) for p in search_players)
     rollout_specs = rollout_specs or (None, None)
     context = SearchContext(
@@ -336,6 +403,7 @@ def run_search_match(
                 deck0=deck0,
                 deck1=deck1,
                 base=base,
+                prior=priors[player],
                 rollouts=rollouts,
                 top_k=top_k,
                 search_every=search_every,
