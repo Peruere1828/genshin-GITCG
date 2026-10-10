@@ -3,14 +3,15 @@
 > 来源：`refs/Rebel_base_RL/docs/SOG_GT_CFR_CONTINUAL_RESOLVING_CHARTER.md`（目标架构）
 > 与 `refs/Rebel_base_RL/research/world_model/src/gitcg_world_model/continual_resolving.py`
 > （参考实现，含 `_LocalSampledGTCFRSolver`）。本文是 PLAN.md §10「实用 resolver → GT-CFR
-> 差距清单」的交付物，供 M3 设计用。
+> 差距清单」的交付物，也是 **M3 主线清单（D15）**：无 GPU 期间按 §3 顺序在 CPU 档（本机 + WSL）
+> 跑通语义与单测，规模放大留给机会算力；中间验收 M3-CPU 见 PLAN §4.3。
 
 ## 0. 结论速览
 
 我们现在的 `envs/fork_search.py` 是**determinization + MC 动作价值**的实用 resolver：
 fork 活体边界快照（= 真实的隐藏信息确定化）、注入候选、用 rollout 打到终局、取胜率均值。
 它**能跑、能当离线/在线 teacher 的雏形**，但相对 charter 的 GT-CFR 主线上还有结构性差距，
-且有两条**违反 charter 不变量**的地方，不能当成主线：
+且有两条**违反 charter 不变量**的地方，不作主线求解器：
 
 - 违反 §5.2/§7.2：搜索从活体快照 fork，根节点含**真实隐藏信息**（单一确定化），不是公共信念；
 - 违反 §5.3：训练目标是 rollout 终局胜率，不是 solver 的根平均策略/价值。
@@ -40,6 +41,8 @@ exploitability 评估。**网络不是决策者，求解器才是；网络逼近
 | G10 | **exploitability 评估** | —（charter §9 要求 reduced-domain + best-response 探针） | 只用对池胜率 | 中（M3 后）：小规模简化域 + BR 探针 |
 
 ## 3. 建议的最小 M3 落地顺序
+
+（CPU 档先跑通语义与单测：小网络、1e3–1e4 样本、fp32；样本量/网络规模放大留给机会算力，PLAN §5.1。）
 
 1. **信念根化（G1+G3）**：即便先上粗糙后验（未见牌上的均匀/`belief_groups` 边缘），把搜索根换成
    `PlayerView` + 采样确定化，消除 §5.2 违反。落点：`envs/fork_search.py`（根化）、`reps/belief_groups.py`。

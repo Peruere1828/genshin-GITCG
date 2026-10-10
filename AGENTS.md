@@ -1,10 +1,10 @@
 # AGENTS.md
 
-需求/架构/验收的唯一权威是 [PLAN.md](./PLAN.md)（决策记录 §0、里程碑 M0–M6 §4、本地先行 L0–L4 §4.1）。
+需求/架构/验收的唯一权威是 [PLAN.md](./PLAN.md)（决策记录 §0、里程碑 M0–M6 §4、本地先行 L0–L5 §4.1/§4.2、无 GPU 中间验收 M3-CPU §4.3）。
 
 ## 现状
 
-- WS0/WS1 + 本地先行 L0–L4 已有可运行代码（2026-10-07–09，明细见 git log）：
+- WS0/WS1 + 本地先行 L0–L5.6 已有可运行代码（2026-10-07–10，明细见 git log）：
   - `reps/`：从 `refs/Rebel_base_RL/.../gitcg_world_model` 逐模块移植的表示层（schema/snapshot/action_hierarchy/action_adapter/public_state/semantic_priors/agents/replay + 对应 toml），导入路径 `reps.*`；来源与许可见 `NOTICE.md`。
   - `agents/scripted/`：从 `gitcg_expert_system` 移植的 20 套脚本卡组规则，可跑完整对局。
   - `envs/`：`PolicyPlayer`（`gitcg.Player` 五类请求 → `Policy` 抽象）+ `run_match` + expert/baseline policy + 牌组装配 + `rollout`（多进程）+ `snapshot`（快照/分叉工具）+ `fork_bridge`/`fork_worker`（L5.4 子进程 fork 桥，JSON-lines）+ `fork_search`（实用版 continual-resolving：`ForkSearchPolicy` + `run_search_match`）。
@@ -15,6 +15,8 @@
   - `train/`：CVPN + 采集/训练/评测管线 + `collect.py`/`collect_worker.py`（集群可续跑分片采集，CPU 数据平面）+ `replay_branch.py`（replay-branch MC teacher）+ `learning_curve.py`（L5.3 数据量×网络规模扫描）+ `resolver.py`；`agents/neural.py` 接回 env。
   - `tests/`：信息泄漏、adapter 覆盖、重放一致、引擎桥/分叉、arena、LLM、train 全绿（`python -m pytest`；`-m "not slow"` 跳慢测）。
   - 实测基线见 `reports/LOCAL_BASELINE.md`（单核 ~819 局/h；12 核并行 ~4,900 局/h）。
+- 算力口径（D14）：默认**本机 12 核 + WSL（4 核/8G/MX550 2G，试小网络训练）**；A800 80G + 128 核为申请制机会资源（里程碑不依赖它，窗口内一键零看管放量）；南大集群暂缓（glibc/环境适配成本高），`scripts/cluster/` 留作将来适配起点。
+- 当前主线（D15，验收 M3-CPU，PLAN §4.3）：按 `train/CONTINUAL_RESOLVING.md` 差距清单推进——信念根化（G1+G3）→ 外采 MCCFR 脚手架（G2+G4）→ search-as-teacher + belief 头（G6+G7）；训练先 CPU 档（d_model 64–128、1e3–1e4 样本、fp32）。
 - `orchestrator/`（WS5）仍为占位，未实现。
 - `refs/` 三个上游参考仓**只读**，只抄思路逐模块移植、不修改、不 apply 补丁（PLAN §6.5），不入库、缺了重新 clone：
   - `refs/genius-invokation` — 引擎 + Python 绑定 `packages/pybinding`（即 `gitcg`）+ IO 协议 `docs/development/io.md`；
@@ -25,7 +27,7 @@
 ## 环境
 
 - 用 conda env **`gitcg`**（Python 3.12）运行一切命令；`gitcg` 0.21.0 装自 PyPI。
-- 排查依赖版本时注意：cffi/protobuf 等部分解析自 user site（`~/.local/lib/python3.12/site-packages`）。
+- 依赖统一装在 conda env `gitcg`；核对版本时看实际解析路径（cffi/protobuf 可能来自 user site `~/.local/lib/python3.12/site-packages`）。
 - API key 从根目录 `.env` 读取（已 gitignore）；密钥永不入库、不进日志/报告。
 
 ## gitcg 0.21.0 用法
@@ -38,13 +40,13 @@
 
 ## 工程约定
 
-- rollout 走自建子进程协议（`python -m envs.rollout_worker`，stdin/stdout JSON-lines，`cwd=仓库根`+`PYTHONPATH`）；不用 multiprocessing。
+- 并发统一走自建子进程协议（`python -m envs.rollout_worker` / `envs.fork_worker`，stdin/stdout JSON-lines，`cwd=仓库根`+`PYTHONPATH`）；父进程并发排空子进程 stdout 再发下一批。
 - 长任务结果流式落盘 + 按 `task_index` 断点续跑（arena 已实现）；长作业挂 tmux/setsid 跑。
-- 集群数据平面（CPU 采集 → 存储 → GPU 训练）：`python -m train.collect`（可续跑、一行一局、manifest 指纹护栏）写 `data/replays/<tag>/`；训练/学习曲线用 `--replays <dir...>` 读盘。LSF 模板见 `scripts/cluster/lsf/`，海量作业用 `collect_array.lsf`（每数组元素独立分片目录）。
+- 集群数据平面（CPU 采集 → 存储 → GPU 训练）：`python -m train.collect`（可续跑、一行一局、manifest 指纹护栏）写 `data/replays/<tag>/`；训练/学习曲线用 `--replays <dir...>` 读盘。LSF 模板见 `scripts/cluster/lsf/`，海量作业用 `collect_array.lsf`（每数组元素独立分片目录）；集群当前暂缓（D14，启用条件见 `scripts/cluster/README.md`）。
 - 对局确定性：`envs/match.py` 在 Python 侧按种子预洗牌并传 `NO_SHUFFLE=1`；每局开始调用 `reset_default_hierarchical_action_codebook()`。
 - 训练标签/embedding 用语义 key（`low_level_semantic_key_for_code`），不用裸 `action_code`（仅单局内稳定）。
 - policy spec 统一走 `envs.policy.build_policy`：`expert:<slug>` / `neural:<ckpt>[#t=<temp>]` / `heuristic` / `legal_random` / `random`；checkpoint 自带 encoder 配置，多进程 rollout/采集可直接用训练网络。
-- 搜索分叉：只在 `Game.is_resumable()` 边界点取快照，fork 用 `envs/snapshot.fork_game(game_attrs=...)` 补游戏级 attrs；批量 teacher 用 `train/replay_branch.py`。**在线搜索用 `envs/fork_bridge.py`（fork 必须在子进程，`workers>=1`）**：活体回调内嵌套引擎会崩，`run_search_match` 拒 `workers==0`。
+- 搜索分叉：只在 `Game.is_resumable()` 边界点取快照，fork 用 `envs/snapshot.fork_game(game_attrs=...)` 补游戏级 attrs；批量 teacher 用 `train/replay_branch.py`。**在线搜索用 `envs/fork_bridge.py`（fork 一律跑在子进程，`workers>=1`）**，`run_search_match` 拒 `workers==0`。
 - 局内 LLM 辅助用 `deepseek-chat`；深度复盘用推理模型 + 大 max_tokens。
 - 评测池口径以 `eval.opponents` 注册为准（当前 20 套，PLAN D11）。
 - `reports/` 只提交聚合摘要；逐事件/逐干预明细放 `data/` 或走 gitignore。

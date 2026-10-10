@@ -6,7 +6,7 @@ cvpn_training + sog_pipeline（搜索蒸馏外环 + 门禁）、batched_inferenc
 ## 已实现（L4 玩具验证，2026-10-07）
 
 - `model.py`：`CVPN`（小网络，CPU 可训）= token 平均池化 → 每个合法 option 打分 + 价值头。**按 option 特征打分**，
-  与进程全局 low-level action code 解耦（见 AGENTS.md 确定性坑）。
+  与进程全局 low-level action code 解耦（见 AGENTS.md 工程约定）。
 - `data.py`：`collect_samples`——用任意 teacher policy（脚本专家）打对局，把每个决策上下文编码成样本，
   teacher 动作用 **option 位置索引**保存，价值目标=该局结果。
 - `train_loop.py`：行为克隆/蒸馏（masked CE + value MSE），train/val 切分与指标。
@@ -18,7 +18,7 @@ cvpn_training + sog_pipeline（搜索蒸馏外环 + 门禁）、batched_inferenc
 - `agents/neural.py`：`NeuralPolicy`——把训练好的 checkpoint 接回 `envs.Policy`，可与脚本专家同台评测/自博弈（纯策略模式）。
   checkpoint 保存时一并写入 encoder 配置，故 `envs.policy.build_policy("neural:<ckpt>")` 可在 rollout/arena/采集
   等多进程路径中直接用训练好的网络（无需在调用处重建 encoder）。
-- `replay_branch.py`：replay-branch MC teacher（D12 兜底，见下）——离线从任意决策点重放+注入候选+rollout 求动作价值。
+- `replay_branch.py`：replay-branch MC teacher（批量离线标注与对照，见下）——离线从任意决策点重放+注入候选+rollout 求动作价值。
 - `learning_curve.py`（L5.3）：CVPN 学习曲线扫描——采集一份样本池后**先固定验证留出集**，再对每个
   (网络规模 `d_model`, 训练样本量) 组合在同一留出集上训练一个**全新**网络，记录 train/val 损失与一致率曲线
   （点间可比）；可选对脚本对手小样本评测。产物 `reports/train/learning_curve_<ts>.json/.csv`（不含 checkpoint）。CLI：
@@ -26,7 +26,7 @@ cvpn_training + sog_pipeline（搜索蒸馏外环 + 门禁）、batched_inferenc
 
 实测：`--overfit`（1 局采集、60 epoch）零报错完成，训练集一致率 ~0.74–0.88（多数类 ~0.3），说明网络可学。
 
-## 搜索引擎分叉：边界快照即精确分叉（L5.4 实测，2026-10-09，I10/D13）
+## 搜索引擎分叉：边界快照即精确分叉（L5.4 实测，D12/D13）
 
 对 `gitcg` 0.21.0 pybinding 的中局快照行为做了系统实测（证据：
 `scripts/probe_engine_snapshot.py`、`scripts/probe_boundary_fork.py`、`reports/engine/`；
@@ -37,22 +37,19 @@ cvpn_training + sog_pipeline（搜索蒸馏外环 + 门禁）、batched_inferenc
 - ✅ **克隆确定**：同一快照两次续跑（同策略）逐字节一致。
 - ✅ **边界快照即精确分叉**：`canResume:true` 暂停点（`Game.is_resumable()`）的快照，续跑喂
   record-replay 决策序列**逐字节复现活体终局**（13/13 + 9/9 复跑）。两条纪律：
-  ① 只在 `is_resumable()` 点取快照——`canResume:false` 的 phase 内部点（`initHands` 抽牌后、
-  `skill_executor` 中途、`gotWinner`）续跑会重放 phase 工作（0/3 复现），不可分叉；
+  ① 只在 `is_resumable()` 点取快照——`canResume:false` 的 phase 内部点不是可重放边界，搜索不在那里分叉；
   ② fork 必须补齐游戏级 attrs（`ATTR_PLAYER_ALWAYS_OMNI_*` 等不在 `GameState` 序列化里）——
   `envs/snapshot.fork_game(game_attrs=...)` 已封装。
 
-早期"不能精确分叉"的结论（I9）源于探针混淆（复现用全新策略 RNG + fork 丢 attrs），已由 I10 修正。
 因此 **M3 的 continual resolving 直接用 pybinding 分叉**（O(1) 毫秒级 fork + 注入候选 + rollout），
-无需重写 pybinding/TS server/引擎手术（D13）。吞吐瓶颈不在 fork，在 rollout 本身（秒级/局）与
-Python 回调开销；需要时再做 JS 侧批量 fork/rollout（归 `batched_inference`）。
+无需引擎改造（D13）。吞吐瓶颈在 rollout 本身（秒级/局）与 Python 回调开销；需要时再做 JS 侧批量
+fork/rollout（归 `batched_inference`）。
 
-### 薄 fork 桥 + 实用搜索 resolver（已实现，L5.4，2026-10-09，I11）
+### 薄 fork 桥 + 实用搜索 resolver（已实现，L5.4）
 
 - `envs/fork_bridge.py` + `envs/fork_worker.py`：**子进程 fork 桥**（JSON-lines，沿用 `envs.rollout` 形态）。
   `ForkTask` 描述一次「边界快照 + 双方前缀（位置选项索引）+ 注入候选 + rollout」；`run_fork_task` 是进程内
-  参考实现，`ForkBridge` 是子进程池（`evaluate` 批量并行）。**fork 必须在子进程**：在活体 `game.step()`
-  回调内再跑引擎会撞 JS 运行时崩溃，故在线搜索不支持 `workers==0`。
+  参考实现，`ForkBridge` 是子进程池（`evaluate` 批量并行）。**fork 一律跑在子进程**，在线搜索不支持 `workers==0`。
 - `envs/fork_search.py`：**实用版 continual-resolving**——`ForkSearchPolicy` 在最近 `is_resumable()`
   边界快照 fork + 注入候选 + rollout 求均值；驱动 `run_search_match` 每步前记录边界与双方前缀。
   基座策略每决策恰好调用一次且其选项恒为候选之一（RNG 不漂移，搜索不会忽略专家动作）；
@@ -66,7 +63,7 @@ Python 回调开销；需要时再做 JS 侧批量 fork/rollout（归 `batched_i
 - **M3 输入**：`train/CONTINUAL_RESOLVING.md` —— 实用 resolver（确定化 MC）到 charter GT-CFR 的
   差距清单 + 最小落地顺序（信念根化 → 外采 MCCFR 脚手架 → search-as-teacher）。
 
-## 集群数据平面（CPU 采集 → 存储 → GPU 训练，L5.6，算力前置）
+## 集群数据平面（CPU 采集 → 存储 → GPU 训练，L5.6，采集/训练解耦）
 
 `train/collect.py`（+ `train/collect_worker.py`）把对局编码成样本写入**可续跑**的 replay 目录：
 
@@ -88,7 +85,7 @@ LSF 模板：`scripts/cluster/lsf/collect.lsf`（单节点多 worker）、`colle
 `--teacher-spec`/`--opponent-spec` 支持任意 `build_policy` spec（含 `neural:<ckpt>`），
 故同一采集器可做脚本预热、网络自博弈、以及网络 vs 脚本 anchor 数据。
 
-### replay-branch MC teacher（已实现，批量离线/兜底）
+### replay-branch MC teacher（已实现，批量离线 teacher / 对照）
 
 `train/replay_branch.py`：整局对 `(卡组, 引擎种子, 动作序列)` 确定，所以任意决策点都能
 **从初始态重放到达**，在那里注入候选动作、再用 rollout 策略打完一局。对 rollout 种子求均值
@@ -102,12 +99,15 @@ LSF 模板：`scripts/cluster/lsf/collect.lsf`（单节点多 worker）、`colle
 - `evaluate_decision(...)` 对某决策的全部候选做 MC；`aggregate_option_values(...)` 汇总。
 - `resolver.py` 的 `PriorResolver`（先验/贪心，非搜索）仍保留作冷启动；真 resolver 落地时替换接口。
 
-## 待办（算力解锁后）
+## 待办（M3，按 `train/CONTINUAL_RESOLVING.md` 顺序，D15）
 
-CVPN 放大（bf16/transformer）、`batched_inference`（按作业拉起，无常驻服务）、
-搜索-蒸馏外环（候选 checkpoint 门禁：单测+泄漏+冒烟+评测不劣于）。
-分叉能力已解锁（D13/I10）且薄 fork 桥 + 实用搜索 resolver 已交付（I11）；
-剩余非前置项：JS 侧批量 fork/rollout 吞吐优化、CVPN 网络接入搜索（M3，算力解锁后）。
+1. **信念根化（G1+G3）**：`envs/fork_search.py` 搜索根换「公共信念 + 采样确定化」（禁用隐藏真值），`reps/belief_groups.py` 接入根与 update；
+2. **外采 MCCFR 脚手架（G2+G4）**：新增 `train/cfr_solver.py`（regret matching + 根平均策略 + 根价值、深度受限 + CVPN frontier 价值）；
+3. **search-as-teacher（G6+G7）**：根平均策略/根价值/belief 目标写进 replay，训练改搜索蒸馏（policy CE + value 回归 + belief 评分），`train/model.py` 加 belief 头；
+4. **M3-CPU 门禁（PLAN §4.3）**：「搜索+小网」纯策略对池整体 ≥ 50%（M2 口径）；搜索-蒸馏外环带候选 checkpoint 门禁（单测+泄漏+冒烟+评测不劣于）。
 
-L5.3（学习曲线扫描）已交付 `train/learning_curve.py`，端到端跑通；本地只做千/万级样本的
-正确性与规模-数据关系验证，全量放大仍待 GPU 算力（M3）。
+规模放大留给机会算力（PLAN §5.1）：CVPN 放大（bf16/transformer）、`batched_inference`（按作业拉起，无常驻服务）、JS 侧批量 fork/rollout 吞吐优化。
+CPU 档先用 d_model 64–128、fp32 跑通语义（WSL MX550 小网络训练试验见 PLAN §5.2）。
+
+L5.3（学习曲线扫描）已交付 `train/learning_curve.py`，端到端跑通；本地做千/万级样本的
+正确性与规模-数据关系验证，全量放大并入 M3 GPU 档。

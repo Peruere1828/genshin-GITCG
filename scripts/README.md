@@ -1,4 +1,4 @@
-# scripts — 一键脚本（PLAN.md §5.1 间歇窗口零看管）
+# scripts — 一键脚本（PLAN.md §5.1 机会窗口零看管）
 
 `run_iteration`：采集→训练→评测→落盘，可断点续跑、可重提；窗口内优先级 训练 > 评测 > 采集 > LLM 分析。
 
@@ -37,6 +37,6 @@
   ```
   无 key/网络不可用时 LLM 模式以退出码报错（纯策略用 `--no-llm`）；全部跑完后重跑只重新聚合，不再需要 key。
   客户端失败的比赛逐局标 `degraded` 并在报告 `llm_quality` 中单列（含非降级 `clean` 胜率）；连续 N 次
-  （默认 5，`--max-consecutive-errors`）客户端失败即中止待续跑，避免一次网络中断把 llm 列悄悄变成纯策略口径。
+  （默认 5，`--max-consecutive-errors`）客户端失败即中止待续跑，保证 llm 列始终是 LLM 辅助口径。
 
 待办：`run_iteration`（采集→训练→评测→落盘，断点续跑）。依赖 `train/` 落地。
