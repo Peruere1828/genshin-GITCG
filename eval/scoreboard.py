@@ -266,7 +266,21 @@ def evaluate_gates(
     pooled = float(summary.get("pooled_rate", 0.0))
     cluster_low = float(summary.get("cluster_ci_low", 0.0))
     quality = summary.get("quality", {})
-    violations = list(summary.get("floor_violations", []))
+    per_opponent = summary.get("per_opponent", {})
+    if strict_ci:
+        # Certification form (§2.4 / §5.4): the per-opponent Wilson *lower*
+        # bound must clear the floor, not just the noisy point estimate. The
+        # screening form below keeps the point estimate so a `< floor` opponent
+        # is flagged for investigation rather than auto-failed.
+        violations = sorted(
+            opponent
+            for opponent, row in per_opponent.items()
+            if row.get("games", 0) > 0 and float(row.get("ci_low", 0.0)) < floor
+        )
+        floor_mode = "wilson_low"
+    else:
+        violations = list(summary.get("floor_violations", []))
+        floor_mode = "point"
     pooled_gate = pooled >= pooled_threshold and (
         cluster_low >= pooled_threshold if strict_ci else True
     )
@@ -275,6 +289,7 @@ def evaluate_gates(
         "pooled_pass": bool(pooled_gate),
         "strict_ci": bool(strict_ci),
         "floor": floor,
+        "floor_mode": floor_mode,
         "floor_pass": len(violations) == 0,
         "floor_violations": violations,
         "clean_pass": (quality.get("fallback_rate", 0.0) == 0.0
@@ -312,8 +327,17 @@ def paired_difference(
     CIs, so far fewer games are needed to resolve a real change. Returns ``None``
     when the two runs share no keys.
     """
-    a = {o.key: o for o in outcomes_a}
-    b = {o.key: o for o in outcomes_b}
+    a_all = {o.key: o for o in outcomes_a}
+    b_all = {o.key: o for o in outcomes_b}
+    shared = set(a_all) & set(b_all)
+    if not shared:
+        return None
+    # Only clean games on *both* sides are comparable: the runner scores an
+    # engine error/truncation as 0.5, so pairing a crash (0.5) against a real
+    # win (0.0) would inject a spurious +0.5 into the delta and bias the merge
+    # gate. Drop any pair where either side is invalid.
+    a = {k: a_all[k] for k in shared if a_all[k].error is None and not a_all[k].truncated}
+    b = {k: b_all[k] for k in shared if b_all[k].error is None and not b_all[k].truncated}
     keys = sorted(set(a) & set(b))
     if not keys:
         return None
@@ -336,6 +360,10 @@ def paired_difference(
 
     return {
         "n_pairs": n,
+        "n_shared": len(shared),
+        "n_pairs_dropped": len(shared) - n,
+        "invalid_a": sum(1 for o in outcomes_a if o.error is not None or o.truncated),
+        "invalid_b": sum(1 for o in outcomes_b if o.error is not None or o.truncated),
         "delta": mean,
         "se": se,
         "ci_low": low,

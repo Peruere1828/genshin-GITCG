@@ -232,6 +232,60 @@ def test_state_patcher_inline_dice_fallback():
 
 
 # --------------------------------------------------------------------------- #
+# fork-search integration (fast, no engine)
+# --------------------------------------------------------------------------- #
+def test_belief_roots_for_empty_decklist_falls_back_to_live_snapshot():
+    from envs.fork_search import SearchContext
+
+    context = SearchContext(
+        bridge=None,
+        game_attrs={},
+        rollout_specs=(None, None),
+        base_seed=0,
+        belief_root=True,
+        deck_cards=((), ()),
+    )
+    assert context.belief_roots_for(snapshot="SNAPSHOT", acting_player=0) == ["SNAPSHOT"]
+
+
+def test_observe_public_record_tracks_opponent_reveals():
+    from envs.fork_search import _observe_public_record
+    from reps.public_state import PublicStateTracker
+    from reps.schema import DecisionType, OptionKind
+
+    class _Spec:
+        request_type = DecisionType.ACTION
+        kind = OptionKind.ACTION_PLAY_CARD
+        subject_definition_id = 42
+        select_card_definition_id = 0
+        discarded_card_definition_id = 0
+        target_slots = ()
+        used_dice = (1, 2)
+        auto_selected_dice = ()
+        choose_active_slot = 0
+        switch_hand_slot_mask = 0
+        reroll_dice_mask = 0
+        discarded_hand_slot = 0
+        target_dice = 0
+
+    class _Context:
+        legal_low_level_codes = (7,)
+        legal_low_level_specs = (_Spec(),)
+        request_type = DecisionType.ACTION
+        player_view = None
+
+    class _Built:
+        context = _Context()
+
+    tracker = PublicStateTracker(player_id=0)
+    _observe_public_record(tracker, player=1, built=_Built(), code=7)
+    assert tracker.revealed_opponent_card_definition_ids() == (42,)
+    # The acting player's own plays are not counted as opponent reveals.
+    _observe_public_record(tracker, player=0, built=_Built(), code=7)
+    assert tracker.revealed_opponent_card_definition_ids() == (42,)
+
+
+# --------------------------------------------------------------------------- #
 # slow engine tests
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")

@@ -30,7 +30,7 @@ class ArenaSpec:
     contestants: tuple[Opponent, ...]
     pool: tuple[Opponent, ...]
     seeds: tuple[int, ...]
-    workers: int = 1
+    workers: int | None = 1
     swap: bool = False
     record_decisions: bool = False
     policy0: str | None = None
@@ -326,7 +326,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tag", default="arena")
     parser.add_argument("--seeds", type=int, default=50, help="number of paired seeds")
     parser.add_argument("--seed-start", type=int, default=0)
-    parser.add_argument("--workers", type=int, default=0, help="0 = all cores")
+    parser.add_argument("--workers", type=int, default=None,
+                        help="worker subprocesses (unset = all cores; 1 = single process)")
     parser.add_argument("--opponents", nargs="*", default=None, help="pool subset (opponent slugs)")
     parser.add_argument(
         "--contestants",

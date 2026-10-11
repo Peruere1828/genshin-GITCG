@@ -49,3 +49,20 @@ def test_transformer_save_load_roundtrip(tmp_path):
         a, _ = model(tokens, mask, options, omask)
         b, _ = loaded(tokens, mask, options, omask)
     assert torch.allclose(a, b)
+
+
+def test_load_cvpn_model_dispatches_on_arch(tmp_path):
+    from dataclasses import asdict
+
+    from train.model import CVPN, CVPNConfig, load_cvpn_model
+
+    cvpn = CVPN(CVPNConfig(token_dim=8, option_dim=5, d_model=16)).eval()
+    transformer = TransformerCVPN(_cfg()).eval()
+    for model, expected in ((cvpn, CVPN), (transformer, TransformerCVPN)):
+        path = tmp_path / f"{expected.__name__}.pt"
+        model.save(str(path))
+        assert isinstance(load_cvpn_model(str(path)), expected)
+    # Legacy checkpoints with no "arch" field default to the mean-pool CVPN.
+    legacy = tmp_path / "legacy.pt"
+    torch.save({"config": asdict(cvpn.config), "state_dict": cvpn.state_dict()}, legacy)
+    assert isinstance(load_cvpn_model(str(legacy)), CVPN)

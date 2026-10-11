@@ -75,6 +75,7 @@ class CVPN(nn.Module):
         torch.save(
             {
                 "config": asdict(self.config),
+                "arch": "cvpn",
                 "state_dict": self.state_dict(),
                 "encoder_config": encoder_config,
             },
@@ -104,6 +105,27 @@ def config_for_encoder(encoder, **overrides) -> CVPNConfig:
     base = dict(token_dim=encoder.token_dim, option_dim=encoder.option_dim)
     base.update(overrides)
     return CVPNConfig(**base)
+
+
+def load_cvpn_model(path: str) -> nn.Module:
+    """Load any CVPN-interface checkpoint, dispatching on its ``arch`` field.
+
+    ``CVPN`` and ``TransformerCVPN`` share ``forward(tokens, token_mask,
+    options, option_mask) -> (logits, value)``, so callers (``neural:<ckpt>``
+    specs, arena, eval protocol) can treat them uniformly. Checkpoints saved
+    before the ``arch`` field existed default to the mean-pool ``CVPN``.
+    """
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    arch = payload.get("arch")
+    if arch == "transformer_cvpn":
+        model: nn.Module = TransformerCVPN(TransformerCVPNConfig(**payload["config"]))
+    elif arch in (None, "cvpn"):
+        model = CVPN(CVPNConfig(**payload["config"]))
+    else:
+        raise ValueError(f"unknown checkpoint arch: {arch!r} in {path}")
+    model.load_state_dict(payload["state_dict"])
+    model.eval()
+    return model
 
 
 @dataclass(frozen=True)

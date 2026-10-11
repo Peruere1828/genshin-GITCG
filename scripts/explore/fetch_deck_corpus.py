@@ -208,15 +208,66 @@ def _api_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     raise RuntimeError("unreachable")
 
 
+def _check_api_payload(name: str, payload: Any, key: str) -> list[dict[str, Any]]:
+    """Validate a miHoYo API response before trusting it.
+
+    The endpoint returns HTTP 200 even for application errors (``retcode`` != 0)
+    and the JSON shape is unofficial, so a renamed field or a rate-limit body
+    must fail loudly rather than silently yielding an empty/partial corpus.
+    """
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{name}: API returned {type(payload).__name__}, expected an object")
+    retcode = payload.get("retcode", 0)
+    if int(retcode) != 0:
+        raise RuntimeError(
+            f"{name}: API retcode={retcode} message={payload.get('message')!r}"
+        )
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise RuntimeError(f"{name}: API payload has no 'data' object")
+    rows = data.get(key)
+    if not isinstance(rows, list) or not rows:
+        raise RuntimeError(f"{name}: API 'data.{key}' is not a non-empty list")
+    return list(rows)
+
+
+def _guard_corpus_write(
+    out: Path, *, n_entries: int, n_valid: int, force: bool = False
+) -> None:
+    """Refuse to overwrite a validated corpus with a truncated/empty fetch.
+
+    The API is unofficial and can return 200 with an error/renamed body; without
+    this guard the next run would silently replace the 73-deck corpus (and its
+    engine-validation results) with a smaller one that still looks consistent.
+    """
+    existing_valid: int | None = None
+    if out.exists():
+        try:
+            existing_valid = int(
+                json.loads(out.read_text(encoding="utf-8"))["counts"]["validated"]
+            )
+        except Exception:
+            existing_valid = None
+    if not n_entries:
+        raise SystemExit("refusing to write corpus: no deck entries parsed (API shape changed?)")
+    if not n_valid:
+        raise SystemExit("refusing to write corpus: 0 validated decks (truncated/empty fetch?)")
+    if existing_valid is not None and n_valid < existing_valid and not force:
+        raise SystemExit(
+            f"refusing to overwrite corpus: new validated={n_valid} < existing={existing_valid}; "
+            "pass --force to overwrite anyway"
+        )
+
+
 def fetch_raw() -> dict[str, list[dict[str, Any]]]:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     out: dict[str, list[dict[str, Any]]] = {}
     for name, (filename, key, params) in API_ENDPOINTS.items():
         payload = _api_get(name, params)
+        out[name] = _check_api_payload(name, payload, key)
         (RAW_DIR / filename).write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        out[name] = list(payload.get("data", {}).get(key, []) or [])
     # Extra context (not decks, but useful provenance).
     labels = _api_get("labels")
     (RAW_DIR / "labels.json").write_text(
@@ -534,6 +585,11 @@ def main() -> None:
         action="store_true",
         help="recompute archetype labels in-place (keeps engine validation results)",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite data/deck_corpus/decks.json even if the new corpus is smaller",
+    )
     args = parser.parse_args()
 
     if args.relabel_only:
@@ -564,7 +620,7 @@ def main() -> None:
         api_data = {}
         for name, (filename, key, _) in API_ENDPOINTS.items():
             payload = json.loads((RAW_DIR / filename).read_text(encoding="utf-8"))
-            api_data[name] = list(payload.get("data", {}).get(key, []) or [])
+            api_data[name] = _check_api_payload(name, payload, key)
     else:
         api_data = fetch_raw()
 
@@ -605,6 +661,7 @@ def main() -> None:
         "decks": entries,
     }
     out = DATA_DIR / "decks.json"
+    _guard_corpus_write(out, n_entries=len(entries), n_valid=len(valid), force=args.force)
     out.write_text(json.dumps(corpus, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {out} ({len(entries)} decks; {len(valid)} validated)")
 

@@ -278,7 +278,10 @@ def main(argv: list[str] | None = None) -> int:
             },
         )
 
-    done = {f"{r['opponent']}|{r['seed']}|{r['mode']}" for r in read_jsonl(stream_path)}
+    done = {
+        f"{r['opponent']}|{r['seed']}|{r['mode']}"
+        for r in read_jsonl(stream_path, tolerate_torn=True)
+    }
     tasks = [t for t in spec.tasks() if t.key not in done]
     print(f"[search] {len(done)} done, {len(tasks)} to run "
           f"({len(spec.opponents)} opponents x {len(spec.seeds)} seeds x {len(spec.modes)} modes)")
@@ -301,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         bridge.close()
 
-    rows = read_jsonl(stream_path)
+    rows = read_jsonl(stream_path, tolerate_torn=True)
     report = {
         "tag": spec.tag,
         "generated": _dt.datetime.now().isoformat(timespec="seconds"),

@@ -30,7 +30,9 @@ from eval.scoreboard import (
 from scripts.eval_protocol import (
     ProtocolSpec,
     ProtocolTask,
+    _Stream,
     _enrich,
+    aggregate,
     outcomes_from_rows,
 )
 
@@ -277,3 +279,76 @@ def test_enrich_score_and_outcomes_roundtrip():
     assert outcomes[0].key == ("natlan_battleship", 3, 0)
     assert outcomes[0].score == 1.0
     assert outcomes[1].score == 0.0
+
+
+# --------------------------------------------------------------------------- #
+# review fixes (2026-10-11)
+# --------------------------------------------------------------------------- #
+def test_evaluate_gates_strict_ci_uses_wilson_floor():
+    # 50 games vs one opponent at exactly 0.50: the point estimate clears the
+    # 0.45 floor, but the Wilson *lower* bound (~0.36) does not.
+    summary = summarize(_block("a", 25, 25), floor=0.45)
+    screening = evaluate_gates(summary, pooled_threshold=0.5, floor=0.45)
+    assert screening["floor_mode"] == "point"
+    assert screening["floor_pass"] is True
+    strict = evaluate_gates(summary, pooled_threshold=0.5, floor=0.45, strict_ci=True)
+    assert strict["floor_mode"] == "wilson_low"
+    assert strict["floor_pass"] is False
+    assert strict["floor_violations"] == ["a"]
+
+
+def test_paired_difference_ignores_error_and_truncated_pairs():
+    base = _block("a", 5, 5)  # wins seeds 0-4, loses seeds 100-104
+    keys = [0, 1, 2, 3, 4, 100, 101, 102, 103, 104]
+    improved = [outcome("a", i, 0, 1.0) for i in keys]
+    # Two "wins" are really engine failures (runner scores them 0.5); they must
+    # not enter the paired delta or bias the merge gate.
+    improved[1] = outcome("a", 1, 0, 0.5, error="boom")
+    improved[2] = outcome("a", 2, 0, 0.5, truncated=True)
+    paired = paired_difference(improved, base)
+    assert paired is not None
+    assert paired["n_shared"] == 10
+    assert paired["n_pairs"] == 8
+    assert paired["n_pairs_dropped"] == 2
+    assert paired["invalid_a"] == 2
+    # Only the 8 clean pairs count: five flips (+1.0) over 8 pairs = 0.625.
+    assert math.isclose(paired["delta"], 0.625)
+
+
+def test_stream_resume_tolerates_torn_line(tmp_path):
+    spec = _spec()
+    raw = tmp_path / "run.jsonl"
+    stream = _Stream(spec, raw)
+    stream.append({"task_index": 0, "opponent": "natlan_battleship", "side": 0,
+                   "protocol_seed": 0, "score": 1.0})
+    stream.close()
+    # Simulate a hard kill mid-write: a torn trailing line with no newline.
+    with raw.open("a", encoding="utf-8") as handle:
+        handle.write('{"task_index": 1, "opponent": "natlan')
+    resumed = _Stream(spec, raw)  # must not raise
+    assert [row["task_index"] for row in resumed.rows] == [0]
+    assert resumed.done_indices() == {0}
+    resumed.close()
+    # The torn bytes are isolated on their own line so the next append is clean.
+    text = raw.read_text(encoding="utf-8")
+    assert text.count("\n") >= 2
+    assert '{"task_index": 1' in text
+
+
+def test_aggregate_elo_keys_contestant_and_pool_separately():
+    spec = _spec()  # contestant expert:superconduct_aggro vs pool natlan_battleship
+    task0 = ProtocolTask(index=0, opponent="natlan_battleship", seed=0, side=0)
+    task1 = ProtocolTask(index=1, opponent="natlan_battleship", seed=0, side=1)
+    row0 = _enrich({"task_index": 0, "winner": 0, "rounds": 7, "decisions0": 5,
+                    "fallbacks0": 0, "decisions1": 4, "fallbacks1": 0}, task0, spec)
+    row1 = _enrich({"task_index": 1, "winner": 1, "rounds": 8, "decisions0": 4,
+                    "fallbacks0": 0, "decisions1": 6, "fallbacks1": 0}, task1, spec)
+    row0.update({"deck0": "superconduct_aggro", "deck1": "natlan_battleship"})
+    row1.update({"deck0": "natlan_battleship", "deck1": "superconduct_aggro"})
+    report = aggregate(
+        spec, [row0, row1], anchors={}, anchors_source=None,
+        pooled_threshold=0.5, floor=0.45, strict_ci=False,
+    )
+    elo = report["elo_online"]
+    assert set(elo) == {"expert:superconduct_aggro", "pool:natlan_battleship"}
+    assert elo["expert:superconduct_aggro"] > 1500 > elo["pool:natlan_battleship"]

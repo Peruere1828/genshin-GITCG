@@ -65,13 +65,15 @@ def load_neural_policy(
     *,
     name: str | None = None,
     temperature: float = 0.0,
+    device: str = "cpu",
 ) -> NeuralPolicy:
-    from train.model import CVPN
+    from train.model import load_cvpn_model
 
-    model = CVPN.load(checkpoint_path)
+    model = load_cvpn_model(checkpoint_path)
     return NeuralPolicy(
         model=model,
         encoder=encoder,
         name=name or f"neural:{checkpoint_path}",
+        device=device,
         temperature=temperature,
     )

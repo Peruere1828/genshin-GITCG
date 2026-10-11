@@ -39,16 +39,34 @@ def append_jsonl(path: str | Path, record: Any) -> None:
         handle.write("\n")
 
 
-def iter_jsonl(path: str | Path) -> Iterator[dict[str, Any]]:
+def iter_jsonl(
+    path: str | Path, *, tolerate_torn: bool = False
+) -> Iterator[dict[str, Any]]:
+    """Yield one record per line.
+
+    ``tolerate_torn`` skips unparseable lines instead of raising. Streaming
+    resume paths (arena / eval protocol / search agent) set it because a hard
+    kill can leave a *torn trailing line* (a half-written JSON record), which is
+    expected on resume and must not abort the run (PLAN.md D7). Strict readers
+    keep the default so genuine corruption is still surfaced.
+    """
     path = Path(path)
     if not path.exists():
         return
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
-            if line:
+            if not line:
+                continue
+            try:
                 yield json.loads(line)
+            except json.JSONDecodeError:
+                if tolerate_torn:
+                    continue
+                raise
 
 
-def read_jsonl(path: str | Path) -> list[dict[str, Any]]:
-    return list(iter_jsonl(path))
+def read_jsonl(
+    path: str | Path, *, tolerate_torn: bool = False
+) -> list[dict[str, Any]]:
+    return list(iter_jsonl(path, tolerate_torn=tolerate_torn))

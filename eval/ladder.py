@@ -24,7 +24,12 @@ def compute_elo(
     k: float = DEFAULT_K,
     initial: float = DEFAULT_RATING,
 ) -> dict[str, float]:
-    """Update Elo ratings over an ordered list of match records."""
+    """Update Elo ratings over an ordered list of match records.
+
+    Players are keyed by ``player0``/``player1`` when present, else by
+    ``deck0``/``deck1``. Explicit identities let a contestant pilot a pool-named
+    deck without collapsing into that opponent's rating entry.
+    """
     ordered = sorted(matches, key=lambda m: m.get("task_index", m.get("index", 0)))
     ratings: dict[str, float] = {}
 
@@ -32,11 +37,12 @@ def compute_elo(
         return ratings.setdefault(name, initial)
 
     for match in ordered:
-        deck0, deck1 = match["deck0"], match["deck1"]
+        name0 = match.get("player0") or match["deck0"]
+        name1 = match.get("player1") or match["deck1"]
         winner = match["winner"]
         score0 = 0.5 if winner is None else (1.0 if int(winner) == 0 else 0.0)
-        expected0 = _expected(rating(deck0), rating(deck1))
+        expected0 = _expected(rating(name0), rating(name1))
         delta = k * (score0 - expected0)
-        ratings[deck0] = rating(deck0) + delta
-        ratings[deck1] = rating(deck1) - delta
+        ratings[name0] = rating(name0) + delta
+        ratings[name1] = rating(name1) - delta
     return ratings

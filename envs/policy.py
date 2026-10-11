@@ -118,11 +118,24 @@ def expert_policy(slug: str, *, seed: int | None = None) -> ScriptedPolicy:
 
 
 def _neural_policy(spec: str, *, seed: int) -> Policy:
-    """Load a CVPN checkpoint as a greedy/sampled policy (``<path>[#t=<temp>]``)."""
+    """Load a CVPN checkpoint as a greedy/sampled policy.
+
+    Spec: ``<path>[#t=<temp>][#d=<device>]`` (options may be ``#``-joined in any
+    order). ``d=cuda`` routes inference to the GPU (MX550); the default is CPU.
+    """
     path, _, suffix = spec.partition("#")
     temperature = 0.0
-    if suffix.startswith("t="):
-        temperature = float(suffix[2:])
+    device = "cpu"
+    for option in suffix.split("#"):
+        if not option:
+            continue
+        key, _, value = option.partition("=")
+        if key == "t":
+            temperature = float(value)
+        elif key == "d":
+            device = value or "cpu"
+        else:
+            raise KeyError(f"unknown neural spec option: {option!r}")
     from agents.neural import load_neural_policy
     from train.model import checkpoint_encoder_config
 
@@ -135,7 +148,7 @@ def _neural_policy(spec: str, *, seed: int) -> Policy:
         from envs.observation import default_encoder
 
         encoder = default_encoder()
-    return load_neural_policy(path, encoder, temperature=temperature)
+    return load_neural_policy(path, encoder, temperature=temperature, device=device)
 
 
 def build_policy(spec: str, *, seed: int, role: str) -> Policy:

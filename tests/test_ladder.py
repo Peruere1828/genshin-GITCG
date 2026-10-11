@@ -24,3 +24,15 @@ def test_elo_draws_keep_parity():
 
 def test_elo_empty():
     assert compute_elo([]) == {}
+
+
+def test_elo_prefers_explicit_player_identity():
+    # Both sides pilot the *same* deck slug, but the identities differ: the
+    # contestant must not collapse into the pool opponent's rating entry.
+    matches = [
+        {"task_index": 0, "player0": "contestant", "player1": "pool:a",
+         "deck0": "a", "deck1": "a", "winner": 0}
+    ]
+    ratings = compute_elo(matches)
+    assert set(ratings) == {"contestant", "pool:a"}
+    assert ratings["contestant"] > 1500 > ratings["pool:a"]

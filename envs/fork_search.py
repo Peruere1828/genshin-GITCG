@@ -123,19 +123,31 @@ class SearchContext:
     belief_root: bool = False
     belief_samples: int = 1
     deck_cards: tuple[tuple[int, ...], tuple[int, ...]] = ((), ())
+    # Per-player public-action trackers (populated by ``run_search_match`` when
+    # ``belief_root`` is on). They let the opponent range subtract cards the
+    # opponent has *publicly revealed* from the known decklist; without them the
+    # sampled hand/pile would always total the whole 30-card deck.
+    trackers: tuple[Any, Any] = (None, None)
 
     def belief_roots_for(self, *, snapshot: str, acting_player: int) -> list[str]:
         cache = self._belief_roots_cache.setdefault((snapshot, int(acting_player)), None)
         if cache is None:
-            from reps.belief import sample_belief_roots
-
             opponent_player = 1 - int(acting_player)
-            cache = sample_belief_roots(
-                snapshot,
-                root_player=int(acting_player),
-                opponent_deck_cards=self.deck_cards[opponent_player],
-                samples=max(1, int(self.belief_samples)),
-            )
+            deck_cards = self.deck_cards[opponent_player]
+            if not deck_cards:
+                # No opponent decklist -> determinization is undefined; degrade to
+                # the live snapshot instead of sampling an empty hand/pile.
+                cache = [snapshot]
+            else:
+                from reps.belief import sample_belief_roots
+
+                cache = sample_belief_roots(
+                    snapshot,
+                    root_player=int(acting_player),
+                    opponent_deck_cards=deck_cards,
+                    samples=max(1, int(self.belief_samples)),
+                    tracker=self.trackers[int(acting_player)],
+                )
             self._belief_roots_cache[(snapshot, int(acting_player))] = cache
         return cache
 
@@ -352,13 +364,65 @@ class ForkSearchPolicy:
         return chosen_code
 
 
+def _observe_public_record(tracker: Any, player: int, built: Any, code: int) -> None:
+    """Feed one live decision into a ``PublicStateTracker`` (belief rooting).
+
+    Mirrors ``PublicStateTracker.observe_step`` from a ``BuiltDecisionContext``:
+    the tracker only needs the public action record (acting player, request type,
+    chosen semantic key, spent dice) to subtract cards the opponent has revealed
+    from the sampled hand/pile.
+    """
+    from reps.action_hierarchy import (
+        public_spent_dice_for_spec,
+        semantic_action_key_for_spec,
+    )
+    from reps.public_state import PublicActionRecord
+    from reps.schema import DecisionType
+
+    context = built.context
+    codes = [int(c) for c in context.legal_low_level_codes]
+    specs = context.legal_low_level_specs
+    selected_index = None
+    for index, candidate in enumerate(codes):
+        if candidate == int(code):
+            selected_index = index
+            break
+    spec = specs[selected_index] if selected_index is not None and selected_index < len(specs) else None
+    view = context.player_view
+    request_type = context.request_type
+    known = request_type in {DecisionType.ACTION, DecisionType.CHOOSE_ACTIVE}
+    tracker.observe_public_record(
+        PublicActionRecord(
+            acting_player=int(player),
+            request_type=request_type,
+            round_number=int(view.round_number) if view is not None else 0,
+            phase=str(view.phase) if view is not None else "",
+            payload={"action_code": int(code)} if known else None,
+            semantic_key=semantic_action_key_for_spec(spec) if spec is not None else None,
+            option_kind=spec.kind.value if spec is not None else None,
+            used_dice_count=int(public_spent_dice_for_spec(spec)) if spec is not None else 0,
+            known_payload=known,
+            selected_legal_index=selected_index,
+            legal_option_count=len(codes),
+        )
+    )
+
+
 class _RecordingPolicy:
     """Outer policy wrapper recording each decision's positional option index."""
 
-    def __init__(self, inner: Policy, player: int, records: list[list[int]]) -> None:
+    def __init__(
+        self,
+        inner: Policy,
+        player: int,
+        records: list[list[int]],
+        *,
+        on_decision: Any = None,
+    ) -> None:
         self.inner = inner
         self.player = int(player)
         self.records = records
+        self.on_decision = on_decision
         self.name = f"record:{getattr(inner, 'name', '?')}"
 
     def choose(self, built) -> int:
@@ -366,6 +430,8 @@ class _RecordingPolicy:
         code = int(self.inner.choose(built))
         idx = codes.index(code) if code in codes else (-1 if codes else 0)
         self.records[self.player].append(idx)
+        if self.on_decision is not None:
+            self.on_decision(self.player, built, code)
         return code
 
 
@@ -438,6 +504,19 @@ def run_search_match(
     priors = prior_policies or (None, None)
     search_set = set(int(p) for p in search_players)
     rollout_specs = rollout_specs or (None, None)
+    # Public-belief rooting needs a public-action tracker per player so the
+    # opponent range can subtract cards the opponent has already revealed.
+    from reps.public_state import PublicStateTracker
+
+    trackers: tuple[Any, Any] = (None, None)
+    if belief_root:
+        trackers = (PublicStateTracker(player_id=0), PublicStateTracker(player_id=1))
+
+    def _on_decision(player: int, built: Any, code: int) -> None:
+        for tracker in trackers:
+            if tracker is not None:
+                _observe_public_record(tracker, player, built, code)
+
     context = SearchContext(
         bridge=bridge,
         game_attrs=attrs,
@@ -449,6 +528,7 @@ def run_search_match(
             tuple(int(card) for card in spec0.cards),
             tuple(int(card) for card in spec1.cards),
         ),
+        trackers=trackers,
     )
 
     policies: list[Policy] = []
@@ -474,7 +554,9 @@ def run_search_match(
             )
         else:
             policy = base
-        policies.append(_RecordingPolicy(policy, player, context.records))
+        policies.append(
+            _RecordingPolicy(policy, player, context.records, on_decision=_on_decision)
+        )
 
     players = [PolicyPlayer(p, policies[p]) for p in (0, 1)]
     game.set_player(0, players[0])

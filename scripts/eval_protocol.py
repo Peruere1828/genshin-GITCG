@@ -41,6 +41,7 @@ import argparse
 import datetime as _dt
 import hashlib
 import json
+import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -105,7 +106,7 @@ class ProtocolSpec:
     seeds: tuple[int, ...]
     sides: tuple[int, ...] = (0, 1)
     mode: str = PURE
-    workers: int = 0
+    workers: int | None = None
     base_seed: int = 0
     tag: str = "eval_protocol"
     llm_budget: int = 6
@@ -143,6 +144,26 @@ class ProtocolSpec:
 # --------------------------------------------------------------------------- #
 # streaming / resume
 # --------------------------------------------------------------------------- #
+def _ensure_trailing_newline(path: Path) -> None:
+    """Repair a torn trailing line so the next append starts a fresh record.
+
+    A hard kill can leave a half-written final line with no newline. Appending
+    to it would concatenate the next record onto the torn bytes; adding the
+    missing newline isolates it so the tolerant reader skips it on the next run.
+    """
+    try:
+        if path.stat().st_size == 0:
+            return
+    except FileNotFoundError:
+        return
+    with path.open("rb") as handle:
+        handle.seek(-1, os.SEEK_END)
+        last = handle.read(1)
+    if last != b"\n":
+        with path.open("ab") as handle:
+            handle.write(b"\n")
+
+
 class _Stream:
     """Append-only per-match stream with a fingerprint sidecar (resume-safe)."""
 
@@ -162,7 +183,7 @@ class _Stream:
                     f"{raw_path} was produced by a different spec (fingerprint "
                     "mismatch); use another --tag or delete the old raw/meta files"
                 )
-            self.rows = read_jsonl(raw_path)
+            self.rows = read_jsonl(raw_path, tolerate_torn=True)
         else:
             ensure_dir(raw_path.parent)
             self.meta_path.write_text(
@@ -181,6 +202,7 @@ class _Stream:
                 ),
                 encoding="utf-8",
             )
+        _ensure_trailing_newline(raw_path)
         self._handle = raw_path.open("a", encoding="utf-8")
         self._lock = threading.Lock()
 
@@ -314,7 +336,7 @@ def run_protocol(
     # Re-read the whole stream and de-duplicate by task_index (the in-memory
     # snapshot predates this run; the file holds the merged, resumed result).
     by_index: dict[int, dict[str, Any]] = {}
-    for row in read_jsonl(stream.raw_path):
+    for row in read_jsonl(stream.raw_path, tolerate_torn=True):
         by_index[int(row["task_index"])] = row
     return [by_index[i] for i in sorted(by_index)]
 
@@ -370,9 +392,20 @@ def aggregate(
     gates = evaluate_gates(
         summary, pooled_threshold=pooled_threshold, floor=floor, strict_ci=strict_ci
     )
+    # Online Elo must key by *player identity*, not deck slug: the contestant's
+    # deck can share a slug with a pool opponent (the default invocation does),
+    # which would collapse both sides into one rating entry and make the
+    # head-to-head games a no-op. Opponents get a ``pool:`` prefix so they never
+    # collide with the contestant's policy spec.
     records = [
-        {"deck0": row["deck0"], "deck1": row["deck1"], "winner": row["winner"],
-         "task_index": row["task_index"]}
+        {
+            "player0": spec.contestant if int(row["side"]) == 0 else f"pool:{row['opponent']}",
+            "player1": spec.contestant if int(row["side"]) == 1 else f"pool:{row['opponent']}",
+            "deck0": row["deck0"],
+            "deck1": row["deck1"],
+            "winner": row["winner"],
+            "task_index": row["task_index"],
+        }
         for row in rows
     ]
     return {
@@ -429,7 +462,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-model", default="deepseek-chat")
     parser.add_argument("--baseline", default=None, help="optional A/B baseline policy spec")
     parser.add_argument("--baseline-deck", default=None)
-    parser.add_argument("--workers", type=int, default=0, help="0 = all cores")
+    parser.add_argument("--workers", type=int, default=None,
+                        help="worker subprocesses (unset = all cores; 1 = single process)")
     parser.add_argument("--floor", type=float, default=0.45, help="per-opponent floor (M4)")
     parser.add_argument("--pooled-threshold", type=float, default=0.50, help="M2/M4 pooled bar")
     parser.add_argument("--strict-ci", action="store_true", help="require cluster CI to clear the bar")
