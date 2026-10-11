@@ -1,0 +1,52 @@
+{
+  "deck": "superconduct_aggro",
+  "opponents": [
+    "natlan_battleship",
+    "dual_mualani_stacks"
+  ],
+  "data_source": "collected",
+  "pool_stats": {
+    "n": 828,
+    "mean_options": 26.943236714975846,
+    "max_options": 192,
+    "distinct_request_types": [
+      "action",
+      "choose_active",
+      "reroll_dice",
+      "select_card",
+      "switch_hands"
+    ],
+    "win_fraction": 0.7185990338164251
+  },
+  "d_model": 128,
+  "epochs": 30,
+  "batch_size": 64,
+  "device": "cuda",
+  "precollate": true,
+  "n_train": 663,
+  "n_val": 165,
+  "results": [
+    {
+      "wall_seconds": 2.944,
+      "train_loss": 1.0543,
+      "train_accuracy": 0.6384,
+      "val_loss": 1.0732,
+      "val_accuracy": 0.6303,
+      "params": 100226,
+      "peak_mem_mb": 124.1,
+      "arch": "cvpn_meanpool"
+    },
+    {
+      "wall_seconds": 5.848,
+      "train_loss": 0.6699,
+      "train_accuracy": 0.7778,
+      "val_loss": 1.2447,
+      "val_accuracy": 0.6424,
+      "params": 431234,
+      "peak_mem_mb": 200.7,
+      "arch": "cvpn_transformer",
+      "n_layers": 2,
+      "n_heads": 4
+    }
+  ]
+}
