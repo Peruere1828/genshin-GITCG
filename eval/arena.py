@@ -17,9 +17,10 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable
 
+from common.jsonl import ensure_trailing_newline
 from common.lock import load_engine_lock, runtime_metadata
 from common.paths import data_dir, ensure_dir, reports_dir
-from envs.rollout import MatchTask, make_task_grid, run_tasks
+from envs.rollout import MatchTask, make_task_grid, normalize_workers, run_tasks
 from eval.ladder import compute_elo
 from eval.opponents import Opponent, baseline_opponents, scripted_opponents
 from eval.stats import estimate_rate
@@ -198,6 +199,7 @@ def _stream_state(
             encoding="utf-8",
         )
 
+    ensure_trailing_newline(raw_path)
     handle = raw_path.open("a", encoding="utf-8")
     lock = threading.Lock()
 
@@ -367,11 +369,15 @@ def main(argv: list[str] | None = None) -> int:
     contestants = _select_pool(args.contestants) if args.contestants else scripted_opponents()
     if args.smoke and not args.contestants:
         contestants = tuple(c for c in contestants if c.deck in {o.deck for o in pool})
+    try:
+        workers = normalize_workers(args.workers)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
     spec = ArenaSpec(
         contestants=contestants,
         pool=pool,
         seeds=seeds,
-        workers=args.workers,
+        workers=workers,
         swap=args.swap,
         policy0=args.policy0,
         policy1=args.policy1,

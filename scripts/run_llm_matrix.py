@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from agents.llm_assist import AssistConfig, build_llm_assist_policy
+from common.jsonl import ensure_trailing_newline
 from common.llm import build_llm_client
 from common.lock import load_engine_lock, runtime_metadata
 from common.paths import data_dir, ensure_dir, reports_dir
@@ -201,6 +202,7 @@ def _open_stream(
             ),
             encoding="utf-8",
         )
+    ensure_trailing_newline(raw_path)
     handle = raw_path.open("a", encoding="utf-8")
     return done, handle
 

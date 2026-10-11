@@ -41,16 +41,15 @@ import argparse
 import datetime as _dt
 import hashlib
 import json
-import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-from common.jsonl import read_jsonl
+from common.jsonl import ensure_trailing_newline, read_jsonl
 from common.lock import load_engine_lock, runtime_metadata
 from common.paths import data_dir, ensure_dir, reports_dir
-from envs.rollout import MatchTask, run_tasks
+from envs.rollout import MatchTask, normalize_workers, run_tasks
 from eval.opponents import scripted_opponents
 from eval.scoreboard import (
     MatchOutcome,
@@ -58,6 +57,7 @@ from eval.scoreboard import (
     best_response_probe,
     elo_from_records,
     evaluate_gates,
+    merge_gate,
     noninferiority_gate,
     paired_difference,
     sample_size_table,
@@ -144,26 +144,6 @@ class ProtocolSpec:
 # --------------------------------------------------------------------------- #
 # streaming / resume
 # --------------------------------------------------------------------------- #
-def _ensure_trailing_newline(path: Path) -> None:
-    """Repair a torn trailing line so the next append starts a fresh record.
-
-    A hard kill can leave a half-written final line with no newline. Appending
-    to it would concatenate the next record onto the torn bytes; adding the
-    missing newline isolates it so the tolerant reader skips it on the next run.
-    """
-    try:
-        if path.stat().st_size == 0:
-            return
-    except FileNotFoundError:
-        return
-    with path.open("rb") as handle:
-        handle.seek(-1, os.SEEK_END)
-        last = handle.read(1)
-    if last != b"\n":
-        with path.open("ab") as handle:
-            handle.write(b"\n")
-
-
 class _Stream:
     """Append-only per-match stream with a fingerprint sidecar (resume-safe)."""
 
@@ -202,7 +182,7 @@ class _Stream:
                 ),
                 encoding="utf-8",
             )
-        _ensure_trailing_newline(raw_path)
+        ensure_trailing_newline(raw_path)
         self._handle = raw_path.open("a", encoding="utf-8")
         self._lock = threading.Lock()
 
@@ -505,9 +485,11 @@ def _print_report(report: dict[str, Any]) -> None:
           f"clean={gates['clean_pass']} -> {'PASS' if gates['pass'] else 'FAIL'}")
     paired = report.get("paired_vs_baseline")
     if paired:
+        merge = report.get("merge_gate") or {}
         print(f"[eval] paired vs baseline: delta={paired['delta']:+.3f} "
               f"95%=[{paired['ci_low']:+.3f},{paired['ci_high']:+.3f}] "
-              f"n={paired['n_pairs']} accept={report['noninferiority']['accept']}")
+              f"n={paired['n_pairs']} noninferior={merge.get('noninferior')} "
+              f"clean={merge.get('clean')} merge_accept={merge.get('accept')}")
 
 
 def _print_sample_sizes() -> None:
@@ -537,6 +519,10 @@ def main(argv: list[str] | None = None) -> int:
         seeds = tuple(range(args.seed_start, args.seed_start + args.seeds))
 
     contestant_deck = args.contestant_deck or _default_deck(args.contestant)
+    try:
+        workers = normalize_workers(args.workers)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
     spec = ProtocolSpec(
         contestant=args.contestant,
         contestant_deck=contestant_deck,
@@ -544,7 +530,7 @@ def main(argv: list[str] | None = None) -> int:
         seeds=seeds,
         sides=tuple(args.sides),
         mode=args.mode,
-        workers=args.workers,
+        workers=workers,
         base_seed=args.seed_start,
         tag=args.tag,
         llm_budget=args.llm_budget,
@@ -604,7 +590,7 @@ def main(argv: list[str] | None = None) -> int:
             seeds=seeds,
             sides=tuple(args.sides),
             mode=spec.mode,
-            workers=args.workers,
+            workers=workers,
             base_seed=args.seed_start,
             tag=f"{spec.tag}__baseline",
             llm_budget=args.llm_budget,
@@ -620,6 +606,7 @@ def main(argv: list[str] | None = None) -> int:
         report["noninferiority"] = (
             noninferiority_gate(paired, tolerance=0.02) if paired else None
         )
+        report["merge_gate"] = merge_gate(paired, report["gates"], tolerance=0.02)
 
     _print_report(report)
 

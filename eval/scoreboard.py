@@ -396,6 +396,40 @@ def noninferiority_gate(
     }
 
 
+def merge_gate(
+    paired: Mapping[str, Any] | None,
+    gates: Mapping[str, Any] | None,
+    *,
+    tolerance: float = 0.02,
+) -> dict[str, Any]:
+    """WS5 training-merge decision: non-inferior on paired seeds AND a clean run.
+
+    The paired CI alone is not sufficient: dropping invalid pairs removes the
+    crash bias in one direction but leaves survivorship in the other, so a
+    contestant that crashes on games it would lose can still look non-inferior
+    on its surviving pairs. The merge therefore also requires
+    ``gates.clean_pass`` (no error/truncation and no fallbacks). ``available`` is
+    ``False`` when there is no paired comparison to decide on.
+    """
+    if not paired:
+        return {
+            "available": False,
+            "accept": False,
+            "noninferior": None,
+            "clean": None,
+            "tolerance": tolerance,
+        }
+    noninferior = bool(noninferiority_gate(paired, tolerance=tolerance)["accept"])
+    clean = bool((gates or {}).get("clean_pass", False))
+    return {
+        "available": True,
+        "tolerance": tolerance,
+        "noninferior": noninferior,
+        "clean": clean,
+        "accept": bool(noninferior and clean),
+    }
+
+
 # --------------------------------------------------------------------------- #
 # fixed-anchor rating (Bradley-Terry / Elo MLE)
 # --------------------------------------------------------------------------- #
@@ -622,6 +656,7 @@ __all__ = [
     "evaluate_gates",
     "paired_difference",
     "noninferiority_gate",
+    "merge_gate",
     "win_probability",
     "anchored_bt_rating",
     "rating_difference",

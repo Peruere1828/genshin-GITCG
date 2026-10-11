@@ -7,6 +7,7 @@ dataclass values are normalized so records stay JSON-serializable and stable.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -31,9 +32,33 @@ def dumps(record: Any) -> str:
     return json.dumps(record, default=_default, ensure_ascii=False, sort_keys=True)
 
 
+def ensure_trailing_newline(path: str | Path) -> None:
+    """Repair a torn trailing line so the next append starts a fresh record.
+
+    A hard kill can leave a half-written final line with no newline. Appending
+    to it would concatenate the next record onto the torn bytes, silently
+    swallowing a completed result; adding the missing newline isolates the torn
+    bytes so a tolerant reader skips them on the next run. Safe on a missing or
+    empty file.
+    """
+    path = Path(path)
+    try:
+        if path.stat().st_size == 0:
+            return
+    except FileNotFoundError:
+        return
+    with path.open("rb") as handle:
+        handle.seek(-1, os.SEEK_END)
+        last = handle.read(1)
+    if last != b"\n":
+        with path.open("ab") as handle:
+            handle.write(b"\n")
+
+
 def append_jsonl(path: str | Path, record: Any) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_trailing_newline(path)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(dumps(record))
         handle.write("\n")

@@ -35,7 +35,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
 
-from common.jsonl import dumps
+from common.jsonl import dumps, ensure_trailing_newline
 from common.lock import load_engine_lock, runtime_metadata
 from common.paths import data_dir, ensure_dir
 from envs.rollout import run_task_shard
@@ -228,6 +228,9 @@ def collect(
         _write_manifest(manifest_path, manifest)
 
     existing_done, *_ = _scan_samples(samples_path)
+    # Isolate a torn trailing line (from a hard kill) so the first append of this
+    # run starts a fresh record instead of merging into the partial bytes.
+    ensure_trailing_newline(samples_path)
     all_tasks = spec.tasks()
     pending = [task for task in all_tasks if task.index not in existing_done]
     if max_tasks is not None:

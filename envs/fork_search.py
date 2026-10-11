@@ -375,6 +375,8 @@ def _observe_public_record(tracker: Any, player: int, built: Any, code: int) -> 
     from reps.action_hierarchy import (
         public_spent_dice_for_spec,
         semantic_action_key_for_spec,
+        try_public_spent_dice_for_code,
+        try_semantic_action_key_for_code,
     )
     from reps.public_state import PublicActionRecord
     from reps.schema import DecisionType
@@ -388,9 +390,25 @@ def _observe_public_record(tracker: Any, player: int, built: Any, code: int) -> 
             selected_index = index
             break
     spec = specs[selected_index] if selected_index is not None and selected_index < len(specs) else None
+    if spec is not None:
+        semantic_key = semantic_action_key_for_spec(spec)
+        used_dice_count = int(public_spent_dice_for_spec(spec))
+        option_kind = spec.kind.value
+    else:
+        # No matching spec (e.g. an inner policy returned a code outside the
+        # legal list): fall back to the canonical code lookup, exactly as
+        # PublicStateTracker.observe_step does.
+        semantic_key = try_semantic_action_key_for_code(int(code))
+        used_dice_count = int(try_public_spent_dice_for_code(int(code)) or 0)
+        option_kind = None
     view = context.player_view
     request_type = context.request_type
-    known = request_type in {DecisionType.ACTION, DecisionType.CHOOSE_ACTIVE}
+    # observe_step marks the payload known for the acting player's own decisions
+    # as well as for public action / choose-active requests.
+    known = int(player) == int(tracker.player_id) or request_type in {
+        DecisionType.ACTION,
+        DecisionType.CHOOSE_ACTIVE,
+    }
     tracker.observe_public_record(
         PublicActionRecord(
             acting_player=int(player),
@@ -398,9 +416,9 @@ def _observe_public_record(tracker: Any, player: int, built: Any, code: int) -> 
             round_number=int(view.round_number) if view is not None else 0,
             phase=str(view.phase) if view is not None else "",
             payload={"action_code": int(code)} if known else None,
-            semantic_key=semantic_action_key_for_spec(spec) if spec is not None else None,
-            option_kind=spec.kind.value if spec is not None else None,
-            used_dice_count=int(public_spent_dice_for_spec(spec)) if spec is not None else 0,
+            semantic_key=semantic_key,
+            option_kind=option_kind,
+            used_dice_count=used_dice_count,
             known_payload=known,
             selected_legal_index=selected_index,
             legal_option_count=len(codes),

@@ -285,6 +285,59 @@ def test_observe_public_record_tracks_opponent_reveals():
     assert tracker.revealed_opponent_card_definition_ids() == (42,)
 
 
+def test_observe_public_record_marks_own_decision_payload_known():
+    from envs.fork_search import _observe_public_record
+    from reps.public_state import PublicStateTracker
+    from reps.schema import DecisionType
+
+    class _Context:
+        legal_low_level_codes = ()
+        legal_low_level_specs = ()
+        request_type = DecisionType.REROLL_DICE  # hidden by request type
+        player_view = None
+
+    class _Built:
+        context = _Context()
+
+    own = PublicStateTracker(player_id=0)
+    other = PublicStateTracker(player_id=1)
+    _observe_public_record(own, player=0, built=_Built(), code=0)
+    _observe_public_record(other, player=0, built=_Built(), code=0)
+    assert own.public_history()[-1].known_payload is True   # own decision
+    assert other.public_history()[-1].known_payload is False  # hidden reroll
+
+
+def test_observe_public_record_spec_less_uses_code_lookup(monkeypatch):
+    import reps.action_hierarchy as action_hierarchy
+
+    from envs.fork_search import _observe_public_record
+    from reps.public_state import PublicStateTracker
+    from reps.schema import DecisionType
+
+    monkeypatch.setattr(
+        action_hierarchy, "try_semantic_action_key_for_code",
+        lambda code: (("card_definition_id", 77),),
+    )
+    monkeypatch.setattr(action_hierarchy, "try_public_spent_dice_for_code", lambda code: 3)
+
+    class _Context:
+        legal_low_level_codes = ()
+        legal_low_level_specs = ()
+        request_type = DecisionType.ACTION
+        player_view = None
+
+    class _Built:
+        context = _Context()
+
+    tracker = PublicStateTracker(player_id=0)
+    _observe_public_record(tracker, player=1, built=_Built(), code=5)
+    record = tracker.public_history()[-1]
+    # No matching spec -> fall back to the canonical code lookup (as observe_step does).
+    assert dict(record.semantic_key)["card_definition_id"] == 77
+    assert record.used_dice_count == 3
+    assert tracker.revealed_opponent_card_definition_ids() == (77,)
+
+
 # --------------------------------------------------------------------------- #
 # slow engine tests
 # --------------------------------------------------------------------------- #

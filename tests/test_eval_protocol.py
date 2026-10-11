@@ -20,6 +20,7 @@ from eval.scoreboard import (
     detection_sample_size,
     evaluate_gates,
     floor_sample_size,
+    merge_gate,
     noninferiority_gate,
     paired_difference,
     sample_size_for_halfwidth,
@@ -156,6 +157,16 @@ def test_noninferiority_gate():
     assert noninferiority_gate({"ci_low": -0.05}, tolerance=0.02)["accept"] is False
     # A tiny tolerated regression is still accepted (noise guard).
     assert noninferiority_gate({"ci_low": -0.01}, tolerance=0.02)["accept"] is True
+
+
+def test_merge_gate_requires_non_inferior_and_clean():
+    paired = {"ci_low": 0.01}  # non-inferior on the surviving pairs
+    assert merge_gate(paired, {"clean_pass": True})["accept"] is True
+    dirty = merge_gate(paired, {"clean_pass": False})
+    assert dirty["noninferior"] is True
+    assert dirty["clean"] is False
+    assert dirty["accept"] is False  # a crash rate invalidates the merge
+    assert merge_gate(None, {"clean_pass": True})["available"] is False
 
 
 # --------------------------------------------------------------------------- #

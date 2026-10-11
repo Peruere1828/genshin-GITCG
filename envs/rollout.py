@@ -239,6 +239,22 @@ def run_task_shard(
     return results
 
 
+def normalize_workers(workers: int | None) -> int | None:
+    """Resolve a CLI ``--workers`` value.
+
+    ``None`` and ``0`` both mean "all cores" (the historical CLI meaning of 0);
+    negative values are rejected. Keeping this in one place removes the
+    ``--workers 0 -> 1 sequential worker`` footgun (which also disabled
+    incremental streaming).
+    """
+    if workers is None:
+        return None
+    workers = int(workers)
+    if workers < 0:
+        raise ValueError(f"workers must be >= 0, got {workers}")
+    return None if workers == 0 else workers
+
+
 def run_tasks(
     tasks: Iterable[MatchTask],
     *,
