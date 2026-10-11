@@ -169,6 +169,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--overfit", action="store_true", help="tiny overfit sanity mode")
     parser.add_argument(
+        "--precollate",
+        action="store_true",
+        help="fast path: pad/collate the pool once, slice on device (M3 ops)",
+    )
+    parser.add_argument(
         "--replays",
         nargs="+",
         default=None,
@@ -183,14 +188,15 @@ def main(argv: list[str] | None = None) -> int:
         report = run_round(
             train_seeds=(0,),
             eval_seeds=(100,),
-            train_config=TrainConfig(epochs=60, batch_size=16, lr=3e-3, val_fraction=0.0, device=args.device),
+            train_config=TrainConfig(epochs=60, batch_size=16, lr=3e-3, val_fraction=0.0, device=args.device,
+                                     precollate=args.precollate),
             tag="overfit",
         )
     else:
         report = run_round(
             train_seeds=tuple(range(args.train_seeds)),
             eval_seeds=tuple(range(100, 100 + args.eval_seeds)),
-            train_config=TrainConfig(epochs=args.epochs, device=args.device),
+            train_config=TrainConfig(epochs=args.epochs, device=args.device, precollate=args.precollate),
             tag=args.tag,
             replays_dirs=args.replays,
         )

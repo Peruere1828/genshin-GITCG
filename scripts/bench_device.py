@@ -49,6 +49,7 @@ def run_bench(
     batch_size: int = 32,
     devices: tuple[str, ...] = ("cpu", "cuda"),
     replays_dirs: tuple[str, ...] = (),
+    precollate: bool = False,
 ) -> dict:
     import torch
 
@@ -74,7 +75,7 @@ def run_bench(
             model = CVPN(config_for_encoder(encoder, d_model=int(d_model)))
             config = TrainConfig(
                 epochs=epochs, batch_size=batch_size, val_fraction=0.2,
-                seed=0, device=dev,
+                seed=0, device=dev, precollate=precollate,
             )
             if dev == "cuda":
                 torch.cuda.synchronize()
@@ -135,6 +136,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--devices", nargs="*", default=["cpu", "cuda"])
     p.add_argument("--replays", nargs="*", default=None,
                    help="replay dir(s) from train.collect (skip online collection)")
+    p.add_argument("--precollate", action="store_true",
+                   help="fast path: pad/collate the pool once, slice on device (M3 ops)")
     return p
 
 
@@ -149,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
         batch_size=args.batch_size,
         devices=tuple(args.devices),
         replays_dirs=tuple(args.replays or ()),
+        precollate=args.precollate,
     )
     return 0
 

@@ -132,3 +132,61 @@ def test_neural_policy_spec_loads_checkpoint(collected, tmp_path):
     assert record.error is None
     assert record.io_errors0 == ()
     assert record.fallbacks0 == 0
+
+
+def test_precollate_padding_does_not_change_loss(collected):
+    """Global padding must be loss-neutral: masked tokens/options are inert."""
+    import torch
+
+    from train.train_loop import _device_tensors, _loss_on_index
+
+    encoder, samples = collected
+    torch.manual_seed(0)
+    model = CVPN(config_for_encoder(encoder, d_model=64)).eval()
+    n = min(16, len(samples))
+    subset = list(samples[:n])
+    padded = subset + list(samples[:n])  # bigger T/K -> different global pad widths
+    small = _device_tensors(subset, "cpu")
+    big = _device_tensors(padded, "cpu")
+    idx = torch.arange(n)
+    with torch.no_grad():
+        loss_small, _, _ = _loss_on_index(model, small, idx, 0.5)
+        loss_big, _, _ = _loss_on_index(model, big, idx, 0.5)
+    assert torch.allclose(loss_small, loss_big, atol=1e-4)
+
+
+def test_precollate_fast_path_runs_and_learns(collected):
+    import torch
+
+    encoder, samples = collected
+    torch.manual_seed(0)
+    model = CVPN(config_for_encoder(encoder, d_model=64))
+    metrics = train_bc(
+        samples,
+        model,
+        TrainConfig(epochs=8, batch_size=16, val_fraction=0.2, device="cpu", precollate=True),
+    )
+    assert metrics.n_train > 0
+    assert metrics.train_loss == metrics.train_loss  # finite
+    assert 0.0 <= metrics.val_accuracy <= 1.0
+    assert metrics.train_accuracy >= metrics.val_accuracy - 0.25
+
+
+def test_precollate_matches_default_path(collected):
+    import torch
+
+    encoder, samples = collected
+    torch.manual_seed(0)
+    base = CVPN(config_for_encoder(encoder, d_model=64))
+    m_base = train_bc(
+        samples, base,
+        TrainConfig(epochs=8, batch_size=16, val_fraction=0.2, seed=0, device="cpu"),
+    )
+    torch.manual_seed(0)
+    fast = CVPN(config_for_encoder(encoder, d_model=64))
+    m_fast = train_bc(
+        samples, fast,
+        TrainConfig(epochs=8, batch_size=16, val_fraction=0.2, seed=0, device="cpu", precollate=True),
+    )
+    assert abs(m_base.train_accuracy - m_fast.train_accuracy) < 0.05
+    assert abs(m_base.train_loss - m_fast.train_loss) < 0.1

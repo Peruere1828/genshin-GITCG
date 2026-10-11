@@ -31,6 +31,11 @@ class TrainConfig:
     # Torch device the model/tensors are moved to (D14: WSL MX550 small-net
     # experiments). Defaults to CPU so behaviour is unchanged where no GPU exists.
     device: str = "cpu"
+    # M3 ops exploration: pad/collate the whole pool once and slice on device
+    # instead of collating + host->device per batch. Removes per-step host
+    # overhead (measured ~5x on real data; see scripts/bench_ops.py). Uses the
+    # same shuffle order as the default path, so results are numerically close.
+    precollate: bool = False
 
 
 @dataclass
@@ -116,11 +121,121 @@ def evaluate_loss_accuracy(
     return _evaluate(model, samples, value_coef)
 
 
+def _device_tensors(samples: Sequence[Sample], device: str) -> dict:
+    """Collate a whole sample list once and move it to ``device``."""
+    tokens, token_mask, options, option_mask = collate([s.observation for s in samples])
+    return {
+        "tokens": tokens.to(device),
+        "token_mask": token_mask.to(device),
+        "options": options.to(device),
+        "option_mask": option_mask.to(device),
+        "teacher": torch.tensor(
+            [max(0, int(s.teacher_index)) for s in samples], dtype=torch.long, device=device
+        ),
+        "value": torch.tensor(
+            [float(s.value_target) for s in samples], dtype=torch.float32, device=device
+        ),
+        "count": len(samples),
+    }
+
+
+def _loss_on_index(model: CVPN, tensors: dict, index: torch.Tensor, value_coef: float):
+    logits, value = model(
+        tensors["tokens"][index],
+        tensors["token_mask"][index],
+        tensors["options"][index],
+        tensors["option_mask"][index],
+    )
+    teacher = tensors["teacher"][index]
+    ce = nn.functional.cross_entropy(logits, teacher)
+    mse = nn.functional.mse_loss(value, tensors["value"][index])
+    with torch.no_grad():
+        acc = (torch.argmax(logits, dim=-1) == teacher).float().mean()
+    return ce + value_coef * mse, acc, ce.detach()
+
+
+def _evaluate_precollated(model: CVPN, tensors: dict, value_coef: float) -> tuple[float, float]:
+    if tensors is None or tensors["count"] == 0:
+        return 0.0, 0.0
+    device = tensors["tokens"].device
+    model.eval()
+    losses: list[float] = []
+    correct = 0
+    n = tensors["count"]
+    with torch.no_grad():
+        for start in range(0, n, 64):
+            index = torch.arange(start, min(start + 64, n), device=device)
+            loss, acc, _ = _loss_on_index(model, tensors, index, value_coef)
+            losses.append(float(loss.item()))
+            correct += int(round(float(acc.item()) * len(index)))
+    model.train()
+    return sum(losses) / len(losses), correct / n
+
+
+def _train_bc_precollated(
+    samples: Sequence[Sample], model: CVPN, config: TrainConfig
+) -> TrainMetrics:
+    """Fast path: collate the pool once, slice on device each step.
+
+    Same shuffle order as :func:`train_bc` (same seeded RNG), so the batches and
+    therefore the metrics match the default path up to float summation order.
+    """
+    torch.manual_seed(config.seed)
+    model.to(config.device)
+    train, val = split_samples(samples, val_fraction=config.val_fraction, seed=config.seed)
+    if not train:
+        return TrainMetrics(0, 0, 0, 0.0, 0.0, 0.0, 0.0, [])
+    device = config.device
+    train_tensors = _device_tensors(train, device)
+    val_tensors = _device_tensors(val, device) if val else None
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=config.lr, weight_decay=config.weight_decay
+    )
+    model.train()
+    rng = random.Random(config.seed)
+    history: list[dict] = []
+    n = len(train)
+    last_train_acc = 0.0
+    last_train_loss = 0.0
+    for epoch in range(config.epochs):
+        order = list(range(n))
+        rng.shuffle(order)
+        epoch_losses: list[float] = []
+        correct = 0
+        for start in range(0, n, config.batch_size):
+            index = torch.tensor(order[start : start + config.batch_size], device=device)
+            optimizer.zero_grad(set_to_none=True)
+            loss, acc, _ = _loss_on_index(model, train_tensors, index, config.value_coef)
+            loss.backward()
+            optimizer.step()
+            epoch_losses.append(float(loss.item()))
+            correct += int(round(float(acc.item()) * len(index)))
+        last_train_loss = sum(epoch_losses) / max(1, len(epoch_losses))
+        last_train_acc = correct / n
+        history.append(
+            {"epoch": epoch, "train_loss": round(last_train_loss, 4), "train_acc": round(last_train_acc, 4)}
+        )
+    val_loss, val_acc = _evaluate_precollated(model, val_tensors, config.value_coef)
+    model.eval()
+    return TrainMetrics(
+        epochs=config.epochs,
+        n_train=n,
+        n_val=len(val),
+        train_loss=last_train_loss,
+        train_accuracy=last_train_acc,
+        val_loss=float(val_loss),
+        val_accuracy=val_acc,
+        history=history,
+    )
+
+
 def train_bc(
     samples: Sequence[Sample],
     model: CVPN,
     config: TrainConfig,
 ) -> TrainMetrics:
+    if config.precollate:
+        return _train_bc_precollated(samples, model, config)
     torch.manual_seed(config.seed)
     model.to(config.device)
     train, val = split_samples(samples, val_fraction=config.val_fraction, seed=config.seed)
