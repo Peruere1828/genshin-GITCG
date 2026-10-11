@@ -1,0 +1,88 @@
+{
+  "device_name": "NVIDIA GeForce MX550",
+  "torch": "2.6.0+cu124",
+  "cuda": "12.4",
+  "arch": [
+    7,
+    5
+  ],
+  "forward": [
+    {
+      "batch": 1,
+      "eager_ms": 0.7484,
+      "kernels_ms": 0.5352,
+      "compile_ms": 0.5489,
+      "kernels_speedup": 1.398,
+      "compile_speedup": 1.363,
+      "max_abs_diff": 6.705522537231445e-08
+    },
+    {
+      "batch": 8,
+      "eager_ms": 0.7435,
+      "kernels_ms": 0.413,
+      "compile_ms": 0.6125,
+      "kernels_speedup": 1.8,
+      "compile_speedup": 1.214,
+      "max_abs_diff": 4.470348358154297e-08
+    },
+    {
+      "batch": 64,
+      "eager_ms": 0.6808,
+      "kernels_ms": 0.6955,
+      "compile_ms": 0.7826,
+      "kernels_speedup": 0.979,
+      "compile_speedup": 0.87,
+      "max_abs_diff": 7.450580596923828e-08
+    }
+  ],
+  "ops": [
+    {
+      "op": "layernorm_silu",
+      "shape": "64x128",
+      "kernel_us": 12.59,
+      "torch_us": 35.32
+    },
+    {
+      "op": "layernorm_silu",
+      "shape": "2688x128",
+      "kernel_us": 53.97,
+      "torch_us": 107.33
+    },
+    {
+      "op": "masked_mean_pool",
+      "shape": "1x42x128",
+      "kernel_us": 12.79,
+      "torch_us": 75.07
+    },
+    {
+      "op": "scorer_tail",
+      "shape": "1x26x256",
+      "kernel_us": 12.0,
+      "torch_us": 221.44
+    },
+    {
+      "op": "value_head",
+      "shape": "1x128",
+      "kernel_us": 13.56,
+      "torch_us": 101.68
+    },
+    {
+      "op": "masked_mean_pool",
+      "shape": "64x42x128",
+      "kernel_us": 18.11,
+      "torch_us": 81.12
+    },
+    {
+      "op": "scorer_tail",
+      "shape": "64x26x256",
+      "kernel_us": 45.71,
+      "torch_us": 93.33
+    },
+    {
+      "op": "value_head",
+      "shape": "64x128",
+      "kernel_us": 77.44,
+      "torch_us": 138.76
+    }
+  ]
+}

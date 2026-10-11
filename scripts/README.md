@@ -62,5 +62,10 @@
   python -m scripts.bench_ops --device cuda --out reports/explore
   python -m scripts.bench_model --games 20 --d-model 128 --device cuda
   ```
+- `bench_kernels.py`（MX550 特化）：自写融合 CUDA kernel（`train/cuda/cvpn_fused.cu`）对 eager / `torch.compile`
+  的前向与逐算子对比；小 batch（在线搜索）加速 x1.4–1.8。
+  ```bash
+  python -m scripts.bench_kernels --device cuda --out reports/explore
+  ```
 
 待办：`run_iteration`（采集→训练→评测→落盘，断点续跑）。依赖 `train/` 落地。

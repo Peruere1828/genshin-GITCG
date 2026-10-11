@@ -29,12 +29,17 @@ class CVPNConfig:
     option_hidden: int = 256
     value_hidden: int = 128
     dropout: float = 0.0
+    # MX550 fused-kernel fast path (train/cuda/cvpn_fused.cu). Off by default;
+    # falls back to the eager path if the extension cannot be built.
+    use_cuda_kernels: bool = False
 
 
 class CVPN(nn.Module):
     def __init__(self, config: CVPNConfig) -> None:
         super().__init__()
         self.config = config
+        self.use_cuda_kernels = bool(config.use_cuda_kernels)
+        self._cuda_kernels_module = None
         d = config.d_model
         self.token_proj = nn.Sequential(
             nn.Linear(config.token_dim, d), nn.LayerNorm(d), nn.SiLU()
@@ -56,6 +61,60 @@ class CVPN(nn.Module):
         token_mask: torch.Tensor,      # (B, T) bool
         options: torch.Tensor,         # (B, K, option_dim)
         option_mask: torch.Tensor,     # (B, K) bool
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if (
+            self.use_cuda_kernels
+            and tokens.is_cuda
+            and self.config.dropout == 0.0
+            and not self.training
+        ):
+            fast = self._forward_cuda_kernels(tokens, token_mask, options, option_mask)
+            if fast is not None:
+                return fast
+        return self._forward_eager(tokens, token_mask, options, option_mask)
+
+    def _forward_cuda_kernels(
+        self,
+        tokens: torch.Tensor,
+        token_mask: torch.Tensor,
+        options: torch.Tensor,
+        option_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor] | None:
+        """MX550 fused-kernel forward (eval, fp32). Returns ``None`` to fall back."""
+        if self._cuda_kernels_module is None:
+            from train.cuda_kernels import cvpn_kernels
+
+            self._cuda_kernels_module = cvpn_kernels() or False
+        kernels = self._cuda_kernels_module
+        if not kernels:
+            return None
+        import torch.nn.functional as F
+
+        tp = self.token_proj
+        projected = kernels.layernorm_silu(
+            tp[0](tokens), tp[1].weight, tp[1].bias, float(tp[1].eps)
+        )
+        global_vec = kernels.masked_mean_pool(projected, token_mask)
+
+        option_vec = F.silu(self.option_proj[0](options))
+        repeated = global_vec.unsqueeze(1).expand(-1, option_vec.size(1), -1)
+        hidden_pre = self.option_scorer[0](torch.cat([repeated, option_vec], dim=-1))
+        last = self.option_scorer[3]
+        logits = kernels.scorer_tail(
+            hidden_pre, last.weight.squeeze(0), float(last.bias), option_mask
+        )
+        vh = self.value_head
+        value = kernels.value_head(
+            global_vec, vh[0].weight, vh[0].bias, vh[2].weight.squeeze(0), float(vh[2].bias)
+        )
+        return logits, value
+
+    def _forward_eager(
+        self,
+        tokens: torch.Tensor,
+        token_mask: torch.Tensor,
+        options: torch.Tensor,
+        option_mask: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         projected = self.token_proj(tokens)
         mask = token_mask.unsqueeze(-1).to(projected.dtype)
@@ -235,6 +294,21 @@ def transformer_config_for_encoder(encoder, **overrides) -> TransformerCVPNConfi
     base = dict(token_dim=encoder.token_dim, option_dim=encoder.option_dim)
     base.update(overrides)
     return TransformerCVPNConfig(**base)
+
+
+def enable_cuda_kernels(model: "CVPN") -> bool:
+    """Turn on the MX550 fused-kernel fast path on ``model`` (returns availability).
+
+    Only affects the eager ``CVPN`` (the transformer has its own path). Falls back
+    silently to eager when the extension cannot be built.
+    """
+    if not isinstance(model, CVPN):
+        return False
+    from train.cuda_kernels import kernels_available
+
+    model.use_cuda_kernels = True
+    model._cuda_kernels_module = None
+    return kernels_available()
 
 
 def collate(observations: Sequence[EncodedObservation]) -> tuple[torch.Tensor, ...]:

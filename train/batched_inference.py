@@ -40,6 +40,7 @@ class BatchScorer:
     device: str = "cpu"
     max_batch_size: int = 128
     use_bf16: bool = False
+    cuda_kernels: bool = False
 
     def __post_init__(self) -> None:
         import torch
@@ -49,6 +50,10 @@ class BatchScorer:
         self.model.to(self.device)
         if self.use_bf16:
             self.model.to(torch.bfloat16)
+        if self.cuda_kernels and self.device.startswith("cuda"):
+            from train.model import enable_cuda_kernels
+
+            enable_cuda_kernels(self.model)
 
     def _autocast(self):
         torch = self._torch
@@ -172,15 +177,18 @@ def _handle_request(scorer: BatchScorer, request: dict[str, Any]) -> dict[str, A
     return {"logits": logits, "values": values, "n": len(observations)}
 
 
-def serve(checkpoint: str, *, device: str, bf16: bool, max_batch_size: int) -> int:
+def serve(checkpoint: str, *, device: str, bf16: bool, max_batch_size: int, cuda_kernels: bool = False) -> int:
     """Read scoring requests on stdin, write responses on stdout (JSON-lines)."""
     from train.model import CVPN, checkpoint_encoder_config
 
     model = CVPN.load(checkpoint)
-    scorer = BatchScorer(model=model, device=device, max_batch_size=max_batch_size, use_bf16=bf16)
+    scorer = BatchScorer(
+        model=model, device=device, max_batch_size=max_batch_size, use_bf16=bf16,
+        cuda_kernels=cuda_kernels,
+    )
     print(
         f"[batched_inference] serving device={device} bf16={bf16} "
-        f"max_batch_size={max_batch_size} encoder_config="
+        f"cuda_kernels={cuda_kernels} max_batch_size={max_batch_size} encoder_config="
         f"{'yes' if checkpoint_encoder_config(checkpoint) else 'default'}",
         file=sys.stderr,
         flush=True,
@@ -211,6 +219,7 @@ class BatchedInferenceService:
         python: str | None = None,
         repo_root: str | None = None,
         timeout: float = 120.0,
+        cuda_kernels: bool = False,
     ) -> None:
         from common.paths import repo_root as _repo_root
 
@@ -231,6 +240,8 @@ class BatchedInferenceService:
         ]
         if bf16:
             command.append("--bf16")
+        if cuda_kernels:
+            command.append("--cuda-kernels")
         self.timeout = float(timeout)
         self._process = subprocess.Popen(
             command,
@@ -310,6 +321,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--bf16", action="store_true")
+    parser.add_argument("--cuda-kernels", action="store_true",
+                        help="MX550 fused-kernel fast path (eval, fp32)")
     parser.add_argument("--max-batch-size", type=int, default=128)
     return parser
 
@@ -322,6 +335,7 @@ def main(argv: list[str] | None = None) -> int:
             device=args.device,
             bf16=args.bf16,
             max_batch_size=args.max_batch_size,
+            cuda_kernels=args.cuda_kernels,
         )
     raise SystemExit("nothing to do: pass --serve")
 

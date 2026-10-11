@@ -109,5 +109,11 @@ LSF 模板：`scripts/cluster/lsf/collect.lsf`（单节点多 worker）、`colle
 规模放大留给机会算力（PLAN §5.1）：CVPN 放大（bf16/transformer）、`batched_inference`（按作业拉起，无常驻服务）、JS 侧批量 fork/rollout 吞吐优化。
 CPU 档先用 d_model 64–128、fp32 跑通语义（WSL MX550 满电可作 GPU 训练/推理节点，`--device cuda`，见 PLAN §5.2）。
 
+**MX550 融合 kernel（特化）**：`train/cuda/cvpn_fused.cu` + `train/cuda_kernels.py`——把 CVPN 前向的
+LayerNorm+SiLU / 掩码池化 / scorer 末层 / value MLP 融成 4 个 kernel（GEMM 仍走 cuBLAS），小 batch
+（在线搜索叶子打分）前向 x1.4–1.8。启用：`CVPNConfig(use_cuda_kernels=True)` 或
+`train.model.enable_cuda_kernels(model)`；批推理 `train.batched_inference --serve --cuda-kernels`。
+默认关、失败自动回退。基准 `scripts/bench_kernels.py`，明细 `reports/explore/mx550_kernels.md`。
+
 L5.3（学习曲线扫描）已交付 `train/learning_curve.py`，端到端跑通；本地做千/万级样本的
 正确性与规模-数据关系验证，全量放大并入 M3 GPU 档。
