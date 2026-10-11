@@ -17,6 +17,7 @@
 // Build via train/cuda_kernels.py (TORCH_CUDA_ARCH_LIST=7.5).
 
 #include <torch/extension.h>
+#include <ATen/cuda/CUDAContext.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <math.h>
@@ -203,7 +204,8 @@ torch::Tensor layernorm_silu(torch::Tensor x, torch::Tensor w, torch::Tensor b, 
     auto y = torch::empty_like(xc);
     int threads = std::min(1024, std::max(32, D));
     int smem = threads * sizeof(float);
-    layernorm_silu_kernel<<<rows, threads, smem>>>(
+    auto stream = at::cuda::getCurrentCUDAStream();
+    layernorm_silu_kernel<<<rows, threads, smem, stream>>>(
         xc.data_ptr<float>(), wc.data_ptr<float>(), bc.data_ptr<float>(),
         y.data_ptr<float>(), rows, D, (float)eps);
     return y;
@@ -217,7 +219,8 @@ torch::Tensor masked_mean_pool(torch::Tensor projected, torch::Tensor token_mask
     auto mask = token_mask.contiguous();
     auto out = torch::empty({B, D}, p.options());
     int threads = std::min(256, std::max(32, D));
-    masked_mean_pool_kernel<<<B, threads>>>(
+    auto stream = at::cuda::getCurrentCUDAStream();
+    masked_mean_pool_kernel<<<B, threads, 0, stream>>>(
         p.data_ptr<float>(), reinterpret_cast<const unsigned char*>(mask.data_ptr<bool>()),
         out.data_ptr<float>(), B, T, D);
     return out;
@@ -233,7 +236,8 @@ torch::Tensor scorer_tail(torch::Tensor hidden, torch::Tensor W2, double b2, tor
     auto logits = torch::empty({B, K}, h.options());
     int total = B * K;
     int threads = 256;
-    scorer_tail_kernel<<<ceil_div(total, threads), threads>>>(
+    auto stream = at::cuda::getCurrentCUDAStream();
+    scorer_tail_kernel<<<ceil_div(total, threads), threads, 0, stream>>>(
         h.data_ptr<float>(), w2.data_ptr<float>(), (float)b2,
         reinterpret_cast<const unsigned char*>(mask.data_ptr<bool>()),
         logits.data_ptr<float>(), B, K, H);
@@ -251,7 +255,8 @@ torch::Tensor value_head(
     auto value = torch::empty({B}, p.options());
     int threads = std::min(1024, std::max(32, VH));
     int smem = threads * sizeof(float);
-    value_head_kernel<<<B, threads, smem>>>(
+    auto stream = at::cuda::getCurrentCUDAStream();
+    value_head_kernel<<<B, threads, smem, stream>>>(
         p.data_ptr<float>(), w1.data_ptr<float>(), bb1.data_ptr<float>(),
         w2.data_ptr<float>(), (float)b2, value.data_ptr<float>(), B, D, VH);
     return value;
@@ -273,7 +278,8 @@ torch::Tensor token_proj_ln_silu(
     if (smem > 48 * 1024) {
         cudaFuncSetAttribute(linear_ln_silu_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
     }
-    linear_ln_silu_kernel<<<ceil_div(rows, ROW_TILE), threads, smem>>>(
+    auto stream = at::cuda::getCurrentCUDAStream();
+    linear_ln_silu_kernel<<<ceil_div(rows, ROW_TILE), threads, smem, stream>>>(
         xc.data_ptr<float>(), wc.data_ptr<float>(), bc.data_ptr<float>(),
         lw.data_ptr<float>(), lb.data_ptr<float>(), y.data_ptr<float>(), rows, K, D, (float)eps);
     return y;
@@ -291,7 +297,8 @@ torch::Tensor linear_silu(torch::Tensor x, torch::Tensor W, torch::Tensor bias) 
     if (smem > 48 * 1024) {
         cudaFuncSetAttribute(linear_silu_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
     }
-    linear_silu_kernel<<<ceil_div(rows, ROW_TILE), threads, smem>>>(
+    auto stream = at::cuda::getCurrentCUDAStream();
+    linear_silu_kernel<<<ceil_div(rows, ROW_TILE), threads, smem, stream>>>(
         xc.data_ptr<float>(), wc.data_ptr<float>(), bc.data_ptr<float>(), y.data_ptr<float>(),
         rows, K, D);
     return y;

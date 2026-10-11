@@ -32,6 +32,8 @@ class CVPNConfig:
     # MX550 fused-kernel fast path (train/cuda/cvpn_fused.cu). Off by default;
     # falls back to the eager path if the extension cannot be built.
     use_cuda_kernels: bool = False
+    # Capture the forward into a CUDA graph (per-shape) to remove launch overhead.
+    use_cuda_graph: bool = False
 
 
 class CVPN(nn.Module):
@@ -44,7 +46,10 @@ class CVPN(nn.Module):
         super().__init__()
         self.config = config
         self.use_cuda_kernels = bool(config.use_cuda_kernels)
+        self.use_cuda_graph = bool(config.use_cuda_graph)
         self._cuda_kernels_module = None
+        self._cuda_scalars = None
+        self._graph = None
         d = config.d_model
         self.token_proj = nn.Sequential(
             nn.Linear(config.token_dim, d), nn.LayerNorm(d), nn.SiLU()
@@ -66,6 +71,21 @@ class CVPN(nn.Module):
         token_mask: torch.Tensor,      # (B, T) bool
         options: torch.Tensor,         # (B, K, option_dim)
         option_mask: torch.Tensor,     # (B, K) bool
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.use_cuda_graph and tokens.is_cuda and not self.training:
+            if self._graph is None:
+                from train.cuda_graph import GraphForward
+
+                self._graph = GraphForward(self._forward_impl)
+            return self._graph(tokens, token_mask, options, option_mask)
+        return self._forward_impl(tokens, token_mask, options, option_mask)
+
+    def _forward_impl(
+        self,
+        tokens: torch.Tensor,
+        token_mask: torch.Tensor,
+        options: torch.Tensor,
+        option_mask: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if (
             self.use_cuda_kernels
@@ -93,6 +113,14 @@ class CVPN(nn.Module):
         kernels = self._cuda_kernels_module
         if not kernels:
             return None
+        # Cache host-side scalars once (float() syncs, which is illegal inside a
+        # CUDA graph capture). Weights are fixed in eval, so this stays valid.
+        if self._cuda_scalars is None:
+            self._cuda_scalars = (
+                float(self.option_scorer[3].bias),
+                float(self.value_head[2].bias),
+            )
+        scorer_b2, value_b2 = self._cuda_scalars
 
         tp = self.token_proj
         op = self.option_proj
@@ -121,11 +149,11 @@ class CVPN(nn.Module):
         hidden_pre = self.option_scorer[0](torch.cat([repeated, option_vec], dim=-1))
         last = self.option_scorer[3]
         logits = kernels.scorer_tail(
-            hidden_pre, last.weight.squeeze(0), float(last.bias), option_mask
+            hidden_pre, last.weight.squeeze(0), scorer_b2, option_mask
         )
         vh = self.value_head
         value = kernels.value_head(
-            global_vec, vh[0].weight, vh[0].bias, vh[2].weight.squeeze(0), float(vh[2].bias)
+            global_vec, vh[0].weight, vh[0].bias, vh[2].weight.squeeze(0), value_b2
         )
         return logits, value
 
@@ -328,7 +356,15 @@ def enable_cuda_kernels(model: "CVPN") -> bool:
 
     model.use_cuda_kernels = True
     model._cuda_kernels_module = None
+    model._graph = None
     return kernels_available()
+
+
+def enable_cuda_graph(model: "CVPN") -> None:
+    """Capture ``model``'s forward into a per-shape CUDA graph (inference only)."""
+    if isinstance(model, CVPN):
+        model.use_cuda_graph = True
+        model._graph = None
 
 
 def collate(observations: Sequence[EncodedObservation]) -> tuple[torch.Tensor, ...]:

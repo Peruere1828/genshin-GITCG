@@ -1,0 +1,118 @@
+{
+  "device_name": "NVIDIA GeForce MX550",
+  "torch": "2.6.0+cu124",
+  "cuda": "12.4",
+  "arch": [
+    7,
+    5
+  ],
+  "forward": [
+    {
+      "batch": 1,
+      "eager_ms": 0.8662,
+      "kernels_ms": 0.2345,
+      "graph_ms": 0.1975,
+      "compile_ms": 0.5388,
+      "kernels_speedup": 3.693,
+      "graph_speedup": 4.386,
+      "compile_speedup": 1.608,
+      "max_abs_diff": 5.960464477539063e-08
+    },
+    {
+      "batch": 8,
+      "eager_ms": 0.861,
+      "kernels_ms": 0.3145,
+      "graph_ms": 0.1756,
+      "compile_ms": 0.6684,
+      "kernels_speedup": 2.737,
+      "graph_speedup": 4.904,
+      "compile_speedup": 1.288,
+      "max_abs_diff": 5.21540641784668e-08
+    },
+    {
+      "batch": 64,
+      "eager_ms": 0.8775,
+      "kernels_ms": 0.4778,
+      "graph_ms": 0.4969,
+      "compile_ms": 0.7458,
+      "kernels_speedup": 1.837,
+      "graph_speedup": 1.766,
+      "compile_speedup": 1.177,
+      "max_abs_diff": 7.450580596923828e-08
+    }
+  ],
+  "ops": [
+    {
+      "op": "layernorm_silu",
+      "shape": "64x128",
+      "kernel_us": 13.92,
+      "torch_us": 28.42
+    },
+    {
+      "op": "token_proj_ln_silu",
+      "shape": "64x65",
+      "kernel_us": 45.96,
+      "torch_us": 68.39
+    },
+    {
+      "op": "linear_silu",
+      "shape": "64x68",
+      "kernel_us": 33.39,
+      "torch_us": 46.25
+    },
+    {
+      "op": "layernorm_silu",
+      "shape": "2688x128",
+      "kernel_us": 54.51,
+      "torch_us": 81.34
+    },
+    {
+      "op": "token_proj_ln_silu",
+      "shape": "2688x65",
+      "kernel_us": 566.18,
+      "torch_us": 148.84
+    },
+    {
+      "op": "linear_silu",
+      "shape": "2688x68",
+      "kernel_us": 412.56,
+      "torch_us": 159.94
+    },
+    {
+      "op": "masked_mean_pool",
+      "shape": "1x42x128",
+      "kernel_us": 18.52,
+      "torch_us": 82.32
+    },
+    {
+      "op": "scorer_tail",
+      "shape": "1x26x256",
+      "kernel_us": 20.12,
+      "torch_us": 107.9
+    },
+    {
+      "op": "value_head",
+      "shape": "1x128",
+      "kernel_us": 12.94,
+      "torch_us": 98.5
+    },
+    {
+      "op": "masked_mean_pool",
+      "shape": "64x42x128",
+      "kernel_us": 23.62,
+      "torch_us": 75.74
+    },
+    {
+      "op": "scorer_tail",
+      "shape": "64x26x256",
+      "kernel_us": 44.7,
+      "torch_us": 106.66
+    },
+    {
+      "op": "value_head",
+      "shape": "64x128",
+      "kernel_us": 78.31,
+      "torch_us": 82.02
+    }
+  ]
+}

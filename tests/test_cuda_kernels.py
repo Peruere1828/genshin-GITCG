@@ -94,3 +94,28 @@ def test_cvpn_kernel_fast_path_matches_eager(kernels):
     assert torch.allclose(lo[option_mask], lf[option_mask], atol=1e-4)
     assert torch.allclose(vo, vf, atol=1e-4)
     assert torch.isinf(lf[~option_mask]).all()
+
+
+def test_cuda_graph_matches_eager(kernels):
+    encoder = default_encoder()
+    dev = "cuda"
+    torch.manual_seed(0)
+    eager = CVPN(config_for_encoder(encoder, d_model=64)).to(dev).eval()
+    graph = CVPN(
+        config_for_encoder(encoder, d_model=64, use_cuda_kernels=True, use_cuda_graph=True)
+    ).to(dev).eval()
+    graph.load_state_dict(eager.state_dict())
+    b, t, k = 4, 18, 9
+    tokens = torch.randn(b, t, encoder.token_dim, device=dev)
+    token_mask = torch.ones(b, t, dtype=torch.bool, device=dev)
+    options = torch.randn(b, k, encoder.option_dim, device=dev)
+    option_mask = torch.ones(b, k, dtype=torch.bool, device=dev)
+    with torch.no_grad():
+        lo, vo = eager(tokens, token_mask, options, option_mask)
+        lg, vg = graph(tokens, token_mask, options, option_mask)  # captures
+        # replay with fresh inputs and confirm parity
+        tokens2 = torch.randn(b, t, encoder.token_dim, device=dev)
+        lo2, vo2 = eager(tokens2, token_mask, options, option_mask)
+        lg2, vg2 = graph(tokens2, token_mask, options, option_mask)
+    assert torch.allclose(lo, lg, atol=1e-4) and torch.allclose(vo, vg, atol=1e-4)
+    assert torch.allclose(lo2, lg2, atol=1e-4) and torch.allclose(vo2, vg2, atol=1e-4)

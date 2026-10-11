@@ -54,6 +54,10 @@ def bench_forward(encoder, device: str, batches=(1, 8, 64)) -> list[dict]:
     eager = CVPN(config_for_encoder(encoder, d_model=128)).to(device).eval()
     fast = CVPN(config_for_encoder(encoder, d_model=128, use_cuda_kernels=True)).to(device).eval()
     fast.load_state_dict(eager.state_dict())
+    graph = CVPN(
+        config_for_encoder(encoder, d_model=128, use_cuda_kernels=True, use_cuda_graph=True)
+    ).to(device).eval()
+    graph.load_state_dict(eager.state_dict())
     compiled_base = CVPN(config_for_encoder(encoder, d_model=128)).to(device).eval()
     compiled_base.load_state_dict(eager.state_dict())
     compiled = torch.compile(compiled_base)
@@ -64,17 +68,26 @@ def bench_forward(encoder, device: str, batches=(1, 8, 64)) -> list[dict]:
         with torch.no_grad():
             lo, vo = eager(*inputs)
             lf, vf = fast(*inputs)
-        max_diff = max((lo - lf).abs().max().item(), (vo - vf).abs().max().item())
+            lg, vg = graph(*inputs)
+        max_diff = max(
+            (lo - lf).abs().max().item(),
+            (vo - vf).abs().max().item(),
+            (lo - lg).abs().max().item(),
+            (vo - vg).abs().max().item(),
+        )
         e_ms = _event_ms(lambda: eager(*inputs))
         k_ms = _event_ms(lambda: fast(*inputs))
+        g_ms = _event_ms(lambda: graph(*inputs))
         c_ms = _event_ms(lambda: compiled(*inputs))
         rows.append(
             {
                 "batch": b,
                 "eager_ms": round(e_ms, 4),
                 "kernels_ms": round(k_ms, 4),
+                "graph_ms": round(g_ms, 4),
                 "compile_ms": round(c_ms, 4),
                 "kernels_speedup": round(e_ms / k_ms, 3),
+                "graph_speedup": round(e_ms / g_ms, 3),
                 "compile_speedup": round(e_ms / c_ms, 3),
                 "max_abs_diff": max_diff,
             }
@@ -166,6 +179,7 @@ def main(argv=None) -> int:
     for row in report["forward"]:
         print(f"forward B={row['batch']:>3}: eager {row['eager_ms']:.3f} ms | "
               f"kernels {row['kernels_ms']:.3f} ms (x{row['kernels_speedup']}) | "
+              f"kernels+graph {row['graph_ms']:.3f} ms (x{row['graph_speedup']}) | "
               f"compile {row['compile_ms']:.3f} ms (x{row['compile_speedup']})")
     for row in report["ops"]:
         print(f"  {row['op']:>16} {row['shape']:>12}: kernel {row['kernel_us']:8.2f} us | "
