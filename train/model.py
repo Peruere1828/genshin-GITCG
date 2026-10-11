@@ -35,6 +35,11 @@ class CVPNConfig:
 
 
 class CVPN(nn.Module):
+    # Row-count crossover below which the fused projection GEMMs beat cuBLAS
+    # (measured on the MX550; see reports/explore/mx550_kernels.md).
+    _FUSED_PROJ_TOKEN_ROWS = 128
+    _FUSED_PROJ_OPTION_ROWS = 256
+
     def __init__(self, config: CVPNConfig) -> None:
         super().__init__()
         self.config = config
@@ -88,15 +93,30 @@ class CVPN(nn.Module):
         kernels = self._cuda_kernels_module
         if not kernels:
             return None
-        import torch.nn.functional as F
 
         tp = self.token_proj
-        projected = kernels.layernorm_silu(
-            tp[0](tokens), tp[1].weight, tp[1].bias, float(tp[1].eps)
-        )
+        op = self.option_proj
+        token_rows = tokens.size(0) * tokens.size(1)
+        option_rows = options.size(0) * options.size(1)
+        # Fused projection GEMMs win only at small row counts (below cuBLAS's
+        # crossover); use them there, cuBLAS + fused epilogue otherwise.
+        if token_rows <= self._FUSED_PROJ_TOKEN_ROWS:
+            projected = kernels.token_proj_ln_silu(
+                tokens.reshape(-1, tokens.size(-1)),
+                tp[0].weight, tp[0].bias, tp[1].weight, tp[1].bias, float(tp[1].eps),
+            ).view(tokens.size(0), tokens.size(1), -1)
+        else:
+            projected = kernels.layernorm_silu(
+                tp[0](tokens), tp[1].weight, tp[1].bias, float(tp[1].eps)
+            )
         global_vec = kernels.masked_mean_pool(projected, token_mask)
 
-        option_vec = F.silu(self.option_proj[0](options))
+        if option_rows <= self._FUSED_PROJ_OPTION_ROWS:
+            option_vec = kernels.linear_silu(
+                options.reshape(-1, options.size(-1)), op[0].weight, op[0].bias
+            ).view(options.size(0), options.size(1), -1)
+        else:
+            option_vec = torch.nn.functional.silu(op[0](options))
         repeated = global_vec.unsqueeze(1).expand(-1, option_vec.size(1), -1)
         hidden_pre = self.option_scorer[0](torch.cat([repeated, option_vec], dim=-1))
         last = self.option_scorer[3]

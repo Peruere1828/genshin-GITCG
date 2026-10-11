@@ -118,6 +118,77 @@ __global__ void value_head_kernel(
     if (threadIdx.x == 0) value[b] = acc + b2;
 }
 
+// Full token projection fusion: y = silu(LayerNorm(x @ W^T + bias)) per row.
+// W (D x K) is staged in shared once per block and reused across BM rows, so it
+// is read from global once per block instead of once per output.
+constexpr int ROW_TILE = 16;
+
+__global__ void linear_ln_silu_kernel(
+    const float* __restrict__ x, const float* __restrict__ W, const float* __restrict__ bias,
+    const float* __restrict__ lnw, const float* __restrict__ lnb, float* __restrict__ y,
+    int rows, int K, int D, float eps) {
+    extern __shared__ float shared[];
+    float* sW = shared;            // D * K
+    float* sRow = sW + (size_t)D * K;  // D
+    float* sRed = sRow + D;        // blockDim scratch
+    for (int i = threadIdx.x; i < D * K; i += blockDim.x) sW[i] = W[i];
+    __syncthreads();
+    for (int r = 0; r < ROW_TILE; ++r) {
+        int row = blockIdx.x * ROW_TILE + r;
+        bool active = row < rows;
+        if (active) {
+            const float* xr = x + (size_t)row * K;
+            for (int d = threadIdx.x; d < D; d += blockDim.x) {
+                const float* w = sW + (size_t)d * K;
+                float acc = bias[d];
+                for (int k = 0; k < K; ++k) acc += w[k] * xr[k];
+                sRow[d] = acc;
+            }
+        }
+        __syncthreads();
+        if (active) {
+            float sum = 0.0f, sumsq = 0.0f;
+            for (int i = threadIdx.x; i < D; i += blockDim.x) {
+                float v = sRow[i];
+                sum += v;
+                sumsq += v * v;
+            }
+            sum = block_reduce_sum(sum, sRed);
+            __syncthreads();
+            sumsq = block_reduce_sum(sumsq, sRed);
+            float mean = sum / (float)D;
+            float var = sumsq / (float)D - mean * mean;
+            float rstd = rsqrtf(var + eps);
+            for (int d = threadIdx.x; d < D; d += blockDim.x) {
+                float n = (sRow[d] - mean) * rstd * lnw[d] + lnb[d];
+                y[(size_t)row * D + d] = silu(n);
+            }
+        }
+        __syncthreads();
+    }
+}
+
+// y = silu(x @ W^T + bias) per row (option projection), W staged in shared.
+__global__ void linear_silu_kernel(
+    const float* __restrict__ x, const float* __restrict__ W, const float* __restrict__ bias,
+    float* __restrict__ y, int rows, int K, int D) {
+    extern __shared__ float sW[];
+    for (int i = threadIdx.x; i < D * K; i += blockDim.x) sW[i] = W[i];
+    __syncthreads();
+    for (int r = 0; r < ROW_TILE; ++r) {
+        int row = blockIdx.x * ROW_TILE + r;
+        if (row >= rows) break;
+        const float* xr = x + (size_t)row * K;
+        float* yr = y + (size_t)row * D;
+        for (int d = threadIdx.x; d < D; d += blockDim.x) {
+            const float* w = sW + (size_t)d * K;
+            float acc = bias[d];
+            for (int k = 0; k < K; ++k) acc += w[k] * xr[k];
+            yr[d] = silu(acc);
+        }
+    }
+}
+
 inline int ceil_div(int a, int b) { return (a + b - 1) / b; }
 
 }  // namespace
@@ -186,9 +257,51 @@ torch::Tensor value_head(
     return value;
 }
 
+torch::Tensor token_proj_ln_silu(
+    torch::Tensor x, torch::Tensor W, torch::Tensor bias, torch::Tensor lnw, torch::Tensor lnb,
+    double eps) {
+    TORCH_CHECK(x.is_cuda() && x.dtype() == torch::kFloat32, "x must be cuda float32");
+    auto xc = x.contiguous();
+    auto wc = W.contiguous();
+    auto bc = bias.contiguous();
+    auto lw = lnw.contiguous();
+    auto lb = lnb.contiguous();
+    int rows = xc.size(0), K = xc.size(1), D = wc.size(0);
+    auto y = torch::empty({rows, D}, xc.options());
+    int threads = std::min(1024, std::max(32, D));
+    int smem = (D * K + D + threads) * sizeof(float);
+    if (smem > 48 * 1024) {
+        cudaFuncSetAttribute(linear_ln_silu_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+    }
+    linear_ln_silu_kernel<<<ceil_div(rows, ROW_TILE), threads, smem>>>(
+        xc.data_ptr<float>(), wc.data_ptr<float>(), bc.data_ptr<float>(),
+        lw.data_ptr<float>(), lb.data_ptr<float>(), y.data_ptr<float>(), rows, K, D, (float)eps);
+    return y;
+}
+
+torch::Tensor linear_silu(torch::Tensor x, torch::Tensor W, torch::Tensor bias) {
+    TORCH_CHECK(x.is_cuda() && x.dtype() == torch::kFloat32, "x must be cuda float32");
+    auto xc = x.contiguous();
+    auto wc = W.contiguous();
+    auto bc = bias.contiguous();
+    int rows = xc.size(0), K = xc.size(1), D = wc.size(0);
+    auto y = torch::empty({rows, D}, xc.options());
+    int threads = std::min(256, std::max(32, D));
+    int smem = D * K * sizeof(float);
+    if (smem > 48 * 1024) {
+        cudaFuncSetAttribute(linear_silu_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+    }
+    linear_silu_kernel<<<ceil_div(rows, ROW_TILE), threads, smem>>>(
+        xc.data_ptr<float>(), wc.data_ptr<float>(), bc.data_ptr<float>(), y.data_ptr<float>(),
+        rows, K, D);
+    return y;
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("layernorm_silu", &layernorm_silu, "fused LayerNorm+SiLU");
     m.def("masked_mean_pool", &masked_mean_pool, "masked mean pool");
     m.def("scorer_tail", &scorer_tail, "fused scorer SiLU+linear+mask");
     m.def("value_head", &value_head, "fused value MLP");
+    m.def("token_proj_ln_silu", &token_proj_ln_silu, "fused token projection+LayerNorm+SiLU");
+    m.def("linear_silu", &linear_silu, "fused linear+SiLU");
 }

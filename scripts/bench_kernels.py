@@ -105,6 +105,20 @@ def bench_ops(encoder, device: str) -> list[dict]:
         add("layernorm_silu", f"{rows_n}x128",
             lambda: k.layernorm_silu(x, w, b, 1e-5),
             lambda: F.silu(F.layer_norm(x, (128,), w, b, 1e-5)))
+        xt = torch.randn(rows_n, 65, device=device)
+        wt = torch.randn(128, 65, device=device)
+        bt = torch.randn(128, device=device)
+        lw = torch.randn(128, device=device)
+        lb = torch.randn(128, device=device)
+        add("token_proj_ln_silu", f"{rows_n}x65",
+            lambda: k.token_proj_ln_silu(xt, wt, bt, lw, lb, 1e-5),
+            lambda: F.silu(F.layer_norm(xt @ wt.T + bt, (128,), lw, lb, 1e-5)))
+        xo = torch.randn(rows_n, 68, device=device)
+        wo = torch.randn(128, 68, device=device)
+        bo = torch.randn(128, device=device)
+        add("linear_silu", f"{rows_n}x68",
+            lambda: k.linear_silu(xo, wo, bo),
+            lambda: F.silu(xo @ wo.T + bo))
     for batch in (1, 64):
         p = torch.randn(batch, 42, 128, device=device)
         m = torch.ones(batch, 42, dtype=torch.bool, device=device)

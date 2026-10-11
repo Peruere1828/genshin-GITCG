@@ -59,6 +59,20 @@ def test_kernels_match_torch(kernels):
     ref = F.silu(pooled @ w1.T + b1) @ w2v + 0.1
     assert torch.allclose(kernels.value_head(pooled, w1, b1, w2v, 0.1), ref, atol=1e-5)
 
+    x = torch.randn(11, 65, device=dev)
+    wt = torch.randn(128, 65, device=dev)
+    bt = torch.randn(128, device=dev)
+    lw = torch.randn(128, device=dev)
+    lb = torch.randn(128, device=dev)
+    ref = F.silu(F.layer_norm(x @ wt.T + bt, (128,), lw, lb, 1e-5))
+    assert torch.allclose(kernels.token_proj_ln_silu(x, wt, bt, lw, lb, 1e-5), ref, atol=1e-5)
+
+    x2 = torch.randn(9, 68, device=dev)
+    wo = torch.randn(128, 68, device=dev)
+    bo = torch.randn(128, device=dev)
+    ref = F.silu(x2 @ wo.T + bo)
+    assert torch.allclose(kernels.linear_silu(x2, wo, bo), ref, atol=1e-5)
+
 
 def test_cvpn_kernel_fast_path_matches_eager(kernels):
     encoder = default_encoder()
