@@ -46,5 +46,15 @@
   python -m scripts.explore.fetch_deck_corpus --no-fetch --engine --export-reports
   python -m scripts.explore.render_deck_report
   ```
+- `eval_protocol.py`（WS2，2026-10-11）：**强度评测跑分板**——任意 `build_policy` spec 对固定脚本池、
+  双侧同种子，逐对手 + 汇总胜率（Wilson + 对手聚类 CI）、固定锚点 Bradley-Terry/Elo 评级、最优反应探针、
+  门禁判定；逐局流式落 `data/eval/<tag>.jsonl`（按 `task_index` 断点续跑 + spec 指纹护栏），聚合落
+  `reports/explore/`。协议全文见 `reports/explore/eval_protocol.md`。
+  ```bash
+  python -m scripts.eval_protocol --sample-sizes                 # 样本量规划表（无需引擎）
+  python -m scripts.eval_protocol --contestant expert:superconduct_aggro \
+      --opponents unyielding_geo natlan_battleship --seeds 2 --workers 4   # 小样本冒烟
+  python -m scripts.eval_protocol --contestant neural:<new> --baseline neural:<old> --seeds 20  # 配对门禁
+  ```
 
 待办：`run_iteration`（采集→训练→评测→落盘，断点续跑）。依赖 `train/` 落地。

@@ -1,0 +1,140 @@
+{
+  "tag": "eval_protocol_smoke",
+  "generated": "2026-10-11T13:20:21",
+  "protocol": {
+    "contestant": "expert:superconduct_aggro",
+    "contestant_deck": "superconduct_aggro",
+    "opponents": [
+      "unyielding_geo",
+      "natlan_battleship"
+    ],
+    "seeds": [
+      0,
+      1
+    ],
+    "sides": [
+      0,
+      1
+    ],
+    "mode": "pure",
+    "workers": 4,
+    "base_seed": 0,
+    "pooled_threshold": 0.5,
+    "floor": 0.45,
+    "strict_ci": false
+  },
+  "summary": {
+    "games": 8,
+    "matches": 8,
+    "pooled_rate": 0.5,
+    "pooled_ci_low": 0.21521252682444186,
+    "pooled_ci_high": 0.7847874731755582,
+    "cluster_mean": 0.5,
+    "cluster_ci_low": -5.853,
+    "cluster_ci_high": 6.853,
+    "cluster_boot_ci_low": 0.0,
+    "cluster_boot_ci_high": 1.0,
+    "per_opponent": {
+      "natlan_battleship": {
+        "games": 4,
+        "score": 4.0,
+        "rate": 1.0,
+        "ci_low": 0.5100999795960008,
+        "ci_high": 1.0,
+        "mean_rounds": 9.25,
+        "mean_rounds_wins": 9.25,
+        "mean_rounds_losses": 0.0
+      },
+      "unyielding_geo": {
+        "games": 4,
+        "score": 0.0,
+        "rate": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.48990002040399916,
+        "mean_rounds": 8.5,
+        "mean_rounds_wins": 0.0,
+        "mean_rounds_losses": 8.5
+      }
+    },
+    "quality": {
+      "decisions": 462,
+      "fallbacks": 0,
+      "fallback_rate": 0.0,
+      "illegal_rate": 0.0,
+      "mean_rounds": 8.875,
+      "mean_decisions_per_round": 6.507042253521127,
+      "draws": 0,
+      "draw_rate": 0.0,
+      "errors": 0,
+      "truncated": 0,
+      "invalid": 0,
+      "error_rate": 0.0,
+      "opponents_covered": 2
+    },
+    "floor": 0.45,
+    "floor_violations": [
+      "unyielding_geo"
+    ]
+  },
+  "gates": {
+    "pooled_threshold": 0.5,
+    "pooled_pass": true,
+    "strict_ci": false,
+    "floor": 0.45,
+    "floor_pass": false,
+    "floor_violations": [
+      "unyielding_geo"
+    ],
+    "clean_pass": true,
+    "pass": false
+  },
+  "rating_anchored": {
+    "rating": 1585.6762965407638,
+    "ci_low": 1379.7344910665893,
+    "ci_high": 1791.6181020149384,
+    "n_games": 8,
+    "mean_expected_score": 0.5
+  },
+  "anchors_source": "/tmp/opencode/wt-eval/reports/arena/20261008T163940_full_matrix_20x20.json",
+  "elo_online": {
+    "superconduct_aggro": 1502.5571683573835,
+    "unyielding_geo": 1529.864763059677,
+    "natlan_battleship": 1467.5780685829395
+  },
+  "best_response": {
+    "worst_opponent": "unyielding_geo",
+    "worst_rate": 0.0,
+    "pool_mean_rate": 0.5,
+    "exploitability_lower_bound": 1.0,
+    "matchup_gap": 0.5,
+    "floor": 0.45,
+    "floor_gap": -0.45,
+    "worst_clear_floor": false
+  },
+  "n_matches": 8,
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}

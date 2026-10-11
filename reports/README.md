@@ -12,9 +12,11 @@
 - `reports/explore/deck_corpus.md` + `.json`：公开七圣召唤卡组语料（探索任务 1）——分享码、验证结果、
   体系标签、核心卡与来源；`.json` 为紧凑机器可读副本（loader 见 `decklab/corpus.py`）。原始数据在
   `data/deck_corpus/`（gitignore）。
+- `reports/explore/eval_protocol.md`：**强度评测协议**（定义/公式/样本量/门禁映射/局限）。
+- `reports/explore/<tag>.json`（+ 时间戳副本）：跑分板聚合（逐对手 + 汇总胜率、聚类 CI、锚定评级、最优反应探针、门禁）。
 - `reports/LOCAL_BASELINE.md`：本地先行（L0/L1）实测基线与验收换算。
 
-原始逐局记录（大体积）写入 `data/arena/<run_id>.jsonl`、`data/llm/<tag>.jsonl`、`data/search/<tag>.jsonl`、`data/replays/<tag>/`（gitignore，不入库）；
+原始逐局记录（大体积）写入 `data/arena/<run_id>.jsonl`、`data/llm/<tag>.jsonl`、`data/search/<tag>.jsonl`、`data/eval/<tag>.jsonl`、`data/replays/<tag>/`（gitignore，不入库）；
 逐干预明细（LLM probe 日志）同样不入库，`reports/` 只保留聚合摘要。
 
 命令：
