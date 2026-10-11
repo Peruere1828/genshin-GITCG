@@ -288,6 +288,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--eval-opponents", nargs="*", default=None)
     parser.add_argument("--eval-seeds", type=int, default=0)
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--device", default="cpu",
+                        help="torch device for training (cpu/cuda); D14 WSL MX550")
     parser.add_argument("--smoke", action="store_true", help="tiny fast sweep")
     return parser
 
@@ -303,7 +305,7 @@ def main(argv: list[str] | None = None) -> int:
             train_seeds=(0,),
             sizes=[16, 32, 48],
             d_models=[32],
-            train_config=TrainConfig(epochs=3, batch_size=16, val_fraction=0.25),
+            train_config=TrainConfig(epochs=3, batch_size=16, val_fraction=0.25, device=args.device),
             verbose=True,
         )
     else:
@@ -313,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
             train_seeds=tuple(range(args.games)),
             sizes=args.sizes,
             d_models=args.d_models,
-            train_config=TrainConfig(epochs=args.epochs),
+            train_config=TrainConfig(epochs=args.epochs, device=args.device),
             eval_opponents=args.eval_opponents or (),
             eval_seeds=tuple(range(args.eval_seeds)),
             verbose=True,
