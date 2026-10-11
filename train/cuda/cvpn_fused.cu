@@ -28,14 +28,21 @@ __device__ __forceinline__ float silu(float x) {
     return x * (1.0f / (1.0f + expf(-x)));
 }
 
-// Block-wide sum reduction (assumes blockDim.x <= 1024, power-of-two friendly).
+// Block-wide sum reduction over ``blockDim.x`` threads (any size <= 1024).
+// A ``stride >>= 1`` tree is only correct for power-of-two blocks: with e.g.
+// blockDim=96 the strides 48/24/12/6/3/1 leave shared[2]'s terms unfolded and
+// silently drop them. This doubling form folds every partial for any block size
+// (used by the fused kernels whose blockDim = min(1024, max(32, D))).
 __device__ __forceinline__ float block_reduce_sum(float val, float* shared) {
     int tid = threadIdx.x;
     int bdim = blockDim.x;
     shared[tid] = val;
     __syncthreads();
-    for (int stride = bdim / 2; stride > 0; stride >>= 1) {
-        if (tid < stride) shared[tid] += shared[tid + stride];
+    for (int stride = 1; stride < bdim; stride <<= 1) {
+        int index = 2 * stride * tid;
+        if (index < bdim && index + stride < bdim) {
+            shared[index] += shared[index + stride];
+        }
         __syncthreads();
     }
     return shared[0];

@@ -74,6 +74,41 @@ def test_kernels_match_torch(kernels):
     assert torch.allclose(kernels.linear_silu(x2, wo, bo), ref, atol=1e-5)
 
 
+def test_kernels_non_power_of_two_block_dims(kernels):
+    """A non-power-of-two blockDim must not drop reduction terms.
+
+    blockDim = min(1024, max(32, D)) (or value_hidden for the value head), so
+    d_model=96 gives a 96-thread block: the old ``stride >>= 1`` tree left
+    shared[2]'s terms unfolded and silently corrupted LayerNorm/value outputs.
+    """
+    import torch.nn.functional as F
+
+    dev = "cuda"
+    torch.manual_seed(0)
+
+    x = torch.randn(23, 96, device=dev)
+    w = torch.randn(96, device=dev)
+    b = torch.randn(96, device=dev)
+    ref = F.silu(F.layer_norm(x, (96,), w, b, 1e-5))
+    assert torch.allclose(kernels.layernorm_silu(x, w, b, 1e-5), ref, atol=1e-4)
+
+    # value_hidden = 40 -> a 40-thread block.
+    pooled = torch.randn(5, 96, device=dev)
+    w1 = torch.randn(40, 96, device=dev)
+    b1 = torch.randn(40, device=dev)
+    w2v = torch.randn(40, device=dev)
+    ref = F.silu(pooled @ w1.T + b1) @ w2v + 0.1
+    assert torch.allclose(kernels.value_head(pooled, w1, b1, w2v, 0.1), ref, atol=1e-4)
+
+    x2 = torch.randn(11, 65, device=dev)
+    wt = torch.randn(96, 65, device=dev)
+    bt = torch.randn(96, device=dev)
+    lw = torch.randn(96, device=dev)
+    lb = torch.randn(96, device=dev)
+    ref = F.silu(F.layer_norm(x2 @ wt.T + bt, (96,), lw, lb, 1e-5))
+    assert torch.allclose(kernels.token_proj_ln_silu(x2, wt, bt, lw, lb, 1e-5), ref, atol=1e-4)
+
+
 def test_cvpn_kernel_fast_path_matches_eager(kernels):
     encoder = default_encoder()
     dev = "cuda"
@@ -94,6 +129,28 @@ def test_cvpn_kernel_fast_path_matches_eager(kernels):
     assert torch.allclose(lo[option_mask], lf[option_mask], atol=1e-4)
     assert torch.allclose(vo, vf, atol=1e-4)
     assert torch.isinf(lf[~option_mask]).all()
+
+
+def test_cvpn_kernel_fast_path_non_power_of_two_d_model(kernels):
+    """End-to-end CVPN fast path with d_model=96 (96-thread blocks)."""
+    encoder = default_encoder()
+    dev = "cuda"
+    torch.manual_seed(0)
+    eager = CVPN(config_for_encoder(encoder, d_model=96)).to(dev).eval()
+    fast = CVPN(config_for_encoder(encoder, d_model=96, use_cuda_kernels=True)).to(dev).eval()
+    fast.load_state_dict(eager.state_dict())
+    assert enable_cuda_kernels(fast)
+    b, t, k = 6, 17, 11
+    tokens = torch.randn(b, t, encoder.token_dim, device=dev)
+    token_mask = torch.ones(b, t, dtype=torch.bool, device=dev)
+    options = torch.randn(b, k, encoder.option_dim, device=dev)
+    option_mask = torch.ones(b, k, dtype=torch.bool, device=dev)
+    option_mask[1, k - 1] = False
+    with torch.no_grad():
+        lo, vo = eager(tokens, token_mask, options, option_mask)
+        lf, vf = fast(tokens, token_mask, options, option_mask)
+    assert torch.allclose(lo[option_mask], lf[option_mask], atol=1e-4)
+    assert torch.allclose(vo, vf, atol=1e-4)
 
 
 def test_cuda_graph_matches_eager(kernels):
