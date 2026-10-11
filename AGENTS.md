@@ -15,7 +15,7 @@
   - `train/`：CVPN + 采集/训练/评测管线 + `collect.py`/`collect_worker.py`（集群可续跑分片采集，CPU 数据平面）+ `replay_branch.py`（replay-branch MC teacher）+ `learning_curve.py`（L5.3 数据量×网络规模扫描）+ `resolver.py`；`agents/neural.py` 接回 env。
   - `tests/`：信息泄漏、adapter 覆盖、重放一致、引擎桥/分叉、arena、LLM、train 全绿（`python -m pytest`；`-m "not slow"` 跳慢测）。
   - 实测基线见 `reports/LOCAL_BASELINE.md`（单核 ~819 局/h；12 核并行 ~4,900 局/h）。
-- 算力口径（D14）：默认**本机 12 核 + WSL（4 核/8G/MX550 2G，试小网络训练）**；A800 80G + 128 核为申请制机会资源（里程碑不依赖它，窗口内一键零看管放量）；南大集群暂缓（glibc/环境适配成本高），`scripts/cluster/` 留作将来适配起点。
+- 算力口径（D14）：默认**本机 12 核 + WSL（4 核/8G/MX550 2G，小网络训练/推理）**；A800 80G + 128 核为申请制机会资源（里程碑不依赖它，窗口内一键零看管放量）；南大集群暂缓（glibc/环境适配成本高），`scripts/cluster/` 留作将来适配起点。WSL 的 MX550：**接电且电池充满（不在充电）时满速可用**（P0/7000MHz/~39W，训练 ~1.8–2.5× 本机 4 核 CPU）；GPU 训练用 `--device cuda`，保持接电充满即可（充电期间 EC 给电池让电、降 ~15W，此时用 CPU）。见 PLAN §5.2 / `reports/LOCAL_BASELINE.md`。
 - 当前主线（D15，验收 M3-CPU，PLAN §4.3）：按 `train/CONTINUAL_RESOLVING.md` 差距清单推进——信念根化（G1+G3）→ 外采 MCCFR 脚手架（G2+G4）→ search-as-teacher + belief 头（G6+G7）；训练先 CPU 档（d_model 64–128、1e3–1e4 样本、fp32）。
 - `orchestrator/`（WS5）仍为占位，未实现。
 - `refs/` 三个上游参考仓**只读**，只抄思路逐模块移植、不修改、不 apply 补丁（PLAN §6.5），不入库、缺了重新 clone：

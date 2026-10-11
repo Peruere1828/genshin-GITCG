@@ -107,7 +107,7 @@ LSF 模板：`scripts/cluster/lsf/collect.lsf`（单节点多 worker）、`colle
 4. **M3-CPU 门禁（PLAN §4.3）**：「搜索+小网」纯策略对池整体 ≥ 50%（M2 口径）；搜索-蒸馏外环带候选 checkpoint 门禁（单测+泄漏+冒烟+评测不劣于）。
 
 规模放大留给机会算力（PLAN §5.1）：CVPN 放大（bf16/transformer）、`batched_inference`（按作业拉起，无常驻服务）、JS 侧批量 fork/rollout 吞吐优化。
-CPU 档先用 d_model 64–128、fp32 跑通语义（WSL MX550 小网络训练试验见 PLAN §5.2）。
+CPU 档先用 d_model 64–128、fp32 跑通语义（WSL MX550 满电可作 GPU 训练/推理节点，`--device cuda`，见 PLAN §5.2）。
 
 L5.3（学习曲线扫描）已交付 `train/learning_curve.py`，端到端跑通；本地做千/万级样本的
 正确性与规模-数据关系验证，全量放大并入 M3 GPU 档。

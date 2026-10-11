@@ -14,6 +14,7 @@
   `data/deck_corpus/`（gitignore）。
 - `reports/explore/eval_protocol.md`：**强度评测协议**（定义/公式/样本量/门禁映射/局限）。
 - `reports/explore/<tag>.json`（+ 时间戳副本）：跑分板聚合（逐对手 + 汇总胜率、聚类 CI、锚定评级、最优反应探针、门禁）。
+- `reports/explore/mx550_ops.md` / `model_design.md`：MX550 算子/训练加速与打牌大模型设计探索（M3 侧线）。
 - `reports/LOCAL_BASELINE.md`：本地先行（L0/L1）实测基线与验收换算。
 
 原始逐局记录（大体积）写入 `data/arena/<run_id>.jsonl`、`data/llm/<tag>.jsonl`、`data/search/<tag>.jsonl`、`data/eval/<tag>.jsonl`、`data/replays/<tag>/`（gitignore，不入库）；

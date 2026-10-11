@@ -56,5 +56,11 @@
       --opponents unyielding_geo natlan_battleship --seeds 2 --workers 4   # 小样本冒烟
   python -m scripts.eval_protocol --contestant neural:<new> --baseline neural:<old> --seeds 20  # 配对门禁
   ```
+- `bench_ops.py` / `bench_model.py`（M3 探索）：MX550 算子/训练吞吐基准，以及 mean-pool CVPN vs
+  token-transformer CVPN 的同池对比。
+  ```bash
+  python -m scripts.bench_ops --device cuda --out reports/explore
+  python -m scripts.bench_model --games 20 --d-model 128 --device cuda
+  ```
 
 待办：`run_iteration`（采集→训练→评测→落盘，断点续跑）。依赖 `train/` 落地。

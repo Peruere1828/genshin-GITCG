@@ -252,7 +252,7 @@ GPU 放大前的 go/no-go——**「信念根化 MCCFR 搜索 + 小网」纯策�
 | S-C search-as-teacher（G6+G7） | 根平均策略/根价值/belief 目标写进 replay，蒸馏回网络（policy CE + value 回归 + belief 评分），网络加 belief 头 | 一轮采集→训练→评测→落盘零报错；门禁（候选不劣于）可自动判定 |
 | **M3-CPU 门禁** | 搜索+小网纯策略 vs 评测池 | **整体胜率 ≥ 50%（M2 口径，纯策略模式）** |
 
-训练规模走 CPU 档：d_model 64–128、1e3–1e4 样本、fp32；WSL MX550 小网络训练试验的结论决定训练节点归属（§5.2）。
+训练规模走 CPU 档：d_model 64–128、1e3–1e4 样本、fp32；WSL MX550 满电可作 GPU 训练/推理节点（~1.8–2.5× 本机 4 核 CPU，§5.2）。
 
 ---
 
@@ -266,7 +266,7 @@ GPU 放大前的 go/no-go——**「信念根化 MCCFR 搜索 + 小网」纯策�
 | 资源 | 用途 | 关键点 |
 |------|------|--------|
 | 本机 12 核 / 30G（主力） | rollout/采集/评测 arena、CPU 档训练、fork 搜索、LLM Agent（API） | 12 worker ~4,900 局/h（排产口径，§4.2）；开发与验收全部在此闭环 |
-| WSL 4 核 / 8G / MX550 2G（并行节点） | 分片采集/评测；**小网络训练试验**（d_model ≤ 64、fp32 小 batch） | MX550 无 tensor core、显存 2G：试验以"能训 + 速度对照 CPU"为目标，结论决定训练节点归属 |
+| WSL 4 核 / 8G / MX550 2G（并行节点） | 分片采集/评测；**小网络训练/推理**（d_model ≤ 128、fp32） | 接电充满时 GPU 训练 **~1.8–2.5× 本机 4 核 CPU**（P0/7000MHz/~39W）；充电中 EC 给电池让电、降 ~15W（此时用 CPU）；WSL 主职并行采集/评测（§5.2） |
 | A800 80G + 128 核（机会资源，申请制、时间受限） | ① 大 LLM（32B/72B bf16 或 LoRA）做局内辅助/深度复盘；② CVPN 放大训练 + batched inference；③ 大规模自博弈采集 | 窗口按"训练 > 评测 > 采集 > LLM 分析"排优先级、一键零看管跑完；LLM 不可用时走商业 API 兜底（D6） |
 | 南大集群（暂缓） | — | glibc/环境适配成本高（D14）；`scripts/cluster/` 保留为将来机会算力的适配起点（C13） |
 
@@ -294,8 +294,13 @@ GPU 放大前的 go/no-go——**「信念根化 MCCFR 搜索 + 小网」纯策�
 | CVPN 放大训练 | ⏳ 机会算力 | GPU 档（bf16、更大网络/数据）等机会窗口（§5.1） |
 | 大规模自博弈采集 | ⏳ 分片渐进 | 本机/WSL 分片累积 + 机会算力放量；`train.collect` 可续跑、断点不重复 |
 
-**WSL/MX550 小网络训练试验**：在 WSL 上以 d_model ≤ 64、fp32、小 batch 训一轮 CVPN，记录吞吐与稳定性，
-与本机 CPU 训练对照；试验结论写回本表，决定训练节点归属。
+**WSL/MX550 小网络训练/推理（2026-10-11 落地）**：WSL 装 torch 2.6.0+cu124（PyPI 默认 2.14.1 为
+CUDA 13，与 WSL 驱动 560.94 的 CUDA 12.6 不匹配，故用 cu124 档），MX550（cc 7.5）满速可用。同池 615 样本、
+d_model 64/128：**GPU/CPU = 1.79× / 2.46×**，指标与 CPU 一致。满速条件为**接电 + 电池充满（不在充电）**
+→ P0 / 显存 7000 MHz / ~39 W / 带宽 ~101 GB/s / matmul 2.64 TFLOPS；**充电中** EC 给电池让电、dGPU 降
+~15 W（此时用 CPU）。**用法**：WSL = 并行采集/评测 + 满电时 `--device cuda` 训练/推理的双用节点。
+明细 `reports/LOCAL_BASELINE.md#wsl--mx550-设备与训练对照`、证据 `reports/train/device_bench_*.json`、
+`scripts/bench_device.py`、压测 `scripts/gpu_stress.cu` / `scripts/gpu_stress_native.py`。
 
 **LLM API 使用约束**：
 - 局内调用预算 ≤ 10 次/局，只在关键决策点触发（候选分歧大/搜索值接近/终局附近），评测时全量记录调用与影响；纯策略模式完全不调用（保持 G1 验收口径纯净）；
@@ -321,7 +326,7 @@ GPU 放大前的 go/no-go——**「信念根化 MCCFR 搜索 + 小网」纯策�
 | 追卡池版本消耗全部工程量 | 训练中断 | engine.lock 冻结 + 显式迁移节奏（§6.4） |
 | CPU 搜索吞吐不足 | 自博弈数据饥饿 | 本机 + WSL 分片横向扩 rollout，机会算力到手放量（D14）；搜索深度自适应（前期浅搜索、后期加深） |
 | 薄 fork 桥接入搜索出意外（并发 RPC 交错跨版本不保证） | 搜索 teacher 断供 | 分叉确定性测试常驻 CI（`tests/test_engine_bridge.py`）；teacher 切 replay-branch MC 离线标注（D12/D13），训练外环不空转；引擎升级（D4 迁移）时重跑 `probe_boundary_fork` |
-| MX550 / 2G 显存训不动 CVPN | WSL 训练价值有限 | 小网络（d_model ≤ 64、fp32 小 batch）试验定夺训练节点归属（§5.2）；训练默认本机 CPU |
+| MX550 显存仅 2G | 大网络/大 batch 受限 | 小网络（d_model ≤ 128、fp32）满电可用（~1.8–2.5× 4 核 CPU）；放大训练留机会算力（§5.2） |
 | 机会算力不可预期获得 | 训练放大/本地 LLM 延期 | 训练与自博弈不依赖机会算力（CPU 档先行，D15）；LLM 客户端强制降级链（本地 LLM → API → 纯策略）；机会窗口一键零看管跑完（§5.1） |
 | LLM 干预不可评测 | 说不清强弱 | 双模式分开报分 + 干预全量记录 |
 | 自迭代闭环改坏工程 | 回归/丢失进度 | §WS5 护栏：分支隔离 + 四项门禁 + 只追加存储 |
@@ -364,7 +369,7 @@ L0–L5 已完成（§4.1/§4.2），历史清单见 git log。当前按 SoG 差
    训练改搜索蒸馏（policy CE + value 回归 + belief 评分），网络加 belief 头（`train/model.py`）；
 4. **M3-CPU 门禁（§4.3）**：「搜索+小网」纯策略对池内全部对手整体胜率 ≥ 50%（M2 口径）——
    用 `scripts/run_search_agent.py` / `eval.arena` 出报表；
-5. **WSL/MX550 小网络训练试验**：d_model ≤ 64、fp32 训一轮，与本机 CPU 对照，结论写回 §5.2；
+5. **WSL/MX550 小网络训练/推理**（已完成，§5.2）：满电（接电、不在充电）时 `--device cuda` 可用，~1.8–2.5× 本机 4 核 CPU；
 6. 并行收尾（不阻塞主线）：L5.2 全池 LLM 矩阵放量（`--seeds 10`，隔夜可续跑）；L5.3 学习曲线留档；
    L5.5（可选）评测池扩容（D11）；
 7. 机会算力窗口到手（§5.1）：`train.collect` 放量采集 → `train.pipeline --replays` GPU 档训练放大 → M3 GPU 档 → M4。

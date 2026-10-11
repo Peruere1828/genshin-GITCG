@@ -125,3 +125,56 @@ LLM：54 次调用、0 失败；干预改动作 45/54（83%）。样本极小、
 产物：`reports/train/learning_curve_<ts>.json/.csv`（含 `n_train_pool`/`n_val_holdout`）。复现：
 `python -m train.learning_curve --games 14 --sizes 128 256 512 1024 --d-models 64 128`。
 
+## WSL / MX550 设备与训练对照（D14，2026-10-11）
+
+WSL 侧（4 核 / 8G / MX550 2G）装 **torch 2.6.0+cu124**（PyPI 默认 `torch 2.14.1` 为 CUDA 13 构建，
+与 WSL 驱动 560.94 的 CUDA 12.6 不匹配，故用 cu124 档）。MX550（cc 7.5、2.15 GB）接电充满时满速：
+
+| 指标 | 满速实测 |
+|------|---------|
+| P-state / 显存时钟 | P0 / 7000 MHz（最大 7001） |
+| 功率 | ~39 W（墙 40 W；default 40 / max 60） |
+| 显存带宽 | copy ~101 GB/s、读 ~109 GB/s |
+| matmul 2048³ | 2.64 TFLOPS |
+| 纯 FP32 ALU | ~3.6 TFLOPS（满速，SM ≈1.8 GHz） |
+
+**电源保障（正确做法）**：MX550 的可用功率由**整机供电**决定——
+- **接电 + 电池充满（不在充电）**：dGPU 满速 ~40 W，这是默认工作状态；
+- **电池充电中**：EC 给充电让电，dGPU 降到 ~15 W；高负载 + 屏幕亮 + 供电不足会叠加触发降功率。
+
+故用 WSL 跑 GPU 训练时应**保持接电、电池充满**，并在 Windows 关闭「限充到 80%」类设置。
+
+**CVPN 训练对照**（同池 615 样本、d_model 64/128、15 epoch，`scripts/bench_device.py`）：
+
+| d_model | CPU(4核) | CUDA(MX550) | 加速 |
+|--------:|---------:|------------:|-----:|
+| 64 | 6.40s | 3.57s | **1.79×** |
+| 128 | 7.39s | 3.00s | **2.46×** |
+
+train/val 指标两设备一致（val_loss/val_acc 相同）。产物 `reports/train/device_bench_<ts>.json`。
+复现：`python -m scripts.bench_device --games 6 --d-models 64 128`。
+
+**用法**：WSL = 「4 核并行采集/评测 + 满电时 GPU 训练/推理」双用节点；GPU 训练用 `--device cuda`
+（`train.pipeline` / `train.learning_curve` / `scripts.bench_device`），device 默认 cpu。压测工具：
+WSL `nvcc -O3 -arch=sm_75 -o gpu_stress scripts/gpu_stress.cu`；Windows 原生 `python scripts/gpu_stress_native.py`。
+
+### WSL / MX550 CVPN 学习曲线（L5.3，2026-10-11，满电）
+
+在 WSL 用 `--device cuda` 跑一轮放大学习曲线（`python -m train.learning_curve --games 40 --sizes
+256 512 1024 2048 --d-models 64 128 256 --epochs 30 --device cuda`）：教师采集 4099 样本（2 脚本对手 ×
+40 种子），固定留出 20%，每点训练一个全新网络（12 点；采集 ~1 核·时，训练全在 MX550 上）：
+
+| d_model | n=256 | n=512 | n=1024 | n=2048 |
+|--------:|------:|------:|-------:|-------:|
+| 64  val_loss | 1.198 | 1.127 | 1.005 | **0.922** |
+| 128 val_loss | 1.177 | 1.131 | 0.991 | **0.893** |
+| 256 val_loss | 1.146 | 1.056 | 0.957 | **0.861** |
+| 64  val_acc  | 0.602 | 0.600 | 0.709 | **0.702** |
+| 128 val_acc  | 0.604 | 0.665 | 0.705 | **0.717** |
+| 256 val_acc  | 0.597 | 0.614 | 0.719 | **0.723** |
+
+数据量↑ → val_loss 单调下降、val_acc 单调上升；同数据量下 d_model 越大越好（4099 样本、d_model 256 时
+val_loss 0.861 / val_acc 0.723，明显强于本机 1465 样本的 64 维 1.106 / 0.665）。产物
+`reports/train/learning_curve_20261011T124632.json/.csv`。复现同上命令；WSL 满电（接电、电池充满）时全在
+MX550 上训练，CPU 只做采集。
+
