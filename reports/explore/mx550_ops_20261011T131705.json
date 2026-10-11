@@ -1,0 +1,155 @@
+{
+  "device": "cuda",
+  "torch": "2.6.0+cu124",
+  "cuda": "12.4",
+  "device_name": "NVIDIA GeForce MX550",
+  "matmul": [
+    {
+      "n": 256,
+      "dtype": "fp32",
+      "ms": 0.07731425002930337,
+      "tflops": 0.43400061421125236
+    },
+    {
+      "n": 256,
+      "dtype": "float16",
+      "ms": 0.12319560000833006,
+      "tflops": 0.2723671299764859
+    },
+    {
+      "n": 256,
+      "dtype": "bfloat16",
+      "ms": 0.050512899997556815,
+      "tflops": 0.6642745120874657
+    },
+    {
+      "n": 512,
+      "dtype": "fp32",
+      "ms": 0.16305025001202011,
+      "tflops": 1.646335752200385
+    },
+    {
+      "n": 512,
+      "dtype": "float16",
+      "ms": 1.023146000034103,
+      "tflops": 0.2623628064724415
+    },
+    {
+      "n": 512,
+      "dtype": "bfloat16",
+      "ms": 0.2526130999740417,
+      "tflops": 1.0626347407461616
+    },
+    {
+      "n": 1024,
+      "dtype": "fp32",
+      "ms": 1.7995231999975658,
+      "tflops": 1.1933625796004768
+    },
+    {
+      "n": 1024,
+      "dtype": "float16",
+      "ms": 7.151366100015366,
+      "tflops": 0.30028998906871596
+    },
+    {
+      "n": 1024,
+      "dtype": "bfloat16",
+      "ms": 1.2871512500169047,
+      "tflops": 1.6684003903750988
+    },
+    {
+      "n": 2048,
+      "dtype": "fp32",
+      "ms": 6.855807300007655,
+      "tflops": 2.5058856575476995
+    },
+    {
+      "n": 2048,
+      "dtype": "float16",
+      "ms": 44.5966828499877,
+      "tflops": 0.385227512140059
+    },
+    {
+      "n": 2048,
+      "dtype": "bfloat16",
+      "ms": 11.22905429997445,
+      "tflops": 1.529948001412647
+    }
+  ],
+  "copy_bandwidth_gbs": 93.96759946086067,
+  "training": [
+    {
+      "pool_size": 2048,
+      "batch_size": 32,
+      "compile": true,
+      "baseline_samples_per_s": 3061.3786523828917,
+      "baseline_epoch_s": 0.6689796436667166,
+      "precollated_samples_per_s": 6972.195949260655,
+      "precollated_epoch_s": 0.2937381586668077,
+      "speedup": 2.277469317241659
+    },
+    {
+      "pool_size": 2048,
+      "batch_size": 128,
+      "compile": true,
+      "baseline_samples_per_s": 5728.633116422946,
+      "baseline_epoch_s": 0.3575023846663801,
+      "precollated_samples_per_s": 21280.49150841413,
+      "precollated_epoch_s": 0.09623837866668812,
+      "speedup": 3.7147590142239766
+    },
+    {
+      "pool_size": 2048,
+      "batch_size": 512,
+      "compile": true,
+      "baseline_samples_per_s": 5471.2859916203415,
+      "baseline_epoch_s": 0.37431784833340015,
+      "precollated_samples_per_s": 62412.4439198115,
+      "precollated_epoch_s": 0.032813969000017096,
+      "speedup": 11.407271346334397
+    }
+  ],
+  "inference": {
+    "compiled": [
+      {
+        "batch": 1,
+        "ms": 0.5117383200013137,
+        "ms_per_sample": 0.5117383200013137,
+        "samples_per_s": 1954.123740425444
+      },
+      {
+        "batch": 8,
+        "ms": 0.45777786001053755,
+        "ms_per_sample": 0.057222232501317194,
+        "samples_per_s": 17475.725016093722
+      },
+      {
+        "batch": 64,
+        "ms": 0.43551624001338496,
+        "ms_per_sample": 0.00680494125020914,
+        "samples_per_s": 146952.04017658
+      }
+    ],
+    "eager": [
+      {
+        "batch": 1,
+        "ms": 0.9579396200024348,
+        "ms_per_sample": 0.9579396200024348,
+        "samples_per_s": 1043.9071305949933
+      },
+      {
+        "batch": 8,
+        "ms": 0.563978420013882,
+        "ms_per_sample": 0.07049730250173525,
+        "samples_per_s": 14184.939912777309
+      },
+      {
+        "batch": 64,
+        "ms": 0.5777491000117152,
+        "ms_per_sample": 0.00902732968768305,
+        "samples_per_s": 110774.72902805431
+      }
+    ]
+  }
+}

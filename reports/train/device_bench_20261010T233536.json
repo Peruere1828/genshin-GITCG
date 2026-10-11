@@ -1,0 +1,117 @@
+{
+  "deck": "superconduct_aggro",
+  "opponents": [
+    "natlan_battleship",
+    "dual_mualani_stacks"
+  ],
+  "data_source": "collected",
+  "pool_stats": {
+    "n": 615,
+    "mean_options": 26.59512195121951,
+    "max_options": 192,
+    "distinct_request_types": [
+      "action",
+      "choose_active",
+      "reroll_dice",
+      "select_card",
+      "switch_hands"
+    ],
+    "win_fraction": 0.7804878048780488
+  },
+  "devices": [
+    "cpu",
+    "cuda"
+  ],
+  "d_models": [
+    64,
+    128
+  ],
+  "epochs": 15,
+  "results": [
+    {
+      "device": "cpu",
+      "d_model": 64,
+      "epochs": 15,
+      "batch_size": 32,
+      "n_samples": 615,
+      "wall_seconds": 5.599,
+      "n_train": 492,
+      "n_val": 123,
+      "train_loss": 1.0836,
+      "train_accuracy": 0.626,
+      "val_loss": 1.2536,
+      "val_accuracy": 0.561
+    },
+    {
+      "device": "cuda",
+      "d_model": 64,
+      "epochs": 15,
+      "batch_size": 32,
+      "n_samples": 615,
+      "wall_seconds": 5.353,
+      "n_train": 492,
+      "n_val": 123,
+      "train_loss": 1.0772,
+      "train_accuracy": 0.6423,
+      "val_loss": 1.2567,
+      "val_accuracy": 0.561,
+      "cuda_device_name": "NVIDIA GeForce MX550",
+      "speedup_vs_cpu": 1.046
+    },
+    {
+      "device": "cpu",
+      "d_model": 128,
+      "epochs": 15,
+      "batch_size": 32,
+      "n_samples": 615,
+      "wall_seconds": 6.166,
+      "n_train": 492,
+      "n_val": 123,
+      "train_loss": 1.0547,
+      "train_accuracy": 0.6443,
+      "val_loss": 1.2362,
+      "val_accuracy": 0.561
+    },
+    {
+      "device": "cuda",
+      "d_model": 128,
+      "epochs": 15,
+      "batch_size": 32,
+      "n_samples": 615,
+      "wall_seconds": 6.071,
+      "n_train": 492,
+      "n_val": 123,
+      "train_loss": 1.0547,
+      "train_accuracy": 0.6443,
+      "val_loss": 1.2362,
+      "val_accuracy": 0.561,
+      "cuda_device_name": "NVIDIA GeForce MX550",
+      "speedup_vs_cpu": 1.016
+    }
+  ],
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}
