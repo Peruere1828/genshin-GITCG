@@ -38,5 +38,13 @@
   无 key/网络不可用时 LLM 模式以退出码报错（纯策略用 `--no-llm`）；全部跑完后重跑只重新聚合，不再需要 key。
   客户端失败的比赛逐局标 `degraded` 并在报告 `llm_quality` 中单列（含非降级 `clean` 胜率）；连续 N 次
   （默认 5，`--max-consecutive-errors`）客户端失败即中止待续跑，保证 llm 列始终是 LLM 辅助口径。
+- `explore/fetch_deck_corpus.py`（探索任务 1）：抓取 miHoYo「卡牌广场」公开 API 的卡组 +
+  手工抄录的公开攻略分享码，用引擎编解码逐条验证（3 角色 + 30 行动牌），可选各跑 1 局
+  `run_match`；写 `data/deck_corpus/`（gitignore），`--export-reports` 另存紧凑副本。
+  `explore/render_deck_report.py` 渲染 `reports/explore/deck_corpus.md`。
+  ```bash
+  python -m scripts.explore.fetch_deck_corpus --no-fetch --engine --export-reports
+  python -m scripts.explore.render_deck_report
+  ```
 
 待办：`run_iteration`（采集→训练→评测→落盘，断点续跑）。依赖 `train/` 落地。

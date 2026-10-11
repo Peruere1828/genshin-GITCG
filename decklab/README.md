@@ -9,6 +9,13 @@
   - `evaluate_swaps`：每张换卡在配对种子上 vs 固定对手池跑小样本，输出对 baseline 的胜率差 + Wilson CI。
   - 由于改牌后无对应脚本专家，己方用固定通用策略（`heuristic`），对手仍用脚本专家。
   - 通过 `MatchTask.deck0_inline` 把改后牌组传给 worker 进程（无需注册）。
+- `corpus.py`：加载公开卡组语料（`data/deck_corpus/decks.json`，或提交的紧凑副本
+  `reports/explore/deck_corpus.json`），产出 `DeckSpec`。采集/验证见 `scripts/explore/fetch_deck_corpus.py`，
+  摘要见 `reports/explore/deck_corpus.md`。无网络。
+  ```python
+  from decklab.corpus import corpus_deck_specs
+  specs = corpus_deck_specs()  # name = corpus slug
+  ```
 - CLI：`python -m decklab.sensitivity --deck superconduct_aggro --seeds 5 --workers 12`。
 
 待办：LLM 提议换卡（结构化候选）、更强己方策略（训练后再做换卡敏感性）、结论固化进评测池。

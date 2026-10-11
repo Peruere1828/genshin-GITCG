@@ -7,8 +7,9 @@ venv/
 .mypy_cache/
 
 # 训练产物与数据不入库（只留清单/schema）
-data/*
+data/**
 !data/.gitkeep
+!data/**/
 !data/**/README.md
 *.pt
 *.pth

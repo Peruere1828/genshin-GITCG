@@ -9,6 +9,9 @@
 - `reports/llm/matrix_<ts>_<tag>.json`：LLM 辅助 vs 纯策略胜率矩阵聚合（纯策略/LLM 分开报分，§6.3；L5.2）。
 - `reports/train/learning_curve_<ts>.json/.csv`：CVPN 学习曲线（数据量×网络规模 → 损失/一致率；L5.3）。
 - `reports/search/<tag>_<ts>.json`：fork 搜索 resolver 对池评测聚合（配对种子 search vs expert 消融 + Wilson CI；L5.4）。
+- `reports/explore/deck_corpus.md` + `.json`：公开七圣召唤卡组语料（探索任务 1）——分享码、验证结果、
+  体系标签、核心卡与来源；`.json` 为紧凑机器可读副本（loader 见 `decklab/corpus.py`）。原始数据在
+  `data/deck_corpus/`（gitignore）。
 - `reports/LOCAL_BASELINE.md`：本地先行（L0/L1）实测基线与验收换算。
 
 原始逐局记录（大体积）写入 `data/arena/<run_id>.jsonl`、`data/llm/<tag>.jsonl`、`data/search/<tag>.jsonl`、`data/replays/<tag>/`（gitignore，不入库）；
