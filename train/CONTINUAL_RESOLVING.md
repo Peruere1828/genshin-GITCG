@@ -46,6 +46,15 @@ exploitability 评估。**网络不是决策者，求解器才是；网络逼近
 
 1. **信念根化（G1+G3）**：即便先上粗糙后验（未见牌上的均匀/`belief_groups` 边缘），把搜索根换成
    `PlayerView` + 采样确定化，消除 §5.2 违反。落点：`envs/fork_search.py`（根化）、`reps/belief_groups.py`。
+   **◐ 2026-10-11（WSL）**：`reps/belief.py` 交付——从掩码边界态构 `PublicBeliefState`（自范围=已知手牌/牌堆
+   多重集；对手范围=已知牌组−已公开，按公共手牌/骰子计数采样，可接 `belief_groups` 边缘与学习直方图），
+   `reconstruct_state_json` 用采样粒子改写边界快照的隐藏区（对手手牌/牌堆/骰子、自牌堆顺序），**隐藏实体 id 合成**
+   以杜绝真值身份/顺序泄漏；与参考实现的差别：我们不另造 synthetic 模板，而是以活体边界快照为结构支架、只换隐藏区
+   （公开字段来自真实公共态，更贴合当前对局）。`envs/fork_search.py` 新增 `belief_root/belief_samples`（默认关）；
+   每候选 fork 从采样的确定化根出发、rollout 在多个粒子上分散，先验/base 逻辑不变。`scripts/run_search_agent.py`
+   加 `--belief-root/--belief-samples`（进 spec 指纹）。测试 `tests/test_belief_root.py`：belief 范围只依公共视图、
+   重建隐藏内容对隐藏真值不变（**S-A 验收**）、确定化根可 fork 打完整局、belief-root 搜索冒烟干净。
+   剩余：把 belief 根接进后续 MCCFR 求解器（G2/G4）与 belief 头（G7），并在 `belief_groups` 边缘/学习后验下评估。
 2. **sampled GT-CFR 脚手架（G2+G4）**：在粒子树上做外采 MCCFR（regret matching + 平均策略），
    固定深度 + CVPN frontier 价值（charter §6.3 明确允许外采 MCCFR 作脚手架，语义仍是 GT-CFR）。
    落点：新增 `train/cfr_solver.py`，叶子走 `train/batched_inference.py`。

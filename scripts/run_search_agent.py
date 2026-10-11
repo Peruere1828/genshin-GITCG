@@ -22,6 +22,8 @@ Usage::
     python -m scripts.run_search_agent --smoke
     python -m scripts.run_search_agent --opponents natlan_battleship --seeds 3 \\
         --rollouts 2 --max-searches 5 --workers 8
+    python -m scripts.run_search_agent --opponents natlan_battleship --seeds 3 \\
+        --belief-root --belief-samples 3 --rollouts 3 --workers 8   # M3 S-A
 """
 
 from __future__ import annotations
@@ -57,6 +59,8 @@ class SearchSpec:
     search_every: int = 1
     max_searches: int = 5
     checkpoint: str | None = None
+    belief_root: bool = False
+    belief_samples: int = 1
     tag: str = "search_agent"
 
     def tasks(self) -> list["SearchTask"]:
@@ -83,6 +87,8 @@ class SearchSpec:
                 "search_every": self.search_every,
                 "max_searches": self.max_searches,
                 "checkpoint": self.checkpoint,
+                "belief_root": self.belief_root,
+                "belief_samples": self.belief_samples,
             },
             sort_keys=True,
             ensure_ascii=False,
@@ -122,6 +128,8 @@ def run_task(
         top_k=spec.top_k,
         search_every=spec.search_every,
         max_searches=spec.max_searches if task.mode == SEARCH else 0,
+        belief_root=spec.belief_root,
+        belief_samples=spec.belief_samples,
         **kwargs,
     )
     record = result.record
@@ -194,6 +202,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--search-every", type=int, default=1)
     parser.add_argument("--max-searches", type=int, default=5)
     parser.add_argument(
+        "--belief-root",
+        action="store_true",
+        help="M3 S-A: fork determinized public-belief roots instead of the live snapshot",
+    )
+    parser.add_argument(
+        "--belief-samples",
+        type=int,
+        default=1,
+        help="number of determinized public-belief roots per searched decision",
+    )
+    parser.add_argument(
         "--checkpoint",
         default=None,
         help="CVPN checkpoint: use it as base+prior (expert mode = pure network) and "
@@ -223,6 +242,8 @@ def main(argv: list[str] | None = None) -> int:
         search_every=args.search_every,
         max_searches=args.max_searches,
         checkpoint=args.checkpoint,
+        belief_root=args.belief_root,
+        belief_samples=args.belief_samples,
         tag=args.tag,
     )
 

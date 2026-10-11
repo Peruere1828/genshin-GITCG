@@ -5,7 +5,7 @@
 ## 现状
 
 - WS0/WS1 + 本地先行 L0–L5.6 已有可运行代码（2026-10-07–10，明细见 git log）：
-  - `reps/`：从 `refs/Rebel_base_RL/.../gitcg_world_model` 逐模块移植的表示层（schema/snapshot/action_hierarchy/action_adapter/public_state/semantic_priors/agents/replay + 对应 toml），导入路径 `reps.*`；来源与许可见 `NOTICE.md`。
+  - `reps/`：从 `refs/Rebel_base_RL/.../gitcg_world_model` 逐模块移植的表示层（schema/snapshot/action_hierarchy/action_adapter/public_state/belief/belief_groups/semantic_priors/agents/replay + 对应 toml），导入路径 `reps.*`；来源与许可见 `NOTICE.md`。`reps/belief.py`（M3 S-A）从掩码公共态构 `PublicBeliefState` 并采样确定化根（`reconstruct_state_json` 改写边界快照隐藏区、隐藏实体 id 合成），供 `envs/fork_search.py` 的 `belief_root` 使用。
   - `agents/scripted/`：从 `gitcg_expert_system` 移植的 20 套脚本卡组规则，可跑完整对局。
   - `envs/`：`PolicyPlayer`（`gitcg.Player` 五类请求 → `Policy` 抽象）+ `run_match` + expert/baseline policy + 牌组装配 + `rollout`（多进程）+ `snapshot`（快照/分叉工具）+ `fork_bridge`/`fork_worker`（L5.4 子进程 fork 桥，JSON-lines）+ `fork_search`（实用版 continual-resolving：`ForkSearchPolicy` + `run_search_match`）。
   - `eval/`：`opponents`（20 脚本 + 基线池）+ `arena`（矩阵 + Wilson CI + Elo + 流式落盘/断点续跑）+ `ladder` + `stats`。

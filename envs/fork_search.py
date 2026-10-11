@@ -38,6 +38,20 @@ rule", §5.4). ``base`` and the rollout policies can themselves be the network
 Cost is ``candidates x rollouts`` full games per searched decision; ``top_k`` and
 ``search_every`` bound it. Every decision is logged (``SearchDecision``) for the
 coach/teacher and for distillation features.
+
+Public-belief rooting (M3-CPU S-A, gaps G1+G3)
+---------------------------------------------
+By default the search root is the live boundary snapshot, i.e. the *single true*
+determinization of the opponent's hidden hand/pile/dice -- a GT-CFR charter
+§5.2 violation. With ``belief_root=True`` the root for each fork is instead a
+**determinized** snapshot reconstructed by ``reps.belief.sample_belief_roots``:
+the boundary is masked to the acting player's public view, a particle is sampled
+from the public belief (known decklist, public hand/dice counts), and the hidden
+zones are overwritten with that particle (hidden entity ids are synthetic, so no
+identity/ordering of the true cards survives). ``belief_samples`` roots are
+sampled and distributed across rollouts, so the search averages over hidden
+states consistent with what the acting player can actually observe. This is the
+CPU-tier precondition for the sampled GT-CFR solver (``train/cfr_solver.py``).
 """
 
 from __future__ import annotations
@@ -71,6 +85,7 @@ class SearchDecision:
     chosen_option: int
     searched: bool
     prior: dict[int, float] | None = None
+    belief_roots: int = 1
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -85,6 +100,7 @@ class SearchDecision:
             "chosen_option": self.chosen_option,
             "searched": self.searched,
             "prior": None if self.prior is None else {str(k): v for k, v in self.prior.items()},
+            "belief_roots": int(self.belief_roots),
         }
 
 
@@ -99,6 +115,33 @@ class SearchContext:
     records: list[list[int]] = field(default_factory=lambda: [[], []])
     boundary: tuple[str, int, int] | None = None
     searches: list[SearchDecision] = field(default_factory=list)
+    # M3-CPU S-A: public-belief rooting. When ``belief_root`` is on the search
+    # root is a *determinized* boundary snapshot (public belief + sampled
+    # particle) instead of the live snapshot's single true hidden state. Roots
+    # are cached per (boundary snapshot, acting player) since they only depend
+    # on the public view.
+    belief_root: bool = False
+    belief_samples: int = 1
+    deck_cards: tuple[tuple[int, ...], tuple[int, ...]] = ((), ())
+
+    def belief_roots_for(self, *, snapshot: str, acting_player: int) -> list[str]:
+        cache = self._belief_roots_cache.setdefault((snapshot, int(acting_player)), None)
+        if cache is None:
+            from reps.belief import sample_belief_roots
+
+            opponent_player = 1 - int(acting_player)
+            cache = sample_belief_roots(
+                snapshot,
+                root_player=int(acting_player),
+                opponent_deck_cards=self.deck_cards[opponent_player],
+                samples=max(1, int(self.belief_samples)),
+            )
+            self._belief_roots_cache[(snapshot, int(acting_player))] = cache
+        return cache
+
+    _belief_roots_cache: dict[tuple[str, int], list[str]] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     def prefix(self, player: int) -> tuple[int, ...]:
         if self.boundary is None:
@@ -155,6 +198,8 @@ class ForkSearchPolicy:
     search_every: int = 1
     max_searches: int | None = None
     max_steps: int = 5000
+    belief_root: bool = False
+    belief_samples: int = 1
     name: str = field(default="fork_search")
     _calls: int = field(default=0, init=False, repr=False)
     _n_searched: int = field(default=0, init=False, repr=False)
@@ -221,6 +266,12 @@ class ForkSearchPolicy:
         context = self.context
         snapshot = context.boundary[0]  # type: ignore[index]
         acting = self.player
+        if self.belief_root:
+            root_snapshots = context.belief_roots_for(snapshot=snapshot, acting_player=acting)
+            if not root_snapshots:
+                root_snapshots = [snapshot]
+        else:
+            root_snapshots = [snapshot]
         ordinal = len(context.records[acting])  # decisions before this one
         prefix_self = context.prefix(acting)
         prefix_opp = context.prefix(1 - acting)
@@ -248,7 +299,7 @@ class ForkSearchPolicy:
                 tasks.append(
                     ForkTask(
                         index=task_index,
-                        snapshot=snapshot,
+                        snapshot=root_snapshots[r % len(root_snapshots)],
                         game_attrs=dict(context.game_attrs),
                         deck0=self.deck0,
                         deck1=self.deck1,
@@ -292,6 +343,7 @@ class ForkSearchPolicy:
                 counts=counts,
                 chosen_option=best,
                 searched=True,
+                belief_roots=len(root_snapshots),
                 prior=None
                 if prior_probs is None
                 else {opt: prior_probs[opt] for opt in candidates},
@@ -354,6 +406,8 @@ def run_search_match(
     base_policies: tuple[Policy | None, Policy | None] | None = None,
     prior_policies: tuple[Any | None, Any | None] | None = None,
     record_final_state: bool = False,
+    belief_root: bool = False,
+    belief_samples: int = 1,
 ) -> SearchMatchResult:
     """Play one game in which ``search_players`` refine their moves with fork search.
 
@@ -389,6 +443,12 @@ def run_search_match(
         game_attrs=attrs,
         rollout_specs=_normalize_rollout_specs(rollout_specs, deck0, deck1),
         base_seed=int(seed),
+        belief_root=bool(belief_root),
+        belief_samples=max(1, int(belief_samples)),
+        deck_cards=(
+            tuple(int(card) for card in spec0.cards),
+            tuple(int(card) for card in spec1.cards),
+        ),
     )
 
     policies: list[Policy] = []
@@ -409,6 +469,8 @@ def run_search_match(
                 search_every=search_every,
                 max_searches=max_searches,
                 max_steps=max_steps,
+                belief_root=bool(belief_root),
+                belief_samples=max(1, int(belief_samples)),
             )
         else:
             policy = base
