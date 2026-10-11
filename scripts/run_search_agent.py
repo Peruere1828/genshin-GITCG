@@ -218,7 +218,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="CVPN checkpoint: use it as base+prior (expert mode = pure network) and "
         "as the neural rollout, so 'search - expert' isolates the effect of search.",
     )
-    parser.add_argument("--workers", type=int, default=None)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="fork worker processes (default: all cores; 0 = in-process "
+        "sequential, for debugging — unlike eval/arena, where 0 means all cores)",
+    )
     parser.add_argument("--smoke", action="store_true", help="3 opponents x 2 seeds")
     parser.add_argument("--tag", default="search_agent")
     return parser

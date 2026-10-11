@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from common.jsonl import append_jsonl, ensure_trailing_newline, read_jsonl
@@ -36,6 +38,6 @@ def test_ensure_trailing_newline_safe_on_missing_and_empty(tmp_path):
 def test_read_jsonl_strict_raises_on_torn(tmp_path):
     path = tmp_path / "s.jsonl"
     path.write_text('{"a": 1}\n{"b":\n', encoding="utf-8")
-    with pytest.raises(Exception):
+    with pytest.raises(json.JSONDecodeError):
         read_jsonl(path)
     assert read_jsonl(path, tolerate_torn=True) == [{"a": 1}]
