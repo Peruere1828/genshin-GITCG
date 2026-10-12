@@ -183,7 +183,7 @@ python -m train.collect --deck <deck> --all-opponents \
    净效果：墙钟膨胀 ~2–3×，采集 1450–4250 局/h、训练 150–300 样本/s、评测 ~1500 局/h。
 2. **长尾 matchup（结构性）**：岩/雷/草系稳定压制所有 BC 与多数 deck；floor 是真正未过的门禁。
 3. **epoch 预算**：受 CPU 限制多数 run 只跑 6–12 epochs（A3 用 40）。SA 的 6→15 ep 已把 pooled 0.405→0.480
-   （gap −0.104*→−0.029 ns），**证明 epoch 是独立于数据量的有效杠杆**；其余 deck 需在 A800 上补足 epoch。
+   （gap −0.104*→−0.029/20-seed −0.061），**证明 epoch 是独立于数据量的有效杠杆**；其余 deck 需在 A800 上补足 epoch。
 4. **无 GPU**：网络停在 d256；更宽网络/自博弈无法在 CPU 上推进。
 5. **无搜索增益**（D23 已定）：本会话未再碰搜索 teacher。
 
