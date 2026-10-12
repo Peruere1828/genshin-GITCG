@@ -133,6 +133,24 @@ V8 构建失败时，NPC 环境可走 **Node 子进程 + TS core + `custom-data-
 （免构建读取敌人数据）驱动；Web 线（WS8）不受影响。失败时**保留
 `build/v8-cmake-src` 与 `build/engine-build` 与日志**，只做增量重试（重建只重编失败/改动部分）。
 
+## 九、WS8 standalone 前端（D18）
+
+WS8（Web 人机调试界面）不需要 V8 的 `.so`，直接复用引擎仓的 TS 前端
+`packages/standalone/`（浏览器跑 `@gi-tcg/core` + `web-ui-core` + `deck-builder` +
+`assets-manager`）。改动放 `overlay/packages/standalone/**`（含一个
+`assets-manager/src/constants.ts` 的 base URL 兜底改动），工具链入口
+`scripts/standalone.sh`：
+
+```sh
+bash engine-overlay/scripts/standalone.sh build   # 构建 standalone 全部 workspace 依赖
+bash engine-overlay/scripts/standalone.sh dev     # http://localhost:5173/
+```
+
+静态数据/素材走本机可达镜像 `https://gi-tcg-assets-api-hf.guyutongxue.site/`
+（上游默认 `static-data.piovium.org` 在本网络不可达），`GI_TCG_ASSETS_BASE_URL` 可覆盖。
+另有 HTTP 桥原型（浏览器引擎 ↔ Python）见 `web/ai_rpc_server.py` 与
+`overlay/packages/standalone/README.md`；阶段小结见 `reports/web_standalone_start.md`。
+
 ## 构建记录（PvE-B0，2026-10-12）
 
 首建（本机 12 核 / 30G，`BUILD_JOBS=8`，Docker 内）：
