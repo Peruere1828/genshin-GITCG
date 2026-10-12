@@ -317,6 +317,8 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 - 交付节奏：**本地/WSL `train.collect` 分片累积 → 数据传入 A800 → `train.pipeline --replays/--distill` GPU 训练 → checkpoint 回流本地 → `scripts/eval_protocol.py` 认证**；窗口结束即产 checkpoint + 报告；
 - 训练输入可断点续跑、一键零看管（§5.1 D7/§5.1）；LLM 不可用时走商业 API 兜底（D6）。
 
+> **A800 窗口实测（2026-10-12，详见 `reports/explore/a800_window_20261012.md`）**：容器 CPU 配额实测 **10 核**（cgroup `cpu.max=1000000/100000`）；10 核饱和采集 ~**2,491 局/h**（120 worker 过度订阅，10 核箱宜 ~10 worker）；**GPU 相对数据平面富余约 100×**（precollated 训练 276k samples/s ⇒ 5 万局 × 50 epoch ≈ **8 min**）；8000 样本上 d512 最优、val_acc 随数据单调上升 → **当前瓶颈是数据而非网络容量**，主线按「本地/WSL 分片采集 → 传入 A800 → GPU 一次性放大/蒸馏」排产。A800 本地存储上限 ~**37 GB**（实测 1.64 MB/局 ≈ 2.3 万局/窗，传入前先压缩）。
+
 ### 5.2 本地双机模式（默认：12 核 + WSL 4 核，对应 §4.1 本地先行轨道）
 
 | 负载 | 可行性 | 说明 |
