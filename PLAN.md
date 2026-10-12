@@ -398,7 +398,7 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
 
 模型主线（A）维持 §4.3（M3-CPU）；NPC（B）与 Web（C）为新增并行线（D16–D20）。阶段划分如下。
 
-**进度（2026-10-12）**：B0 ✅（`engine-overlay/`，pin `v0.21.0`，V8 直编，162 passed）｜**模型主线 S-A/S-B/S-C 全 ✅**（`reps/belief.py`、`train/cfr_solver.py`、`envs/cfr_search.py`、`train/belief_head.py`+`train/distill.py`，186 passed）｜B1 ✅（17 敌人 `.gts`）｜B2/B3 ✅（`npc/`：NpcPolicy + 三星判定 + 评测入口）｜B4 NPC 数据 ✅（19 类敌人 + 16 关，`configs/npc/`）｜**A3/A4 判定 ✅（负面）**：M3-CPU 未过 + 搜索 teacher 无增益且有害 → **改排产＝数据先行（D23）**。**C 线阻断已解除**（static-data 走可达 v5 镜像，§7）。**下一步**：数据先行（BC/自博弈规模化 + 更大网络）、B5 PvE-v1 门禁（decklab 组牌 × 16 关）、C0 standalone。
+**进度（2026-10-12）**：B0 ✅（`engine-overlay/`，pin `v0.21.0`，V8 直编，162 passed）｜**模型主线 S-A/S-B/S-C 全 ✅**（`reps/belief.py`、`train/cfr_solver.py`、`envs/cfr_search.py`、`train/belief_head.py`+`train/distill.py`，186 passed）｜B1 ✅（17 敌人 `.gts`）｜B2/B3 ✅（`npc/`：NpcPolicy + 三星判定 + 评测入口）｜B4 NPC 数据 ✅（19 类敌人 + 16 关，`configs/npc/`）｜**C0 ✅**（standalone overlay 起局 + 浏览器引擎↔Python HTTP 桥跑通整局，`web/ai_rpc_server.py`）｜**A3/A4 判定 ✅（负面）**：M3-CPU 未过 + 搜索 teacher 无增益且有害 → **改排产＝数据先行（D23）**。**C 线阻断已解除**（static-data 走可达 v5 镜像，§7）。**下一步**：数据先行（BC/自博弈规模化 + 更大网络，A5 进行中）、B5 PvE-v1 门禁（decklab 组牌 × 16 关 × 三星 ≥60%）、WS8 下一步（人选牌 → AI 看牌反选 → 接模型）。
 
 **阶段 1（立即）**：B0 构建链 go/no-go（Docker 内建 V8，D20）**✅** ‖ A1 S-B MCCFR 脚手架 **✅**
 
