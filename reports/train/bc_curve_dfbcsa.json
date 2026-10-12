@@ -1,0 +1,82 @@
+{
+  "generated": "2026-10-12T19:22:19",
+  "tag": "dfbcsa",
+  "arch": "cvpn",
+  "belief_head": true,
+  "epochs": 5,
+  "note": "d128 val curve from data/store/dfbc_sa.pt; 128k point interrupted (host swap contention)",
+  "store": {
+    "replay_dirs": [
+      "data/replays/datafirst_bc_sa500",
+      "data/replays/df_*"
+    ],
+    "games": 8061,
+    "duplicate_games": 17,
+    "train_samples": 334734,
+    "val_samples": 37536,
+    "seed_start": 1000000,
+    "val_every": 10
+  },
+  "sizes": [
+    8000,
+    48000
+  ],
+  "d_models": [
+    128
+  ],
+  "points": [
+    {
+      "d_model": 128,
+      "arch": "cvpn",
+      "n_train": 8000,
+      "n_val": 8000,
+      "train_seconds": 186.4,
+      "val_ce": 1.02656,
+      "val_acc": 0.5916,
+      "val_value": 0.20937,
+      "val_belief": 5.52834,
+      "final_train_ce": 1.0306,
+      "final_train_acc": 0.60206,
+      "checkpoint": "data/checkpoints/curve_dfbcsa_d128_n8000.pt"
+    },
+    {
+      "d_model": 128,
+      "arch": "cvpn",
+      "n_train": 48000,
+      "n_val": 8000,
+      "train_seconds": 896.0,
+      "val_ce": 0.82221,
+      "val_acc": 0.7266,
+      "val_value": 0.17321,
+      "val_belief": 4.13074,
+      "final_train_ce": 0.84068,
+      "final_train_acc": 0.71335,
+      "checkpoint": "data/checkpoints/curve_dfbcsa_d128_n48000.pt"
+    }
+  ],
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}
