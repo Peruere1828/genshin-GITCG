@@ -48,5 +48,9 @@
   元素爆发 / 元素反应 / 装备牌 / 事件牌）+ 三星计数。
 - `test_npc_eval.py`（PvE-B3）：聚合（总览/逐关/逐目标）、spec 指纹稳定与敏感、流式续跑指纹护栏 + 撕裂行容错、
   任务网格；slow——`run_npc_eval` 端到端 + 重复运行续跑不重复 + 产物落盘。
+- `test_npc_contestant.py`（PvE-v1，B5）：门禁 contestant 策略——合成 profile 无 deck 专属规则、
+  目标注入（装备/事件牌）与不可用时的回退、`inject_objectives=False` 不注入；slow——同种子逐决策复现。
+- `test_decklab_builder.py`（PvE-v1，B5，D19）：规则组牌——池 C 牌组合法（30 张 / ≤2 张 / 全在池内 /
+  角色在池内）、确定性、武器+圣遗物齐备（目标可达）、越界报错、kind 统计。
 
 依赖：需要资产缓存（`data/assets/`）；首次运行会联网拉取，CI 可预置缓存并设 `GITCG_ASSETS_OFFLINE=1`。

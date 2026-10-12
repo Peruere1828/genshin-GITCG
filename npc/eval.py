@@ -41,6 +41,9 @@ from .objectives import evaluate_stage
 from .policy import npc_policy_for_stage
 from .spec import get_stage, load_stages
 
+CONTESTANT_POLICY_SPEC = "contestant"  # npc.contestant.CONTESTANT_POLICY_SPEC
+CONTESTANT_PLAIN_POLICY_SPEC = "contestant_plain"  # same, without objective injection
+
 
 @dataclass(frozen=True)
 class NpcEvalSpec:
@@ -120,7 +123,19 @@ def run_npc_match(
         characters=stage.deck_characters,
         cards=contestant.cards,
     )
-    policy0 = build_policy(policy0_spec, seed=derive_seed(seed, "npc_contestant"), role="contestant")
+    if policy0_spec in (CONTESTANT_POLICY_SPEC, CONTESTANT_PLAIN_POLICY_SPEC):
+        # Stage-aware contestant (scripted expert base + optional objective
+        # injection); see npc/contestant.py. Purely additive branch: every other
+        # spec keeps going through envs.policy.build_policy.
+        from .contestant import build_contestant_policy
+
+        policy0 = build_contestant_policy(
+            contestant, stage, inject_objectives=(policy0_spec == CONTESTANT_POLICY_SPEC)
+        )
+    else:
+        policy0 = build_policy(
+            policy0_spec, seed=derive_seed(seed, "npc_contestant"), role="contestant"
+        )
     policy1 = npc_policy_for_stage(stage, rotation=rotation)
     record = run_match(
         contestant,
@@ -447,7 +462,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--stages", default="all", help="comma-separated stage names or 'all'")
     parser.add_argument("--deck", default="superconduct_aggro", help="contestant deck slug (expert pool)")
     parser.add_argument("--seeds", default="1,2,3", help="comma-separated seeds")
-    parser.add_argument("--policy", dest="policy0", default="heuristic", help="contestant policy spec")
+    parser.add_argument("--policy", dest="policy0", default="heuristic", help="contestant policy spec (e.g. 'contestant', 'heuristic', 'expert:<slug>')")
     parser.add_argument("--rotation", default=None, help="NPC rotation name (default: greedy)")
     parser.add_argument("--tag", default="npc_eval")
     parser.add_argument("--workers", type=int, default=1)

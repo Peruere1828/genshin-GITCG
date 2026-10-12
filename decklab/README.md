@@ -17,5 +17,10 @@
   specs = corpus_deck_specs()  # name = corpus slug
   ```
 - CLI：`python -m decklab.sensitivity --deck superconduct_aggro --seeds 5 --workers 12`。
+- `builder.py`（2026-10-12，PvE-v1 门禁 D19）：**确定性规则组牌**——给定池清单
+  （`configs/pools/*.json`）与 3 名角色，按「固定 meta 核心 + 人工填充序」产出合法 30 张牌组
+  （每卡 ≤2 张、全部来自池内）。`build_pool_c_superconduct()` 是 PvE-v1 门禁的 contestant 牌组。
+  这不是学习/Agent 式自动组牌（见下「待办」），门禁报告已记录该偏差。
 
-待办：LLM 提议换卡（结构化候选）、更强己方策略（训练后再做换卡敏感性）、结论固化进评测池。
+待办：LLM 提议换卡（结构化候选）、更强己方策略（训练后再做换卡敏感性）、结论固化进评测池；
+学习/Agent 式自动组牌（D19 的目标形态，当前用 `builder.py` 规则组牌近似）。
