@@ -29,6 +29,7 @@
 | D18 | Web 人机调试接口 | **直接上引擎 standalone overlay**（不自建轻量 web）；流程＝人选牌 → **AI 看对手牌后反选** → 随机先手；人可持 NPC 敌人卡组；定位＝**对 AI 的调试接口**（明示信息流程，**不进口径验收**）；模型端复用 `envs.policy.build_policy` 全 spec，观测走 `notification.state`（与训练同源）；素材照 refs 做法：运行时按 id 拉取、不入库、缓存 gitignore、不随发布物分发 |
 | D19 | 卡组口径 | NPC 评测用 **decklab 自动组牌**（池 C 内，闭环含组牌 Agent）；Web 对局＝人自选 + AI 反选（v1 用对位矩阵 + decklab 固定规则起步） |
 | D20 | 引擎构建策略（V8） | **Docker 内构建**：镜像基线 `ubuntu:22.04`（与上游 CI 同 glibc 口径）；**引擎源码 pin 到与 PyPI wheel 一致的 tag `v0.21.0`**（`c94826b`；refs HEAD 更新但 ABI/构建方式不同，不采用）；V8 **一次性首建**、改敌人数据只做**增量**（rolldown 生成 `js_code.cpp` + 重链，分钟级，V8 不重编）；**只在一台构建**（linux x64 `.so` 本机/WSL 通用）；开发期用 `custom-data-loader` **免构建快循环**验证敌人数据；**node 24 直接用**（`engines` 仅警告，无 `engine-strict`）；构建 provenance 记入 `engine.lock.example` 变体；**V8 构建失败 fallback**＝Node 子进程 + TS core + `custom-data-loader` 驱动 NPC 环境（web 线不受影响）。**（2026-10-12 事实修正）**：pin 的 `v0.21.0` 用 `piovium/v8-cmake@14d0f727`——**vendor V8 11.6.189.4 源码、纯 CMake+Ninja 直编，无 depot_tools/`V8_WORKSPACE`/`V8_OFFLINE`、无数 GB 下载**；实测首建 **~20 min**（1232 TU）、增量 **~30 s** 且产物 sha256 确定。先前按 refs HEAD（`v8-cmake-barbara`/V8 14.8/volume 缓存）写的措辞作废；证据与流程见 `engine-overlay/README.md` |
+| D21 | 机会算力 CPU 配额事实（修订 D14/§5，2026-10-12 实测） | A800 窗口**只有 GPU 可用**、**CPU 配额仅 ~10 核**（与本机 12 核同级）：**CPU 密集的采集/评测不放窗口**，只在本机/WSL 分片累积；A800 专做 **GPU 训练/推理**（CVPN 放大、蒸馏、batched inference、可选本地 LLM）。数据流：本地 `train.collect` → 传入 A800 → `train.pipeline --replays/--distill` GPU 训练 → checkpoint 回流本地 → `scripts/eval_protocol.py` 认证。§5.1 窗口优先级据此收敛为「训练 > LLM 分析」（采集/评测移出窗口）|
 
 ### 0.1 工程约定（现行做法，2026-10-10 正向化整理；证据指向脚本/测试）
 
@@ -292,7 +293,7 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 
 ## 5. 算力与部署
 
-**结论（D14）：本机 + WSL 双机为默认算力，A800 80G + 128 核为申请制机会资源，南大集群暂缓。**
+**结论（D14，CPU 配额见 D21）：本机 + WSL 双机为默认算力（CPU 采集/评测在此），A800 80G 为申请制机会资源（以 GPU 训练为主），南大集群暂缓。**
 依据：RL 网络只有几百万~几千万参数，CPU 档（d_model 64–128、fp32）本地就能训练验证语义；SoG 路线的
 真正瓶颈是 CPU 搜索/环境步进——先把信念根化 MCCFR 在 CPU 档跑通（§4.3），规模放大留给机会算力。
 所有里程碑不依赖机会资源；工程保持"无常驻服务、断点续跑、CPU 采集与 GPU 训练解耦"，窗口到手即可放量。
@@ -301,7 +302,7 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 |------|------|--------|
 | 本机 12 核 / 30G（主力） | rollout/采集/评测 arena、CPU 档训练、fork 搜索、LLM Agent（API） | 12 worker ~4,900 局/h（排产口径，§4.2）；开发与验收全部在此闭环 |
 | WSL 4 核 / 8G / MX550 2G（并行节点） | 分片采集/评测；**小网络训练试验**（d_model ≤ 64、fp32 小 batch） | MX550 无 tensor core、显存 2G：试验以"能训 + 速度对照 CPU"为目标，结论决定训练节点归属 |
-| A800 80G + 128 核（机会资源，申请制、时间受限） | ① 大 LLM（32B/72B bf16 或 LoRA）做局内辅助/深度复盘；② CVPN 放大训练 + batched inference；③ 大规模自博弈采集 | 窗口按"训练 > 评测 > 采集 > LLM 分析"排优先级、一键零看管跑完；LLM 不可用时走商业 API 兜底（D6） |
+| A800 80G（机会资源，申请制、时间受限；**CPU 配额仅 ~10 核，见 D21**） | ① CVPN/蒸馏 **GPU 放大训练** + batched inference；② 大 LLM（32B/72B bf16 或 LoRA）做局内辅助/深度复盘 | **只做 GPU 训练/推理**：CPU 密集的采集/评测留本机/WSL（10 核与 12 核同级，不值得占窗口）；数据本地采集后**传入**；一键零看管跑完；LLM 不可用时走商业 API 兜底（D6） |
 | 南大集群（暂缓） | — | glibc/环境适配成本高（D14）；`scripts/cluster/` 保留为将来机会算力的适配起点（C13） |
 
 **工程形态约束（由 D7/D14 推出，所有模块必须遵守）**：
@@ -309,12 +310,12 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 - **一切长任务可断点**：训练、自博弈、评测全部支持 checkpoint + 重提（作业被排队/中断是常态）。
 - 存储：热数据（当前 run 的 replay 池/checkpoint）放本地盘；本机只放代码与小体积报告，大数据留采集机器/机会算力存储（`data/` 已 gitignore）。
 
-### 5.1 机会算力窗口模式（A800 + 128 核，申请制、间歇可用）
+### 5.1 机会算力窗口模式（A800 GPU，CPU 配额 ~10 核；申请制、间歇可用；D21）
 
-机会窗口的用法（里程碑验收不变，墙钟与窗口占比成反比）：
-- M3 起工程硬性要求提前：一键 `run_iteration`（采集→训练→评测→落盘）在窗口内零看管跑完，窗口结束即产 checkpoint 与报告；
-- 吞吐用"窗口预算"管理：窗口内优先级 = 训练 > 评测 > 自博弈采集 > LLM 分析；窗口碎片期只跑采集；
-- **性价比最优的混合**：CPU 侧（本机/WSL 或窗口内 128 核）只跑纯 CPU 自博弈采集（无需 GPU、无人值守、可续跑分片），GPU 窗口留给训练 + 本地 LLM——数据瓶颈与窗口解耦（`train.collect` 采集 → `train.pipeline --replays` 训练，已交付）。
+机会窗口的用法（里程碑验收不变，墙钟与窗口占比成反比；**窗口 CPU 太少，只做 GPU 训练/推理**）：
+- 窗口内只跑 **GPU 训练/蒸馏**（+ 可选本地 LLM）；**采集/评测不在窗口做**（D21）；
+- 交付节奏：**本地/WSL `train.collect` 分片累积 → 数据传入 A800 → `train.pipeline --replays/--distill` GPU 训练 → checkpoint 回流本地 → `scripts/eval_protocol.py` 认证**；窗口结束即产 checkpoint + 报告；
+- 训练输入可断点续跑、一键零看管（§5.1 D7/§5.1）；LLM 不可用时走商业 API 兜底（D6）。
 
 ### 5.2 本地双机模式（默认：12 核 + WSL 4 核，对应 §4.1 本地先行轨道）
 
@@ -326,7 +327,7 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 | LLM 局内/复盘/卡组 Agent | ✅ 完整（API 版） | 见下方调用预算约束 |
 | SoG 管线（CPU 档） | ✅ 语义验证 + 中等规模 | d_model 64–128、1e3–1e4 样本；M3-CPU 验收（§4.3）在此档完成 |
 | CVPN 放大训练 | ⏳ 机会算力 | GPU 档（bf16、更大网络/数据）等机会窗口（§5.1） |
-| 大规模自博弈采集 | ⏳ 分片渐进 | 本机/WSL 分片累积 + 机会算力放量；`train.collect` 可续跑、断点不重复 |
+| 大规模自博弈采集 | ⏳ 分片渐进（**本地**） | 本机/WSL 分片累积（窗口 CPU 太少，不放窗口，D21）；`train.collect` 可续跑、断点不重复 |
 
 **WSL/MX550 小网络训练试验**：在 WSL 上以 d_model ≤ 64、fp32、小 batch 训一轮 CVPN，记录吞吐与稳定性，
 与本机 CPU 训练对照；试验结论写回本表，决定训练节点归属。
@@ -353,7 +354,7 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 | 信息泄漏（上帝视角） | 虚高胜率、上线即崩 | 信息泄漏自动化测试进 CI + 门禁；观测只走 `notification.state` |
 | Rebel_base_RL 代码不可跑/有隐性 bug | 蓝本不可用 | 逐模块移植 + 重写测试；核心算法对照 charter 文档独立复核 |
 | 追卡池版本消耗全部工程量 | 训练中断 | engine.lock 冻结 + 显式迁移节奏（§6.4） |
-| CPU 搜索吞吐不足 | 自博弈数据饥饿 | 本机 + WSL 分片横向扩 rollout，机会算力到手放量（D14）；搜索深度自适应（前期浅搜索、后期加深） |
+| CPU 搜索吞吐不足 | 自博弈数据饥饿 | 本机 + WSL 分片横向扩 rollout 并分时累积（机会算力 CPU 配额少，不放采集，D21）；搜索深度/预算自适应（前期浅搜索、后期加深） |
 | 薄 fork 桥接入搜索出意外（并发 RPC 交错跨版本不保证） | 搜索 teacher 断供 | 分叉确定性测试常驻 CI（`tests/test_engine_bridge.py`）；teacher 切 replay-branch MC 离线标注（D12/D13），训练外环不空转；引擎升级（D4 迁移）时重跑 `probe_boundary_fork` |
 | MX550 / 2G 显存训不动 CVPN | WSL 训练价值有限 | 小网络（d_model ≤ 64、fp32 小 batch）试验定夺训练节点归属（§5.2）；训练默认本机 CPU |
 | 机会算力不可预期获得 | 训练放大/本地 LLM 延期 | 训练与自博弈不依赖机会算力（CPU 档先行，D15）；LLM 客户端强制降级链（本地 LLM → API → 纯策略）；机会窗口一键零看管跑完（§5.1） |
@@ -412,7 +413,7 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
 7. **B3–B5**：`NpcSpec` + 三星判定 + 评测入口；蒙德/璃月 16 关规格与挑战目标原文；**PvE-v1 门禁**（decklab 组牌 × 16 关三星 ≥ 60%，§4.4）；
 8. **C3/C4**：人可持 NPC 敌人卡组（`custom-data-loader` 注入）＋ 逐决策日志落盘复盘；
 9. **并行收尾**（不阻塞主线）：WSL/MX550 小网络训练试验（结论写回 §5.2）；L5.2 全池 LLM 矩阵放量；L5.3 学习曲线留档；L5.5（可选）评测池扩容；
-10. 机会算力窗口到手（§5.1）：`train.collect` 放量采集 → `train.pipeline --replays` GPU 档训练放大 → M3 GPU 档 → M4。
+10. 机会算力窗口到手（§5.1，D21）：本地/WSL `train.collect` 采集 → **传入 A800** → `train.pipeline --replays/--distill` **GPU 档训练放大** → checkpoint 回流 → 本地 `eval_protocol` 认证 → M3 GPU 档 → M4。
 
 ---
 *本文档随决策变化更新；重大变更（改主线、改验收口径）需在 §0 追加决策记录。*

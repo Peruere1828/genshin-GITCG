@@ -20,7 +20,8 @@
   - **模型主线**（D15，验收 M3-CPU，PLAN §4.3）：按 `train/CONTINUAL_RESOLVING.md` 差距清单推进——信念根化（G1+G3，S-A ✅）→ 外采 MCCFR 脚手架（G2+G4，S-B ✅ `train/cfr_solver.py`）→ search-as-teacher + belief 头（G6+G7，S-C ✅ `envs/cfr_search.py` + `train/belief_head.py` + `train/distill.py` + `train.collect --search`）；**下一步 = A3 M3-CPU 认证**（搜索+小网纯策略 vs 20 池 ≥50%）。训练先 CPU 档（d_model 64–128、1e3–1e4 样本、fp32）。
   - **NPC PvE 调试系统**（D17，验收 PvE-v1，PLAN §4.4）：定位＝**调试/训练辅助**；**引擎 overlay 移植**敌人 `.gts`（蒙德/璃月全量，约 13 类 + 16 关）＋重建 `libgitcg.so`；`NpcPolicy`（greedy+rotation）＋ `NpcSpec`/三星判定；门禁＝decklab 组牌 × 16 关 × 多种子，三星 ≥ 60%。已有调研/数据：`reports/explore/npc_*.md`、`configs/npc/`、`configs/pools/`。
   - **Web 人机调试接口**（D18）：引擎 `standalone` overlay，流程＝人选牌 → **AI 看对手牌反选** → 随机先手；人可持 NPC 敌人卡组；定位＝**对 AI 调试接口**（不进口径验收）；素材运行时按 id 拉取、不入库。
-  - **引擎构建策略**（D20）：V8 在 **Docker 内一次性首建**（`ubuntu:22.04` 基线＋`V8_WORKSPACE` volume 缓存＋`V8_OFFLINE`），改敌人数据只做**增量**（rolldown 生成 `js_code.cpp` + 重链，分钟级，V8 不重编）；`node 24 直接用`（`engines` 仅警告，无 `engine-strict`）；失败 fallback＝Node 子进程 + TS core + `custom-data-loader`。
+  - **引擎构建策略**（D20）：引擎 pin `v0.21.0`，V8 11.6.189.4 纯 CMake 直编（无 depot_tools），在 **Docker 内一次性首建**、改敌人数据只做**增量**（rolldown + 重链，分钟级）；`node 24 直接用`；失败 fallback＝Node 子进程 + TS core + `custom-data-loader`。overlay 源放 `engine-overlay/`（入库）、工作区放 `build/`（gitignore）。
+  - **机会算力**（D21）：A800 窗口**只有 GPU 可用、CPU 配额仅 ~10 核** → **采集/评测放本机/WSL**（不放窗口），A800 只做 **GPU 训练/推理**；数据本地采集后传入、checkpoint 回流本地认证（PLAN §5.1）。
 - `orchestrator/`（WS5）仍为占位，未实现。
 - `refs/` 三个上游参考仓**只读**，只抄思路逐模块移植、不修改、不 apply 补丁（PLAN §6.5），不入库、缺了重新 clone：
   - `refs/genius-invokation` — 引擎 + Python 绑定 `packages/pybinding`（即 `gitcg`）+ IO 协议 `docs/development/io.md`；
