@@ -28,6 +28,7 @@ packages = [
     "decklab",
     "train",
     "scripts",
+    "npc",
 ]
 
 [tool.pytest.ini_options]

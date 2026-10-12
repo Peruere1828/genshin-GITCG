@@ -11,6 +11,7 @@ from __future__ import annotations
 import random
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Callable
 
 from gitcg import (
@@ -37,6 +38,7 @@ from reps.snapshot import snapshot_notification, snapshot_state
 
 from .policy import Policy
 
+
 @dataclass
 class DecisionRecord:
     """One decision made during a match (for arena stats and coach consumption)."""
@@ -53,6 +55,98 @@ class DecisionRecord:
     policy_error: str | None = None
     used_dice: tuple[int, ...] = ()
     player_view: dict[str, Any] | None = None
+    # Additive (PvE-B3): the semantic subject of the chosen action. For
+    # ``action_use_skill`` this is the skill definition id; for
+    # ``action_play_card`` it is the card definition id. ``card_kind`` is only
+    # resolved for played cards ("weapon"/"artifact"/"event"/"support"/...).
+    subject_definition_id: int = 0
+    card_kind: str | None = None
+
+
+@dataclass
+class MatchEvent:
+    """One public engine event captured during a match (PvE-B3 objective judging).
+
+    The engine's ``Notification.mutation`` stream carries the facts that the
+    public state snapshots do not retain (burst usage, elemental reactions). We
+    record a thin, JSON-safe projection of those mutations here. Attribution to a
+    player is best-effort: ``skill_used`` carries ``who`` directly; reactions are
+    attributed through the damage source instance id resolved against the latest
+    public state.
+    """
+
+    kind: str  # "skill" | "reaction"
+    player: int | None = None
+    round_number: int = 0
+    skill_definition_id: int = 0
+    skill_type: str | None = None  # "normal"/"elemental"/"burst"/"passive"/...
+    reaction_type: str | None = None  # e.g. "superconduct"/"vaporize"/...
+    source_definition_id: int = 0
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "player": self.player,
+            "round_number": self.round_number,
+            "skill_definition_id": self.skill_definition_id,
+            "skill_type": self.skill_type,
+            "reaction_type": self.reaction_type,
+            "source_definition_id": self.source_definition_id,
+        }
+
+
+def _enum_name_map(enum_type: Any) -> dict[int, str]:
+    return _enum_name_map_cached(str(enum_type.DESCRIPTOR.full_name), enum_type)
+
+
+@lru_cache(maxsize=16)
+def _enum_name_map_cached(_full_name: str, enum_type: Any) -> dict[int, str]:
+    return {int(value.number): str(value.name) for value in enum_type.DESCRIPTOR.values}
+
+
+_SKILL_TYPE_NAMES = {
+    "SKILL_TYPE_TRIGGERED": "triggered",
+    "SKILL_TYPE_CHARACTER_PASSIVE": "passive",
+    "SKILL_TYPE_NORMAL": "normal",
+    "SKILL_TYPE_ELEMENTAL": "elemental",
+    "SKILL_TYPE_BURST": "burst",
+    "SKILL_TYPE_TECHNIQUE": "technique",
+    "SKILL_TYPE_TRIGGERED_FROM_ITS_ATTACHMENT": "triggered_attachment",
+}
+
+
+def _reaction_name(value: int) -> str | None:
+    from gitcg.proto import enums_pb2
+
+    if int(value) == 0:
+        return None
+    name = _enum_name_map(enums_pb2.ReactionType).get(int(value), str(value))
+    return name.removeprefix("REACTION_TYPE_").lower()
+
+
+def _skill_type_name(value: int) -> str | None:
+    from gitcg.proto import mutation_pb2
+
+    name = _enum_name_map(mutation_pb2.SkillType).get(int(value), str(value))
+    return _SKILL_TYPE_NAMES.get(name, name.removeprefix("SKILL_TYPE_").lower())
+
+
+def _card_kind_from_entity(entity_type: int, equipment: int) -> str | None:
+    """Map an engine ``EntityState`` type/equipment pair to a card-kind label."""
+    from gitcg.proto import state_pb2
+
+    if int(entity_type) == int(state_pb2.EntityType.ENTITY_TYPE_EVENT_CARD):
+        return "event"
+    if int(entity_type) == int(state_pb2.EntityType.ENTITY_TYPE_SUPPORT):
+        return "support"
+    if int(entity_type) == int(state_pb2.EntityType.ENTITY_TYPE_EQUIPMENT):
+        equipment_name = state_pb2.EquipmentType.Name(int(equipment))
+        return {
+            "EQUIPMENT_TYPE_WEAPON": "weapon",
+            "EQUIPMENT_TYPE_ARTIFACT": "artifact",
+            "EQUIPMENT_TYPE_TECHNIQUE": "technique",
+        }.get(equipment_name, "equipment")
+    return None
 
 
 @dataclass
@@ -73,12 +167,15 @@ class MatchRecord:
     wall_seconds: float = 0.0
     final_state_json: str | None = None
     decisions: list[DecisionRecord] = field(default_factory=list)
+    events: list[MatchEvent] = field(default_factory=list)
 
     @property
     def matchup(self) -> str:
         return f"{self.deck0}__vs__{self.deck1}"
 
-    def as_dict(self, *, include_decisions: bool = False) -> dict[str, Any]:
+    def as_dict(
+        self, *, include_decisions: bool = False, include_events: bool = False
+    ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "deck0": self.deck0,
             "deck1": self.deck1,
@@ -98,6 +195,8 @@ class MatchRecord:
         }
         if include_decisions:
             payload["decisions"] = [asdict_decision(d) for d in self.decisions]
+        if include_events:
+            payload["events"] = [event.as_dict() for event in self.events]
         return payload
 
 
@@ -129,6 +228,7 @@ class PolicyPlayer(Player):
         record_views: bool = False,
         full_state_provider: Callable[[], str | None] | None = None,
         metadata: dict[str, Any] | None = None,
+        event_sink: list[MatchEvent] | None = None,
     ) -> None:
         self.who = int(who)
         self.policy = policy
@@ -136,6 +236,8 @@ class PolicyPlayer(Player):
         self.record_views = bool(record_views)
         self.full_state_provider = full_state_provider
         self.metadata = metadata or {}
+        self.event_sink = event_sink
+        self._owner_by_entity_id: dict[int, int] = {}
         self.notification: Any = None
         self.io_errors: list[str] = []
         self.decisions = 0
@@ -145,9 +247,57 @@ class PolicyPlayer(Player):
     # -- gitcg.Player interface -------------------------------------------------
     def on_notify(self, notification: Any) -> None:
         self.notification = notification
+        if self.event_sink is not None:
+            self._collect_events(notification)
 
     def on_io_error(self, error_msg: str) -> None:
         self.io_errors.append(str(error_msg))
+
+    def _collect_events(self, notification: Any) -> None:
+        """Project the engine's public mutation stream into ``MatchEvent``s.
+
+        Only one player needs a sink; the engine delivers public mutations to
+        both players, so ``run_match`` attaches it to a single ``PolicyPlayer``
+        to avoid double counting.
+        """
+        sink = self.event_sink
+        if sink is None:
+            return
+        state = getattr(notification, "state", None)
+        if state is not None:
+            for who in (0, 1):
+                player = state.player[who]
+                for field in ("character", "summon", "support", "combat_status"):
+                    for entity in getattr(player, field):
+                        self._owner_by_entity_id[int(entity.id)] = who
+        round_number = int(getattr(state, "round_number", 0)) if state is not None else 0
+        for mutation in getattr(notification, "mutation", ()):
+            which = mutation.WhichOneof("mutation")
+            if which == "skill_used":
+                skill = mutation.skill_used
+                sink.append(
+                    MatchEvent(
+                        kind="skill",
+                        player=int(skill.who),
+                        round_number=round_number,
+                        skill_definition_id=int(skill.skill_definition_id),
+                        skill_type=_skill_type_name(int(skill.skill_type)),
+                        source_definition_id=int(skill.caller_definition_id),
+                    )
+                )
+            elif which == "damage":
+                damage = mutation.damage
+                if int(damage.reaction_type) == 0:
+                    continue
+                sink.append(
+                    MatchEvent(
+                        kind="reaction",
+                        player=self._owner_by_entity_id.get(int(damage.source_id)),
+                        round_number=round_number,
+                        reaction_type=_reaction_name(int(damage.reaction_type)),
+                        source_definition_id=int(damage.source_definition_id),
+                    )
+                )
 
     def on_action(self, request: ActionRequest) -> ActionResponse:
         built, code = self._decide(DecisionType.ACTION, request)
@@ -242,6 +392,10 @@ class PolicyPlayer(Player):
             labels = [spec.label for spec in built.context.legal_low_level_specs]
             spec = self._spec_for(built, code)
             payload = built.payload_by_low_level_code.get(int(code), {})
+            subject_definition_id = int(getattr(spec, "subject_definition_id", 0))
+            card_kind = None
+            if getattr(spec, "kind", None) == OptionKind.ACTION_PLAY_CARD:
+                card_kind = self._resolve_card_kind(subject_definition_id)
             self.recorder.append(
                 DecisionRecord(
                     player=self.who,
@@ -258,9 +412,25 @@ class PolicyPlayer(Player):
                     player_view=_snapshot_to_dict(snapshot_notification(self.notification))
                     if self.record_views
                     else None,
+                    subject_definition_id=subject_definition_id,
+                    card_kind=card_kind,
                 )
             )
         return built, code
+
+    def _resolve_card_kind(self, definition_id: int) -> str | None:
+        """Card kind of a played card, read from the acting player's hand."""
+        notification = self.notification
+        if notification is None or int(definition_id) <= 0:
+            return None
+        try:
+            hand = notification.state.player[self.who].hand_card
+        except Exception:
+            return None
+        for card in hand:
+            if int(card.definition_id) == int(definition_id):
+                return _card_kind_from_entity(int(card.type), int(card.equipment))
+        return None
 
     @staticmethod
     def _spec_for(built: BuiltDecisionContext, code: int):
@@ -326,6 +496,7 @@ def run_match(
     record_decisions: bool = False,
     record_views: bool = False,
     record_final_state: bool = False,
+    record_events: bool = False,
     deterministic_shuffle: bool = True,
     full_state_for_agents: bool = False,
 ) -> MatchRecord:
@@ -353,12 +524,16 @@ def run_match(
     )
     game = Game(create_param=create_param)
     decisions: list[DecisionRecord] = [] if record_decisions else []
+    events: list[MatchEvent] = [] if record_events else []
     error: str | None = None
     truncated = False
     players: list[PolicyPlayer] = []
     full_state_provider = (lambda: game.state().json()) if full_state_for_agents else None
     for who, policy in ((0, policy0), (1, policy1)):
         recorder = decisions if record_decisions else None
+        # Attach the event sink to a single player: the engine delivers public
+        # mutations to both, so collecting from one avoids double counting.
+        event_sink = events if (record_events and who == 0) else None
         players.append(
             PolicyPlayer(
                 who,
@@ -366,6 +541,7 @@ def run_match(
                 recorder=recorder,
                 record_views=record_views,
                 full_state_provider=full_state_provider,
+                event_sink=event_sink,
             )
         )
     game.set_player(0, players[0])
@@ -418,4 +594,5 @@ def run_match(
         wall_seconds=wall,
         final_state_json=final_json,
         decisions=decisions,
+        events=events,
     )
