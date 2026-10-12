@@ -28,7 +28,7 @@
 | D17 | NPC PvE 调试系统 | 定位＝**调试/训练辅助**（确定性假想敌池、课程加权、回归基线），不追求复刻游戏内体验；实现＝**引擎 overlay 移植**（敌人 `.gts` + 重建 `libgitcg.so`，refs 只读）；范围＝**蒙德/璃月全量**（约 13 类敌人 + 16 关规格）；验收＝**独立 PvE 门禁点**（§4.4）：decklab 自动组牌 × 16 关 × 多种子，**三星达成率 ≥ 60%**（挑战目标 3 条全达成计三星）；报表拆分组牌质量 vs 打牌质量 |
 | D18 | Web 人机调试接口 | **直接上引擎 standalone overlay**（不自建轻量 web）；流程＝人选牌 → **AI 看对手牌后反选** → 随机先手；人可持 NPC 敌人卡组；定位＝**对 AI 的调试接口**（明示信息流程，**不进口径验收**）；模型端复用 `envs.policy.build_policy` 全 spec，观测走 `notification.state`（与训练同源）；素材照 refs 做法：运行时按 id 拉取、不入库、缓存 gitignore、不随发布物分发 |
 | D19 | 卡组口径 | NPC 评测用 **decklab 自动组牌**（池 C 内，闭环含组牌 Agent）；Web 对局＝人自选 + AI 反选（v1 用对位矩阵 + decklab 固定规则起步） |
-| D20 | 引擎构建策略（V8） | **V8 在 Docker 内构建**：镜像基线 `ubuntu:22.04`（与上游 CI 同 glibc 口径）；V8 **一次性首建** + `V8_WORKSPACE` 挂 volume 缓存 + 建成后 `V8_OFFLINE=ON`；改敌人数据只做**增量**（rolldown 生成 `js_code.cpp` + 重链，分钟级，V8 不重编）；**只在一台构建**（linux x64 `.so` 本机/WSL 通用）；开发期用 `custom-data-loader` **免构建快循环**验证敌人数据；**node 24 直接用**（`engines` 仅警告，无 `engine-strict`），硬阻断再隔离装 node 26；构建 provenance（overlay commit + 补丁 hash）记入 engine.lock 变体；**V8 构建失败 fallback**＝Node 子进程 + TS core + `custom-data-loader` 驱动 NPC 环境（web 线不受影响） |
+| D20 | 引擎构建策略（V8） | **Docker 内构建**：镜像基线 `ubuntu:22.04`（与上游 CI 同 glibc 口径）；**引擎源码 pin 到与 PyPI wheel 一致的 tag `v0.21.0`**（`c94826b`；refs HEAD 更新但 ABI/构建方式不同，不采用）；V8 **一次性首建**、改敌人数据只做**增量**（rolldown 生成 `js_code.cpp` + 重链，分钟级，V8 不重编）；**只在一台构建**（linux x64 `.so` 本机/WSL 通用）；开发期用 `custom-data-loader` **免构建快循环**验证敌人数据；**node 24 直接用**（`engines` 仅警告，无 `engine-strict`）；构建 provenance 记入 `engine.lock.example` 变体；**V8 构建失败 fallback**＝Node 子进程 + TS core + `custom-data-loader` 驱动 NPC 环境（web 线不受影响）。**（2026-10-12 事实修正）**：pin 的 `v0.21.0` 用 `piovium/v8-cmake@14d0f727`——**vendor V8 11.6.189.4 源码、纯 CMake+Ninja 直编，无 depot_tools/`V8_WORKSPACE`/`V8_OFFLINE`、无数 GB 下载**；实测首建 **~20 min**（1232 TU）、增量 **~30 s** 且产物 sha256 确定。先前按 refs HEAD（`v8-cmake-barbara`/V8 14.8/volume 缓存）写的措辞作废；证据与流程见 `engine-overlay/README.md` |
 
 ### 0.1 工程约定（现行做法，2026-10-10 正向化整理；证据指向脚本/测试）
 
@@ -281,7 +281,7 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 
 | 阶段 | 内容 | 验收 |
 |------|------|------|
-| PvE-B0 构建链 | Docker 内重建 `libgitcg.so`（D20） | 现有 `pytest -m "not slow"` 全绿 + 同种子重放一致 + 跑通一局 |
+| PvE-B0 构建链 **✅ 2026-10-12** | Docker 内重建 `libgitcg.so`（D20）：pin `v0.21.0`，V8 11.6.189.4 纯 CMake 直编，首建 ~20 min、增量 ~30 s、产物 sha256 确定 | `pytest -m "not slow"` 全绿（162 passed）+ 同种子重放一致 + 跑通一局 ✅；脚手架 `engine-overlay/`，provenance 见其 `README.md` |
 | PvE-B1 敌人移植 | 约 13 类敌人 `.gts`（技能/被动/HP/充能；蒙德/璃月全量，从蒂玛乌斯 3 只起步） | 可组牌、跑满、无错误 |
 | PvE-B2 策略 | `NpcPolicy`（greedy + rotation，确定性、可复现） | 同种子可复现 |
 | PvE-B3 规格与判定 | `NpcSpec` + 挑战目标三星判定 + 评测入口 | 输出胜率 + 三星达成率 |
@@ -359,6 +359,7 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 | 机会算力不可预期获得 | 训练放大/本地 LLM 延期 | 训练与自博弈不依赖机会算力（CPU 档先行，D15）；LLM 客户端强制降级链（本地 LLM → API → 纯策略）；机会窗口一键零看管跑完（§5.1） |
 | LLM 干预不可评测 | 说不清强弱 | 双模式分开报分 + 干预全量记录 |
 | 自迭代闭环改坏工程 | 回归/丢失进度 | §WS5 护栏：分支隔离 + 四项门禁 + 只追加存储 |
+| `static-data.piovium.org` 网络不可达（B0 实测） | **WS8 standalone 前端构建受阻**（C 线）；引擎/数据不受影响 | 换可达镜像或离线缓存，或前端走 `custom-data-loader` 注入；C0 起局前先解决（记录见 `engine-overlay/README.md` §5）；另引擎构建已用 `--filter=!{packages/assets-manager}` 绕开该域 |
 | exploitability 算不了 | 无法知道距纳什多近 | 接受工程口径：固定基线 + 阶梯 + 对手池多样性（评测池 20 套，D11 + 自博弈池 + 历史 checkpoint） |
 
 ## 8. 许可与合规
@@ -392,7 +393,9 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
 
 模型主线（A）维持 §4.3（M3-CPU）；NPC（B）与 Web（C）为新增并行线（D16–D20）。阶段划分如下。
 
-**阶段 1（立即）**：B0 构建链 go/no-go（Docker 内建 V8，D20）‖ A1 S-B MCCFR 脚手架
+**进度（2026-10-12）**：B0 ✅（`engine-overlay/`，pin `v0.21.0`，V8 直编，162 passed）｜A1/S-B ✅（`train/cfr_solver.py`）｜A2/S-C(a) ✅（`envs/cfr_search.py` 引擎适配 + `CFRSearchPolicy` + 冒烟）｜B4 NPC 数据 ✅（19 类敌人 + 16 关，`configs/npc/`）。**C 线受限**：`static-data.piovium.org` 不可达，standalone 前端构建待解（§7 风险表）。
+
+**阶段 1（立即）**：B0 构建链 go/no-go（Docker 内建 V8，D20）**✅** ‖ A1 S-B MCCFR 脚手架 **✅**
 
 1. **B0 构建链 go/no-go（§4.4 PvE-B0，D20）**：网络可达性（depot_tools/V8/npm）→ `ubuntu:22.04` 镜像（cmake ≥3.25、g++ C++20、ninja、git、python3）→ overlay 复制引擎到 `build/engine/`（refs 只读）+ `pnpm install`（node 24）→ **V8 首建**（`V8_BUILD_JOBS=8`、`V8_WORKSPACE` 挂 volume，建成后 `V8_OFFLINE=ON`）→ `libgitcg.so` 接入 conda `gitcg`；验收＝现有 `pytest -m "not slow"` 全绿 + 同种子重放一致 + 跑通一局；构建 provenance 记入 engine.lock 变体。**失败 fallback**＝Node 子进程 + TS core + `custom-data-loader`。
 2. **A1 S-B（G2+G4）**：新增 `train/cfr_solver.py`——外采 MCCFR（regret matching + 根平均策略 + 根价值、深度受限 + CVPN frontier 价值）；根用 `reps/belief.py` 确定化（S-A 已就绪），叶子打分走 `train/resolver.py`。
