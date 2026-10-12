@@ -1,6 +1,6 @@
 # 七圣召唤 AI + Agent 工程 — 需求与实现路径（PLAN.md）
 
-> 状态：v1.4（2026-10-10：算力口径修订——默认本机 + WSL 双机、A800/128 核为申请制机会资源（D14）；无 GPU 期间主线严格走 SoG 差距清单（D15，见 `train/CONTINUAL_RESOLVING.md`）；工程约定正向化见 §0.1；本地先行 L0–L5.6 已完成见 §4.2）
+> 状态：v1.5（2026-10-12：**三线并行立项**——模型主线（D15）＋ NPC PvE 调试系统（D17，§3 WS7/§4.4）＋ Web 人机调试接口（D18，§3 WS8）；V8 采用 **Docker 内构建**策略（D20）；上一版 v1.4 的算力口径见 D14、无 GPU 主线见 D15、工程约定见 §0.1、本地先行 L0–L5.6 已完成见 §4.2）
 > 决策记录见 §0；里程碑按阶段推进、不绑定日期。
 
 ---
@@ -24,6 +24,11 @@
 | D13 | 搜索分叉契约（现行） | 分叉三条纪律：① 只在 `Game.is_resumable()` 边界点取快照（`canResume:true` 13/13 精确复现活体终局，证据 `scripts/probe_boundary_fork.py` / `reports/engine/probe_boundary_fork_*.json`）；② fork 显式补齐游戏级 attrs（`ATTR_PLAYER_ALWAYS_OMNI_*` 等不在 state 序列化内，用 `envs/snapshot.fork_game(game_attrs=...)`）；③ fork 一律在子进程运行（`envs/fork_bridge.py`，`run_search_match` 拒 `workers==0`）。由此搜索直接用 pybinding 分叉（毫秒级 fork + 注入候选 + rollout），无需引擎改造；replay-branch MC（`train/replay_branch.py`）保留为批量离线 teacher 与对照。已知边界：`canResume:false` 的 phase 内部暂停点不分叉（搜索不需要在那里分叉）；`Promise.all` 并发 RPC 交错按引擎版本冻结保证（D4） |
 | D14 | 算力口径修订（修订 D7/§5，2026-10-10） | **默认算力 = 本机 12 核 + WSL（4 核 / 8G / MX550 2G）**：本机跑 rollout/采集/评测/CPU 档训练；WSL 当并行采集/评测节点，顺带做小网络（d_model ≤ 64、fp32 小 batch）训练试验。**A800 80G + 128 核为申请制机会资源**（时间受限、需申请）：任何里程碑不依赖它，机会窗口按"训练 > 评测 > 采集 > LLM 分析"排优先级、一键零看管跑完。**南大集群暂缓**（glibc/环境适配成本高），`scripts/cluster/` 保留为将来机会算力的适配起点。工程形态不变：无常驻服务、一切长任务断点续跑、CPU 采集与 GPU 训练解耦（§5） |
 | D15 | 无 GPU 期间主线（修订 M3 排期） | **严格按 `train/CONTINUAL_RESOLVING.md` 差距清单推进**：信念根化（G1+G3）→ 外采 MCCFR 脚手架（G2+G4）→ search-as-teacher + belief 头（G6+G7）→ query solver / 批推理 / BR 探针（G8–G10）；先在 CPU 档（d_model 64–128、1e3–1e4 样本）跑通语义，规模随算力放大。M3/M4 数值门槛不变，新增 CPU 中间验收 **M3-CPU**（§4.3）作为 GPU 放大前的 go/no-go |
+| D16 | 三方向并行立项（2026-10-12） | 在模型主线外新增两条并行线：**NPC PvE 调试系统**（D17）与 **Web 人机调试接口**（D18）；三线并行推进（模型先出）、模块解耦、各自独立验收。模型主线维持 D15、算力维持 D14 不变；两条新线复用 WS0 引擎与 WS2 评测，不改变 WS1/WS3/WS4 主线 |
+| D17 | NPC PvE 调试系统 | 定位＝**调试/训练辅助**（确定性假想敌池、课程加权、回归基线），不追求复刻游戏内体验；实现＝**引擎 overlay 移植**（敌人 `.gts` + 重建 `libgitcg.so`，refs 只读）；范围＝**蒙德/璃月全量**（约 13 类敌人 + 16 关规格）；验收＝**独立 PvE 门禁点**（§4.4）：decklab 自动组牌 × 16 关 × 多种子，**三星达成率 ≥ 60%**（挑战目标 3 条全达成计三星）；报表拆分组牌质量 vs 打牌质量 |
+| D18 | Web 人机调试接口 | **直接上引擎 standalone overlay**（不自建轻量 web）；流程＝人选牌 → **AI 看对手牌后反选** → 随机先手；人可持 NPC 敌人卡组；定位＝**对 AI 的调试接口**（明示信息流程，**不进口径验收**）；模型端复用 `envs.policy.build_policy` 全 spec，观测走 `notification.state`（与训练同源）；素材照 refs 做法：运行时按 id 拉取、不入库、缓存 gitignore、不随发布物分发 |
+| D19 | 卡组口径 | NPC 评测用 **decklab 自动组牌**（池 C 内，闭环含组牌 Agent）；Web 对局＝人自选 + AI 反选（v1 用对位矩阵 + decklab 固定规则起步） |
+| D20 | 引擎构建策略（V8） | **V8 在 Docker 内构建**：镜像基线 `ubuntu:22.04`（与上游 CI 同 glibc 口径）；V8 **一次性首建** + `V8_WORKSPACE` 挂 volume 缓存 + 建成后 `V8_OFFLINE=ON`；改敌人数据只做**增量**（rolldown 生成 `js_code.cpp` + 重链，分钟级，V8 不重编）；**只在一台构建**（linux x64 `.so` 本机/WSL 通用）；开发期用 `custom-data-loader` **免构建快循环**验证敌人数据；**node 24 直接用**（`engines` 仅警告，无 `engine-strict`），硬阻断再隔离装 node 26；构建 provenance（overlay commit + 补丁 hash）记入 engine.lock 变体；**V8 构建失败 fallback**＝Node 子进程 + TS core + `custom-data-loader` 驱动 NPC 环境（web 线不受影响） |
 
 ### 0.1 工程约定（现行做法，2026-10-10 正向化整理；证据指向脚本/测试）
 
@@ -55,7 +60,7 @@
 
 ### 非目标（v1 明确不做）
 - 不做天梯/真人平台自动对战接入（play.piovium.org 仅取公开复盘数据做 BC，遵守平台条款）；
-- 不做卡面/素材渲染与产品化 UI（引擎自带 web-ui 够用）；
+- 不做卡面/素材渲染与**产品化** UI、不对外提供服务（D16 修订：改为做"**对 AI 调试接口**"的自用 web 人机界面，D18——引擎 standalone overlay，素材运行时按 id 拉取、不入库、不随发布物分发）；
 - 不做跨游戏泛化、不追求论文发表（但工程按可发表标准留好实验记录）；
 - 不做实时 15 秒限时的极致优化（引擎对局不设人类时限，后期再压延迟）。
 
@@ -93,6 +98,9 @@
 
 数据流（对局内）：`gitcg notification.state → observation_encoder → public belief → CVPN 先验 + continual resolving 搜索 →（可选 LLM 候选/校验）→ 动作 → 引擎`。
 数据流（对局外）：`对局日志 → 复盘 Agent 归因 → 训练数据/课程/补丁 → 门禁评测 → 新 checkpoint`。
+
+> **WS7 NPC PvE 调试系统（D17）** 与 **WS8 Web 人机调试界面（D18）** 为 2026-10-12 新增并行线（见 §3、§4.4）；
+> 二者复用 WS0 引擎与 WS2 评测，不改变 WS1/WS3/WS4 主线（D16）。
 
 ---
 
@@ -153,6 +161,19 @@
 - 脚本专家数据（冷启动）：池内脚本策略对局 + 教练 Agent 修正标签。
 - 公开复盘数据（可选热启动）：play.piovium.org 公开数据做 BC，**先读平台条款，注意人机混用限制**。
 - 所有数据带 `engine commit + 卡池版本` 元数据（D4）。
+
+### WS7 NPC PvE 调试系统（D17；定位＝调试/训练辅助）
+- **交付**：引擎 overlay（敌人 `.gts` + 重建 `libgitcg.so`）＋ `NpcPolicy`（greedy + rotation，确定性）＋ `NpcSpec`（关卡规格/挑战目标/三星判定）＋ 评测入口。
+- **实现口径（D20）**：`refs/` 只读，overlay 复制到 `build/engine/` 后加我们的文件；**开发期用 `custom-data-loader` 免构建快循环验证敌人数据，定稿后增量重建 `.so`**；V8 在 Docker 内一次性首建。
+- **PvE 机制近似**：NPC 无手牌/无骰子/玩家恒先手 → 用「`NpcPolicy` 永不打出行动牌」近似（引擎只有全局 `initialHandsCount/initialDiceCount`，无 per-player 版本）。
+- **用途**：确定性难度可控的假想敌池（跑回归、课程加权）；**三星达成率作独立门禁**（§4.4）。
+- **已有数据**：`configs/npc/`（蒂玛乌斯示例，权威敌人数据）；`reports/explore/npc_pve_doc.md`、`npc_lineups_mond_liyue.md`（蒙德/璃月 16 NPC 阵容）。
+
+### WS8 Web 人机调试界面（D18；定位＝对 AI 调试接口）
+- **交付**：引擎 `standalone` overlay（人选牌 → AI 看对手牌反选 → 随机先手）＋ Python 模型 HTTP 桥（复用 `envs.policy.build_policy` 全 spec）＋ 逐决策日志落盘。
+- **接口基线**：浏览器引擎 `PlayerIO` ↔ 本地 Python 模型服务；观测＝`notification.state` JSON（与训练管线同源，禁上帝视角，C10）；模型端可切纯策略 / LLM 辅助（验收仍纯策略计，§6.3）。
+- **素材合规**：照 refs 做法——运行时按 id 拉取、不入库、缓存 gitignore、不随发布物分发（§8）。
+- **用途**：人 vs 模型对局调试；明示信息流程，**不进强度验收口径**。
 
 ---
 
@@ -254,6 +275,19 @@ GPU 放大前的 go/no-go——**「信念根化 MCCFR 搜索 + 小网」纯策�
 
 训练规模走 CPU 档：d_model 64–128、1e3–1e4 样本、fp32；WSL MX550 小网络训练试验的结论决定训练节点归属（§5.2）。
 
+### 4.4 NPC PvE 调试系统门禁（PvE-v1，D17）
+
+NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与模型主线（§4.3 M3-CPU）解耦；复用引擎（D20 overlay）与评测（WS2/decklab）：
+
+| 阶段 | 内容 | 验收 |
+|------|------|------|
+| PvE-B0 构建链 | Docker 内重建 `libgitcg.so`（D20） | 现有 `pytest -m "not slow"` 全绿 + 同种子重放一致 + 跑通一局 |
+| PvE-B1 敌人移植 | 约 13 类敌人 `.gts`（技能/被动/HP/充能；蒙德/璃月全量，从蒂玛乌斯 3 只起步） | 可组牌、跑满、无错误 |
+| PvE-B2 策略 | `NpcPolicy`（greedy + rotation，确定性、可复现） | 同种子可复现 |
+| PvE-B3 规格与判定 | `NpcSpec` + 挑战目标三星判定 + 评测入口 | 输出胜率 + 三星达成率 |
+| PvE-B4 关卡数据 | 蒙德/璃月 16 关规格 + 挑战目标原文 | 16 关规格齐全 |
+| **PvE-v1 门禁** | decklab 自动组牌（池 C）× 16 关 × 多种子 | **三星达成率 ≥ 60%**；报表拆分组牌质量 vs 打牌质量（D19） |
+
 ---
 
 ## 5. 算力与部署
@@ -346,28 +380,36 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
 ├── coach/                     # WS4: 复盘归因、课程建议、BC 标签
 ├── decklab/                   # WS4: 卡组构筑 Agent（模板内 flex）
 ├── orchestrator/              # WS5: 自迭代循环 + 护栏门禁
+├── engine-overlay/            # WS7/WS8: 我们的引擎 overlay 源（敌人 .gts + standalone 改动 + apply 脚本，入库）
+├── build/                     # D20: 引擎构建工作区（refs 副本 + V8 workspace + .so，内容不入库）
 ├── data/                      # 回放池、日志（内容 gitignore，只存 schema 与清单）
 ├── tests/                     # 信息泄漏测试、adapter 往返、重放一致性等
-├── configs/                   # run 配置 + engine.lock + 卡池版本
+├── configs/                   # run 配置 + engine.lock + 卡池版本（npc/ 关卡与敌人数据，pools/ 卡池清单）
 └── reports/                   # 评测曲线、复盘报告、hypothesis 台账
 ```
 
-## 10. 下一步行动（无 GPU 主线清单，2026-10-10 更新；D14/D15）
+## 10. 下一步行动（三线并行，2026-10-12；D14–D20）
 
-L0–L5 已完成（§4.1/§4.2），历史清单见 git log。当前按 SoG 差距清单（`train/CONTINUAL_RESOLVING.md`）推进 M3-CPU（§4.3）：
+模型主线（A）维持 §4.3（M3-CPU）；NPC（B）与 Web（C）为新增并行线（D16–D20）。阶段划分如下。
 
-1. **S-A 信念根化（G1+G3）**：把 `envs/fork_search.py` 的搜索根从活体快照（隐藏真值单一确定化）换成
-   「公共信念 + 采样确定化」（`reps/belief_groups.py` 接入根与 update），信息泄漏测试覆盖 belief 根；
-2. **S-B 外采 MCCFR 脚手架（G2+G4）**：新增 `train/cfr_solver.py`（regret matching + 根平均策略 + 根价值、
-   深度受限 + CVPN frontier 价值），叶子打分走现有打分接口（`train/resolver.py`）；
-3. **S-C search-as-teacher（G6+G7）**：根平均策略/根价值/belief 目标随 `train.collect` 写进 replay，
-   训练改搜索蒸馏（policy CE + value 回归 + belief 评分），网络加 belief 头（`train/model.py`）；
-4. **M3-CPU 门禁（§4.3）**：「搜索+小网」纯策略对池内全部对手整体胜率 ≥ 50%（M2 口径）——
-   用 `scripts/run_search_agent.py` / `eval.arena` 出报表；
-5. **WSL/MX550 小网络训练试验**：d_model ≤ 64、fp32 训一轮，与本机 CPU 对照，结论写回 §5.2；
-6. 并行收尾（不阻塞主线）：L5.2 全池 LLM 矩阵放量（`--seeds 10`，隔夜可续跑）；L5.3 学习曲线留档；
-   L5.5（可选）评测池扩容（D11）；
-7. 机会算力窗口到手（§5.1）：`train.collect` 放量采集 → `train.pipeline --replays` GPU 档训练放大 → M3 GPU 档 → M4。
+**阶段 1（立即）**：B0 构建链 go/no-go（Docker 内建 V8，D20）‖ A1 S-B MCCFR 脚手架
+
+1. **B0 构建链 go/no-go（§4.4 PvE-B0，D20）**：网络可达性（depot_tools/V8/npm）→ `ubuntu:22.04` 镜像（cmake ≥3.25、g++ C++20、ninja、git、python3）→ overlay 复制引擎到 `build/engine/`（refs 只读）+ `pnpm install`（node 24）→ **V8 首建**（`V8_BUILD_JOBS=8`、`V8_WORKSPACE` 挂 volume，建成后 `V8_OFFLINE=ON`）→ `libgitcg.so` 接入 conda `gitcg`；验收＝现有 `pytest -m "not slow"` 全绿 + 同种子重放一致 + 跑通一局；构建 provenance 记入 engine.lock 变体。**失败 fallback**＝Node 子进程 + TS core + `custom-data-loader`。
+2. **A1 S-B（G2+G4）**：新增 `train/cfr_solver.py`——外采 MCCFR（regret matching + 根平均策略 + 根价值、深度受限 + CVPN frontier 价值）；根用 `reps/belief.py` 确定化（S-A 已就绪），叶子打分走 `train/resolver.py`。
+
+**阶段 2**：A2 S-C（search-as-teacher + belief 头，G6+G7）‖ B1 敌人 `.gts` 移植（`custom-data-loader` 免构建快循环）+ B2 `NpcPolicy` ‖ C0–C2 Web（standalone overlay + 选牌流程 + 模型 HTTP 桥）
+
+3. **A2 S-C（G6+G7）**：根平均策略/根价值/belief 目标随 `train.collect` 写进 replay，训练改搜索蒸馏（policy CE + value 回归 + belief 评分），网络加 belief 头（`train/model.py`）；
+4. **B1/B2**：约 13 类敌人 `.gts`（从蒂玛乌斯 3 只起步）＋ `NpcPolicy`（greedy + rotation）；
+5. **C0–C2**：`standalone` overlay 起局 → 选牌流程（人选牌 → AI 看对手牌反选 → 随机先手）→ 模型 HTTP 桥（复用 `build_policy`）。
+
+**阶段 3**：A3 M3-CPU 认证 ‖ B3–B5 PvE 门禁 ‖ C3/C4 NPC 卡组 + 调试闭环
+
+6. **A3 M3-CPU**：「搜索+小网」纯策略对池内全部对手整体胜率 ≥ 50%（M2 口径）——用 `scripts/run_search_agent.py` / `scripts/eval_protocol.py` 出报表；
+7. **B3–B5**：`NpcSpec` + 三星判定 + 评测入口；蒙德/璃月 16 关规格与挑战目标原文；**PvE-v1 门禁**（decklab 组牌 × 16 关三星 ≥ 60%，§4.4）；
+8. **C3/C4**：人可持 NPC 敌人卡组（`custom-data-loader` 注入）＋ 逐决策日志落盘复盘；
+9. **并行收尾**（不阻塞主线）：WSL/MX550 小网络训练试验（结论写回 §5.2）；L5.2 全池 LLM 矩阵放量；L5.3 学习曲线留档；L5.5（可选）评测池扩容；
+10. 机会算力窗口到手（§5.1）：`train.collect` 放量采集 → `train.pipeline --replays` GPU 档训练放大 → M3 GPU 档 → M4。
 
 ---
 *本文档随决策变化更新；重大变更（改主线、改验收口径）需在 §0 追加决策记录。*
