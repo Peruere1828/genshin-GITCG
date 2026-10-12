@@ -289,8 +289,8 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 | PvE-B1 敌人移植 | 约 13 类敌人 `.gts`（技能/被动/HP/充能；蒙德/璃月全量，从蒂玛乌斯 3 只起步） | 可组牌、跑满、无错误 |
 | PvE-B2 策略 **✅ 2026-10-12** | `NpcPolicy`（greedy + rotation，确定性、可复现） | 同种子可复现 ✅：`npc/policy.py`，永不打行动牌、不主动切人，被动/切人由引擎驱动；平局按 (槽位, 技能 id 升序) |
 | PvE-B3 规格与判定 **✅ 2026-10-12** | `NpcSpec` + 挑战目标三星判定（7 类）+ 评测入口（可续跑/子进程并行） | 输出胜率 + 三星达成率 ✅：`npc/{spec,policy,objectives,eval}.py`；`envs/match.py` additive 采集 `skill_used`/元素反应事件；冒烟 16 关×3 种子 win_rate 0.979 / 三星率 0.625（Wilson [0.484,0.748]），0 error |
-| PvE-B4 关卡数据 | 蒙德/璃月 16 关规格 + 挑战目标原文 | 16 关规格齐全 |
-| **PvE-v1 门禁** | decklab 自动组牌（池 C）× 16 关 × 多种子 | **三星达成率 ≥ 60%**；报表拆分组牌质量 vs 打牌质量（D19） |
+| PvE-B4 关卡数据 **✅ 2026-10-12** | 蒙德/璃月 16 关规格 + 挑战目标原文 | 16 关规格齐全 ✅（`configs/npc/npc_stages_mond_liyue.json`；斯万目标不全、石头回合数疑笔误，标 `verified:false`）|
+| **PvE-v1 门禁 ✅ 2026-10-12** | decklab 组牌（池 C）× 16 关 × 多种子 | **三星达成率 74.7%**（287/384，Wilson [70.2,78.8]、cluster [63.0,85.7]）**≥60% PASS**；胜率 99.7%、0 error；报表拆分：**打牌质量是主杠杆**（目标注入 +13pp）、池 C 组牌质量差异小；decklab 无自动组牌→确定性规则 `decklab/builder.py` 近似（偏差已记）；`scripts/run_npc_gate.py` 一键可续跑 |
 
 ---
 
@@ -399,7 +399,7 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
 
 模型主线（A）维持 §4.3（M3-CPU）；NPC（B）与 Web（C）为新增并行线（D16–D20）。阶段划分如下。
 
-**进度（2026-10-12）**：B0 ✅（`engine-overlay/`，pin `v0.21.0`，V8 直编，162 passed）｜**模型主线 S-A/S-B/S-C 全 ✅**｜B1 ✅（17 敌人 `.gts`）｜B2/B3 ✅（`npc/`）｜B4 NPC 数据 ✅｜**C0 ✅**（standalone + 浏览器↔Python 桥）｜**A6 ✅**（紧凑载荷 0.45×/编解码 3×）｜**A5/A7 ✅（数据先行，结论见 D24）**：BC 撞 teacher 天花板、训练时长是杠杆、强 deck 过 ≥0.50 认证线、floor 结构性 FAIL。**下一步（D24）**：策略改进（自博弈/RL 或修好的搜索）；并行修 `train.collect` 内存 bug（A8）+ B5 PvE-v1 门禁。
+**进度（2026-10-12）**：B0 ✅｜**模型主线 S-A/S-B/S-C 全 ✅**｜B1 ✅（17 敌人 `.gts`）｜B2/B3 ✅（`npc/`）｜B4 ✅（19 类敌人 + 16 关）｜**B5/PvE-v1 ✅（三星 74.7% ≥60% PASS）**｜**C0 ✅**（standalone + 浏览器↔Python 桥）｜**A6 ✅**（紧凑载荷）｜**A8 ✅**（`train.collect` 内存修复：500 局峰值 583 MB）｜**A5/A7 ✅（数据先行，结论见 D24）**：BC 撞 teacher 天花板、训练时长是杠杆、强 deck 过 ≥0.50 认证线、floor 结构性 FAIL。**下一步（D24）**：策略改进（自博弈/RL 或修好的搜索）——待选向。
 
 **阶段 1（立即）**：B0 构建链 go/no-go（Docker 内建 V8，D20）**✅** ‖ A1 S-B MCCFR 脚手架 **✅**
 
