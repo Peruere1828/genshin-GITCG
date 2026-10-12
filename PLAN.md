@@ -359,7 +359,7 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 | 机会算力不可预期获得 | 训练放大/本地 LLM 延期 | 训练与自博弈不依赖机会算力（CPU 档先行，D15）；LLM 客户端强制降级链（本地 LLM → API → 纯策略）；机会窗口一键零看管跑完（§5.1） |
 | LLM 干预不可评测 | 说不清强弱 | 双模式分开报分 + 干预全量记录 |
 | 自迭代闭环改坏工程 | 回归/丢失进度 | §WS5 护栏：分支隔离 + 四项门禁 + 只追加存储 |
-| `static-data.piovium.org` 网络不可达（B0 实测） | **WS8 standalone 前端构建受阻**（C 线）；引擎/数据不受影响 | 换可达镜像或离线缓存，或前端走 `custom-data-loader` 注入；C0 起局前先解决（记录见 `engine-overlay/README.md` §5）；另引擎构建已用 `--filter=!{packages/assets-manager}` 绕开该域 |
+| `static-data.piovium.org` 网络不可达（B0 实测） | WS8 standalone 前端构建曾受阻；引擎/数据不受影响 | **已找到可达镜像**：`https://gi-tcg-assets-api-hf.guyutongxue.site`（本项目已在用）**完整实现 v5 API**（`/api/v5/data|datum|image/...` 实测 200，含 webp 图像）→ 构建时与运行时装 `DEFAULT_STATIC_DATA_API_BASE_URL` 指向它即可；引擎构建另用 `--filter=!{packages/assets-manager}` 绕开（记录见 `engine-overlay/README.md` §5） |
 | exploitability 算不了 | 无法知道距纳什多近 | 接受工程口径：固定基线 + 阶梯 + 对手池多样性（评测池 20 套，D11 + 自博弈池 + 历史 checkpoint） |
 
 ## 8. 许可与合规
