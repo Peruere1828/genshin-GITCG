@@ -1,5 +1,7 @@
 # NJU 超算（LSF）作业模板与说明（PLAN.md §5 / §10）
 
+> 另见 [`A800_RUNBOOK.md`](./A800_RUNBOOK.md)：**A800 80G + 128 核机会窗口**的可传达 runbook（非 LSF 路线，§5.1）。
+
 > **状态（2026-10-10，D14）：暂缓。** 南大集群 glibc/环境适配成本高，当前默认算力为本机 + WSL（PLAN §5）。
 > 本目录保留为将来机会算力的适配起点（C13）；启用前置：glibc ≥ 2.34 环境（`module load glibc/2.36-gcc12.1.0`）
 > + `vendor` 分支离线依赖（gitcg wheel + 资产缓存）。
