@@ -31,6 +31,7 @@
 | D20 | 引擎构建策略（V8） | **Docker 内构建**：镜像基线 `ubuntu:22.04`（与上游 CI 同 glibc 口径）；**引擎源码 pin 到与 PyPI wheel 一致的 tag `v0.21.0`**（`c94826b`；refs HEAD 更新但 ABI/构建方式不同，不采用）；V8 **一次性首建**、改敌人数据只做**增量**（rolldown 生成 `js_code.cpp` + 重链，分钟级，V8 不重编）；**只在一台构建**（linux x64 `.so` 本机/WSL 通用）；开发期用 `custom-data-loader` **免构建快循环**验证敌人数据；**node 24 直接用**（`engines` 仅警告，无 `engine-strict`）；构建 provenance 记入 `engine.lock.example` 变体；**V8 构建失败 fallback**＝Node 子进程 + TS core + `custom-data-loader` 驱动 NPC 环境（web 线不受影响）。**（2026-10-12 事实修正）**：pin 的 `v0.21.0` 用 `piovium/v8-cmake@14d0f727`——**vendor V8 11.6.189.4 源码、纯 CMake+Ninja 直编，无 depot_tools/`V8_WORKSPACE`/`V8_OFFLINE`、无数 GB 下载**；实测首建 **~20 min**（1232 TU）、增量 **~30 s** 且产物 sha256 确定。先前按 refs HEAD（`v8-cmake-barbara`/V8 14.8/volume 缓存）写的措辞作废；证据与流程见 `engine-overlay/README.md` |
 | D21 | 机会算力 CPU 配额事实（修订 D14/§5，2026-10-12 实测） | A800 窗口**只有 GPU 可用**、**CPU 配额仅 ~10 核**（与本机 12 核同级）：**CPU 密集的采集/评测不放窗口**，只在本机/WSL 分片累积；A800 专做 **GPU 训练/推理**（CVPN 放大、蒸馏、batched inference、可选本地 LLM）。数据流：本地 `train.collect` → 传入 A800 → `train.pipeline --replays/--distill` GPU 训练 → checkpoint 回流本地 → `scripts/eval_protocol.py` 认证。§5.1 窗口优先级据此收敛为「训练 > LLM 分析」（采集/评测移出窗口）|
 | D22 | M3-CPU 首次认证结果与下一步（2026-10-12，A3，`reports/train/a3_m3_cpu_screening.md`） | **M3-CPU 未通过认证**：pooled 0.460–0.500（400 局恰好压线），**strict-CI（cluster 下界 0.371）/ Wilson 下界 0.451 / M4 floor（9/20 <45%，最弱 `unyielding_geo` 0.05）全 FAIL**。**关键负面发现：搜索蒸馏 ≈ 冷启动 BC**（同数据配对 Δ=−0.0175，CI[−0.084,+0.049]，无正增益；当前 teacher 预算 iter4/depth1/cand2 太弱）。**结论：不满足"放大规模"前置**——直接丢 A800 只放大算力、不改 ~0.50 的结构瓶颈。**下一步**：先做 **teacher 预算阶梯 + 搜索智能体直接强度评测**（`scripts/run_cfr_search_agent.py`），判定"搜索本身能否显著强于 expert/BC"：能则按该预算放量蒸馏；不能则重估排产（先补 BC/自博弈数据、后搜索蒸馏）。认证级评测需 **≥50 seeds/对手（1000+ 局/臂，Wilson ±0.03）** + `--strict-ci` |
+| D23 | 搜索路线判定与改排产（2026-10-12，A4，`reports/search/a4_search_budget_ladder.md`） | **搜索 teacher 无可测增益，且在可行预算下显著有害**：全池 n=400 配对 Δ：B 档(8/1/4/8)=**−0.066 [−0.125,−0.008]**、D 档(8/2/4/4)=**−0.114 [−0.169,−0.058]**（CI 全在 0 以下）；搜索覆盖 ~87–89% 专家动作，**win→loss 是 loss→win 的 1.5–2.0×**；d1 档 it8≡it16（逐局逐位相同）→ iterations 非瓶颈；根价值区分度 ≈0。**基线校准：脚本专家 `superconduct_aggro` 对全池 0.561 ＞ 我们的 BC/蒸馏网 ~0.50**（网络尚未追上专家）。**决策**：① **改排产＝数据先行**——先规模化采集 BC/自博弈数据 + 更大网络（GPU 窗口）把强度顶过专家基线；② **不把搜索蒸馏放量到 A800**（软目标劣于硬标签，放量只放大有害信号）；③ 重开搜索的前置＝**校准的公共信念价值头 + 非任意候选裁剪 + 门控式覆盖**（仅当根价值优势 > τ 才覆盖专家），三者达标后再跑阶梯 |
 
 ### 0.1 工程约定（现行做法，2026-10-10 正向化整理；证据指向脚本/测试）
 
@@ -285,8 +286,8 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 |------|------|------|
 | PvE-B0 构建链 **✅ 2026-10-12** | Docker 内重建 `libgitcg.so`（D20）：pin `v0.21.0`，V8 11.6.189.4 纯 CMake 直编，首建 ~20 min、增量 ~30 s、产物 sha256 确定 | `pytest -m "not slow"` 全绿（162 passed）+ 同种子重放一致 + 跑通一局 ✅；脚手架 `engine-overlay/`，provenance 见其 `README.md` |
 | PvE-B1 敌人移植 | 约 13 类敌人 `.gts`（技能/被动/HP/充能；蒙德/璃月全量，从蒂玛乌斯 3 只起步） | 可组牌、跑满、无错误 |
-| PvE-B2 策略 | `NpcPolicy`（greedy + rotation，确定性、可复现） | 同种子可复现 |
-| PvE-B3 规格与判定 | `NpcSpec` + 挑战目标三星判定 + 评测入口 | 输出胜率 + 三星达成率 |
+| PvE-B2 策略 **✅ 2026-10-12** | `NpcPolicy`（greedy + rotation，确定性、可复现） | 同种子可复现 ✅：`npc/policy.py`，永不打行动牌、不主动切人，被动/切人由引擎驱动；平局按 (槽位, 技能 id 升序) |
+| PvE-B3 规格与判定 **✅ 2026-10-12** | `NpcSpec` + 挑战目标三星判定（7 类）+ 评测入口（可续跑/子进程并行） | 输出胜率 + 三星达成率 ✅：`npc/{spec,policy,objectives,eval}.py`；`envs/match.py` additive 采集 `skill_used`/元素反应事件；冒烟 16 关×3 种子 win_rate 0.979 / 三星率 0.625（Wilson [0.484,0.748]），0 error |
 | PvE-B4 关卡数据 | 蒙德/璃月 16 关规格 + 挑战目标原文 | 16 关规格齐全 |
 | **PvE-v1 门禁** | decklab 自动组牌（池 C）× 16 关 × 多种子 | **三星达成率 ≥ 60%**；报表拆分组牌质量 vs 打牌质量（D19） |
 
@@ -397,7 +398,7 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
 
 模型主线（A）维持 §4.3（M3-CPU）；NPC（B）与 Web（C）为新增并行线（D16–D20）。阶段划分如下。
 
-**进度（2026-10-12）**：B0 ✅（`engine-overlay/`，pin `v0.21.0`，V8 直编，162 passed）｜**模型主线 S-A/S-B/S-C 全 ✅**（`reps/belief.py`、`train/cfr_solver.py`、`envs/cfr_search.py`、`train/belief_head.py`+`train/distill.py`，186 passed）｜B4 NPC 数据 ✅（19 类敌人 + 16 关，`configs/npc/`）。**C 线阻断已解除**（static-data 走可达 v5 镜像，§7）。**下一步**：A3=M3-CPU 认证（搜索+小网纯策略 vs 20 池 ≥50%）、B1 敌人 `.gts`（进行中）、C0 standalone。
+**进度（2026-10-12）**：B0 ✅（`engine-overlay/`，pin `v0.21.0`，V8 直编，162 passed）｜**模型主线 S-A/S-B/S-C 全 ✅**（`reps/belief.py`、`train/cfr_solver.py`、`envs/cfr_search.py`、`train/belief_head.py`+`train/distill.py`，186 passed）｜B1 ✅（17 敌人 `.gts`）｜B2/B3 ✅（`npc/`：NpcPolicy + 三星判定 + 评测入口）｜B4 NPC 数据 ✅（19 类敌人 + 16 关，`configs/npc/`）｜**A3/A4 判定 ✅（负面）**：M3-CPU 未过 + 搜索 teacher 无增益且有害 → **改排产＝数据先行（D23）**。**C 线阻断已解除**（static-data 走可达 v5 镜像，§7）。**下一步**：数据先行（BC/自博弈规模化 + 更大网络）、B5 PvE-v1 门禁（decklab 组牌 × 16 关）、C0 standalone。
 
 **阶段 1（立即）**：B0 构建链 go/no-go（Docker 内建 V8，D20）**✅** ‖ A1 S-B MCCFR 脚手架 **✅**
 
