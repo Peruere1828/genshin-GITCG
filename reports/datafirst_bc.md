@@ -4,6 +4,8 @@
 > 无 GPU（torch CPU）。**与另一会话并行**（其同等管线 `bc_learning_curve` 实测 177% CPU），
 > 墙钟被挤占 ~2–3×；峰值并发触发过 **OOM（worker rc=-9）**。本文所有吞吐/时间均为**受竞争下**的实测。
 > 原始逐局数据 / checkpoint / store 全在 `data/`（gitignore）；聚合在 `reports/`。
+> **并发会话**（A5 续）在同仓跑同一数据先行管线（其报告 `reports/train/bc_scale_datafirst.md`）；
+> 两会话的 SA-15ep 结论**互相印证**（见 §4 末），本文仅报告本会话产出的多 deck 语料与逐 deck 认证。
 
 ---
 
@@ -15,19 +17,22 @@
 | `unyielding_geo` (d256) | **0.709** | 0.799 | **−0.090** [−0.137,−0.043] | ✅ | ✗(6/20) | 10 / 6 |
 | `double_geo_navia` (d256) | **0.689** | 0.681 | **+0.007** [−0.045,+0.060] | ✅ | ✗(8/20) | 10 / 6 |
 | `superconduct_aggro` (d256) | 0.405 | 0.509 | −0.104 [−0.161,−0.047] | ✗ | ✗(18/20) | 10 / 6 |
-| `superconduct_aggro` (d256, **15 ep**) | **0.480** | 0.509 | **−0.029** [−0.081,+0.023] | ✗ | ✗(15/20) | 10 / 15 |
+| `superconduct_aggro` (d256, **15 ep**) | **0.480** | 0.509 | −0.029† [−0.081,+0.023] | ✗ | ✗(15/20) | 10 / 15 |
 | `superconduct_aggro` (d128) | 0.395 | 0.509 | −0.114 [−0.170,−0.057] | ✗ | ✗(16/20) | 10 / 6 |
 | `natlan_battleship` (d256) | 0.140 | 0.225 | −0.085 [−0.127,−0.043] | ✗ | ✗(20/20) | 10 / 6 |
 
+† SA-15ep 本会话 10 seeds（功效不足）；**并发会话 20 seeds 得 −0.061 显著负**（见 §4 末）。
+
 **判定**：
-- **BC 从未「显著超过」同 deck 脚本专家**：2 个 deck 统计**打平**（`double_geo_navia` Δ=+0.007、
-  `superconduct_aggro`(15 ep) Δ=−0.029，CI 均含 0），其余显著低 3.4–11.4 pp。
+- **BC 从未「显著超过」同 deck 脚本专家**：`double_geo_navia` 统计**打平**（Δ=+0.007，CI 含 0）；
+  `superconduct_aggro`(15 ep) 本会话 10-seed Δ=−0.029（CI 含 0），但**并发会话 20-seed 复跑为 −0.061 显著负**（见 §4 末）
+  → SA 实际仍落后专家 ~6 pp。其余臂显著低 3.4–11.4 pp。
   → 与 A3/A4「网络尚未追上专家」一致；**数据先行的价值在“把 BC 顶到专家附近”而非“超过专家”**。
 - **3/7 臂首次通过 M3-CPU 的 pooled 门禁（≥0.50，strict cluster CI）**：`dvalin/ unyielding/ double_geo`
   均落在 **0.689–0.709** —— 远高于 A3 全池 ~0.50 与 A4 专家 `superconduct_aggro` 0.561。
   **差距来自 deck 选择**：这些 deck 的**专家本身**就强（0.68–0.80），BC 能跟到 −0.3~ −9 pp。
 - **epoch 预算是被低估的变量**：`superconduct_aggro` 6 ep→15 ep 从 **0.405→0.480**（配对 gap 从 −0.104*
-  缩到 −0.029 ns）。**本报告其余 deck 只跑 6–12 ep，其强度是下界**（尤其 6 ep 的 unyielding/double_geo/natlan）。
+  缩到 −0.029/20-seed −0.061）。**本报告其余 deck 只跑 6–12 ep，其强度是下界**（尤其 6 ep 的 unyielding/double_geo/natlan）。
 - **全部 deck 的 M4 floor（无单套 <45%）仍 FAIL**：长尾（岩/雷/草系）是**结构性**瓶颈，未随数据/规模收敛。
 - **SA 的瓶颈是 epoch 而非容量**：d128≈d256（0.395 vs 0.405），但 6→15 ep +0.075 → 需足够 epoch 预算（见 §9）。
 
@@ -128,6 +133,11 @@ python -m train.collect --deck <deck> --all-opponents \
 3. **长尾一致**：所有 deck 的天花板都被 `unyielding_geo / electrocharged_moon / double_geo_navia / nahida_kokomi_raiden`
    等岩/雷/草系压住；最优反应探针 exploitability_lb 0.76–0.95。
 
+> **SA-15ep 的「打平」需谨慎**：本会话 10 seeds（n=400）得 Δ=−0.029（CI 含 0，功效不足）。
+> **并发会话**对同类模型（d128@48k, 15 ep）跑到 **20 seeds（n=800）**，得 pooled **0.458 vs expert 0.519、
+> Δ=−0.061 [−0.100,−0.022]（显著负）**（`reports/train/bc_scale_datafirst.md`）。
+> 即 **SA 的 BC 仍显著低于专家约 6 pp**；本会话的「ns」是 10-seed 功效不足所致。**认证级须 ≥20 seeds。**
+
 ---
 
 ## 5. 数据量 × 强度曲线（SA，d128，5 seeds/10 seeds）
@@ -142,8 +152,9 @@ python -m train.collect --deck <deck> --all-opponents \
 
 **结论（6-epoch 预算下）：对 `superconduct_aggro`，强度在 10k→40k 数据量上平坦（0.375–0.405，全在噪声内）。**
 **但该平坦是「6 epoch 预算」下的现象，不能单独解释为「数据无用」**：把 SA 提到 **15 epoch / 50k 样本**后，
-强度跳到 **0.480**（配对 gap 从 −0.104* 缩到 −0.029 ns）。→ **SA 的真实瓶颈是「训练预算（epoch×样本）」
-而非模型容量**（d128≈d256），且当前平坦曲线主要被 epoch 上限截断（需在 15+ epoch 重扫数据轴才能分离两个变量）。
+强度跳到 **0.480**（本会话 10-seed 配对 gap −0.029，功效不足；并发会话 20-seed 为 −0.061 显著负）。
+→ **SA 的真实瓶颈是「训练预算（epoch×样本）」而非模型容量**（d128≈d256），且当前平坦曲线主要被 epoch 上限截断
+（需在 15+ epoch 重扫数据轴才能分离两个变量）。
 > 说明：曲线点用 5 seeds（200 局含双边）为**趋势级**，非认证级；认证级需 ≥20 seeds。逐点 checkpoint 在 `data/checkpoints/dfbc_sacurve_*`。
 
 ---
@@ -156,10 +167,10 @@ python -m train.collect --deck <deck> --all-opponents \
 | pooled ≥ 0.50 | 认证级（**strict cluster CI 下界**） | ✅ dvalin[0.610]/unyielding[0.606]/double_geo[0.568]；✗ SA[0.294→e15 0.367]/natlan[0.074] |
 | floor 无单套 <45% | M4 | ✗ **全部 5 deck FAIL**（6–20 个对手违规） |
 | quality fallback/error=0 | 硬门禁 | ✅ 全 0 |
-| BC ≥ 专家（同 deck 配对） | 进度标尺 | ✗ 未「显著超过」；2 臂统计打平（+0.007 / −0.029 ns） |
+| BC ≥ 专家（同 deck 配对） | 进度标尺 | ✗ 未「显著超过」；`double_geo` 打平（+0.007 ns）；SA-15ep 20-seed 复跑 −0.061 显著负 |
 
 **结论**：**M3-CPU 仍未整体通过**——pooled 门禁在 3/7 臂上首次达标，但 **M4 floor 全面崩盘**，
-且 **BC 未「显著」追平专家**（2 臂统计打平）。数据先行把「每 deck 的可达强度」显著抬高了
+且 **BC 未「显著」追平专家**（仅 `double_geo` 打平；SA 认证级 20 seeds 仍 −6 pp）。数据先行把「每 deck 的可达强度」显著抬高了
 （0.69–0.71 vs A3 的 ~0.50；SA 15-ep 0.48 vs 6-ep 0.40），但**长尾 matchup 的欠拟合是结构性瓶颈**，
 规模放大不会自动消除。
 
@@ -198,9 +209,9 @@ python -m train.collect --deck <deck> --all-opponents \
 | 读盘 | JSON 直读 | 用 `--format compact`（解码 ~2× 快）+ 预建 tensor store（`scripts/datafirst_bc_store.py`） |
 
 **放量前的判定闸（不满足则收益有限）**：至少 1 个 deck 的 BC 在 **≥20 seeds + `--strict-ci`** 下配对 Δ 的下界 ≥ −2%，
-且 floor 违规数较本报告的 6–20 明显下降。**当前仍未满足**（最好 SA-15ep Δ 下界 −0.081；floor 全 FAIL），
-但 **6→15 epoch 已把 SA 的 gap 从 −0.104* 拉到 −0.029 ns** → 优先在 A800 上把 **epoch/样本预算** 放大到 100–200 ep × 全量数据，
-再判 floor 是否随规模松动。
+且 floor 违规数较本报告的 6–20 明显下降。**当前仍未满足**（SA-15ep 20-seed Δ 下界 −0.100；floor 全 FAIL），
+但 **6→15 epoch 已把 SA 的 gap 从 −0.104* 拉到 −0.029/20-seed −0.061** → 优先在 A800 上把 **epoch/样本预算**
+放大到 100–200 ep × 全量数据，再判 floor 是否随规模松动。
 
 **评分/认证（回流本机，不放窗口）**：`scripts/eval_protocol --contestant neural:<ckpt> --contestant-deck <deck>
 --seeds 50 --workers 12 --strict-ci --baseline expert:<deck>`（≥50 seeds → Wilson ±0.03）。
