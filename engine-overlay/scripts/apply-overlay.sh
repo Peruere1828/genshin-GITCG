@@ -36,6 +36,12 @@ if [ -d "$SRC" ]; then
 fi
 echo "[overlay] 应用 $COUNT 个文件"
 
+# overlay 新增的 `packages/data/src` 下 .gts/.ts 需要登记进 `index.ts` 导入表，
+# 否则 tsdown 打包时不会 import 它们（见 register-data-imports.py 说明）。
+if [ -f "$DST/packages/data/src/index.ts" ]; then
+  python3 "$HERE/register-data-imports.py" "$DST"
+fi
+
 # provenance：overlay 内容 hash（仅数据文件）
 MANIFEST="$REPO_ROOT/build/overlay-manifest.json"
 python3 - "$SRC" "$MANIFEST" <<'PY'

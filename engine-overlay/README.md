@@ -166,3 +166,14 @@ V8 构建失败时，NPC 环境可走 **Node 子进程 + TS core + `custom-data-
 （pnpm 重新生成 `js_code.cpp` + 重编 4 个 cbinding TU + 重链），**V8 未重编**；
 产物与首建 **sha256 完全一致**（`7e8b61cc…`）、BuildID 一致 → 确定性可复现，
 印证 D20「改敌人数据只做增量（rolldown + 重链，分钟级）」。
+
+## 构建记录（PvE-B1 敌人移植，2026-10-12）
+
+- overlay：**17 个 NPC 敌人 `.gts`**（`overlay/packages/data/src/characters/**`），
+  `overlay_tree_sha256=47ed2afa7a944ad8c79f12872de84df92be7bbc18cefc16301bd58b3d764ab3d`。
+  导入表由新增的 `scripts/register-data-imports.py` 自动重生成（`apply-overlay.sh` 调用）。
+- 增量重建（`SKIP_IMAGE=1 SKIP_MATERIALIZE=1`）：全流程 **~30 s**，V8 未重编。
+- 产物 `build/artifacts/libgitcg.so`，**36,620,080 bytes**，
+  `sha256=82630a6e0d1f6a5e09306c41c131100e73b404a09c67deb1957c2feeade7e9ce`。
+- 验收：`tests/test_npc_enemies.py`（**27 passed**：蒂玛乌斯三只行为抽检 +
+  19 类敌人各跑满一局无错 + 3 深渊法师护罩挂载）；`pytest -m "not slow"` 全绿。
