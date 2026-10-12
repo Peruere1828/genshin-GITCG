@@ -98,11 +98,32 @@ LSF 模板：`scripts/cluster/lsf/collect.lsf`（单节点多 worker）、`colle
   `tests/test_engine_bridge.py` 断言）。同注入两次逐字节一致。
 - `evaluate_decision(...)` 对某决策的全部候选做 MC；`aggregate_option_values(...)` 汇总。
 - `resolver.py` 的 `PriorResolver`（先验/贪心，非搜索）仍保留作冷启动；真 resolver 落地时替换接口。
+  `PriorResolver.value(built)` 暴露 CVPN 价值头，作 M3-CPU S-B 的深度受限 frontier 价值。
+
+### 外采 MCCFR 脚手架（已实现，M3-CPU S-B，G2+G4）
+
+`train/cfr_solver.py`：在**公共信念粒子树**上做 external-sampling MCCFR（Lanctot 2009），
+把实用 resolver（确定化 MC 胜率）升级为 charter 主线的 regret 求解器：
+
+- `ExternalSamplingMCCFR` / `solve(game, iterations, depth)` → `RootSolution{strategy, value,
+  iterations, depth, action_values, visits}`：traverser 节点枚举全部合法动作并更新 regret，
+  对手节点按当前策略采样一个动作；每轮每个玩家各遍历一次、每次抽样一个根粒子。
+- **regret matching**（`regret_matching`）：正 regret 归一；全零回退 **prior**（再回退 uniform）。
+  先验只排序/播种，**永不删除合法动作**（§5.4/§11）。
+- **根平均策略**（`root_strategy_sum` 归一）+ **根价值**（根 node value 均值），供 S-C 蒸馏。
+- **深度受限 + frontier 价值**（G4）：`depth_remaining == 0`（或非终局无合法动作）返回
+  `game.frontier_value`（CVPN value / `resolver.py`），不做无界 rollout。
+- **根与信息集只依公共信息**（S-A 衔接）：`belief_root_particles` 包 `reps.belief.sample_belief_roots`
+  （公共信念 + 采样确定化，权重取对手范围假设），`public_infoset_key` 先掩码再取键（禁止隐藏真值，§5.2）。
+- 求解器 engine-free：只依赖抽象 `ParticleGame` 协议（根粒子 / 终局 / 行动者 / 合法动作 / 信息集 /
+  转移 / 终局效用 / frontier 价值）；引擎适配（fork 转移 + CVPN frontier）是 S-C 接入点。
+- 测试 `tests/test_cfr_solver.py`：分布合法/归一、深度截断确定性、玩具 2×2 矩阵博弈收敛到
+  已知混合 Nash（值 6/5）、bandit 收敛最优臂、prior 不删动作、belief 根对隐藏真值不变。
 
 ## 待办（M3，按 `train/CONTINUAL_RESOLVING.md` 顺序，D15）
 
-1. **信念根化（G1+G3）**：`envs/fork_search.py` 搜索根换「公共信念 + 采样确定化」（禁用隐藏真值），`reps/belief_groups.py` 接入根与 update；
-2. **外采 MCCFR 脚手架（G2+G4）**：新增 `train/cfr_solver.py`（regret matching + 根平均策略 + 根价值、深度受限 + CVPN frontier 价值）；
+1. **信念根化（G1+G3）**：`envs/fork_search.py` 搜索根换「公共信念 + 采样确定化」（禁用隐藏真值），`reps/belief_groups.py` 接入根与 update；**S-A 已交付**（`reps/belief.py`），剩余接入 MCCFR/belief 头。
+2. **外采 MCCFR 脚手架（G2+G4）**：**S-B 已交付**（`train/cfr_solver.py`：regret matching + 根平均策略 + 根价值、深度受限 + CVPN frontier 价值）；剩余 S-C 把引擎转移 + frontier 接到 `ParticleGame`。
 3. **search-as-teacher（G6+G7）**：根平均策略/根价值/belief 目标写进 replay，训练改搜索蒸馏（policy CE + value 回归 + belief 评分），`train/model.py` 加 belief 头；
 4. **M3-CPU 门禁（PLAN §4.3）**：「搜索+小网」纯策略对池整体 ≥ 50%（M2 口径）；搜索-蒸馏外环带候选 checkpoint 门禁（单测+泄漏+冒烟+评测不劣于）。
 

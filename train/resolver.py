@@ -81,6 +81,29 @@ class PriorResolver:
         probs = self.distribution(built)
         return codes[max(range(len(codes)), key=lambda i: probs[i])]
 
+    def value(self, built: BuiltDecisionContext) -> float:
+        """Scalar value estimate for the current public context (traverser side).
+
+        This is the CVPN **value head** behind the same public observation the
+        policy head sees. It is the depth-limited frontier value for the
+        external-sampling MCCFR scaffold (``train/cfr_solver.py``, M3-CPU S-B):
+        when the search's ``depth_remaining`` hits zero the leaf is scored here
+        instead of rolling out to the terminal (charter §6.3 / gap G4).
+        """
+        import torch
+
+        observation = self.encoder.encode_context(
+            built.context, history=(), include_training_targets=False
+        )
+        if not observation.option_features:
+            return 0.0
+        from train.model import collate
+
+        tokens, token_mask, options, option_mask = collate([observation])
+        with torch.no_grad():
+            _logits, value = self.model(tokens, token_mask, options, option_mask)
+        return float(value[0])
+
 
 def require_search_available(bridge: Any | None = None) -> None:
     """Raise unless a subprocess fork bridge is available for online search."""
