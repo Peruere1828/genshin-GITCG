@@ -110,15 +110,25 @@ def _run_tasks_sequential(tasks: list[MatchTask]) -> list[dict[str, Any]]:
     return [run_task(task) for task in tasks]
 
 
-def _run_shard_in_subprocess(
-    shard: list[MatchTask],
+def _drive_worker(
+    shard: list[Any],
     *,
     python: str,
     env: dict[str, str],
     repo_root: str,
     worker_module: str = "envs.rollout_worker",
     on_result: Callable[[dict[str, Any]], None] | None = None,
-) -> list[dict[str, Any]]:
+    retain_results: bool = True,
+) -> tuple[list[dict[str, Any]], int]:
+    """Run one shard through a fresh worker subprocess.
+
+    Returns ``(results, received)``. ``received`` is always the number of result
+    lines the worker emitted (used to detect a truncated/failed shard). When
+    ``retain_results`` is false the parent keeps *no* results: each line is handed
+    to ``on_result`` and immediately dropped, so a 500-game collector shard does
+    not pin multiple GB in the parent (the A5 scaling blocker). ``results`` is
+    empty in that mode.
+    """
     import subprocess
     import threading
 
@@ -135,6 +145,7 @@ def _run_shard_in_subprocess(
 
     stderr_chunks: list[str] = []
     results: list[dict[str, Any]] = []
+    received = 0
 
     def _drain_stderr() -> None:
         assert process.stderr is not None
@@ -142,13 +153,16 @@ def _run_shard_in_subprocess(
             stderr_chunks.append(line)
 
     def _drain_stdout() -> None:
+        nonlocal received
         assert process.stdout is not None
         for line in process.stdout:
             line = line.strip()
             if not line:
                 continue
             match = json.loads(line)
-            results.append(match)
+            received += 1
+            if retain_results:
+                results.append(match)
             if on_result is not None:
                 on_result(match)
 
@@ -169,12 +183,53 @@ def _run_shard_in_subprocess(
     stdout_thread.join()
     returncode = process.wait()
     stderr_thread.join(timeout=1)
-    if returncode != 0 or len(results) != len(shard):
+    if returncode != 0 or received != len(shard):
         detail = "".join(stderr_chunks)[-2000:]
         raise RuntimeError(
-            f"rollout worker failed (rc={returncode}, {len(results)}/{len(shard)} results):\n{detail}"
+            f"rollout worker failed (rc={returncode}, {received}/{len(shard)} results):\n{detail}"
         )
+    return results, received
+
+
+def _run_shard_in_subprocess(
+    shard: list[MatchTask],
+    *,
+    python: str,
+    env: dict[str, str],
+    repo_root: str,
+    worker_module: str = "envs.rollout_worker",
+    on_result: Callable[[dict[str, Any]], None] | None = None,
+) -> list[dict[str, Any]]:
+    """Back-compat wrapper over :func:`_drive_worker` that retains all results."""
+    results, _received = _drive_worker(
+        shard,
+        python=python,
+        env=env,
+        repo_root=repo_root,
+        worker_module=worker_module,
+        on_result=on_result,
+        retain_results=True,
+    )
     return results
+
+
+def _resolve_shard_workers(shard: list[Any], workers: int | None) -> int:
+    import os as _os
+
+    resolved = workers if workers is not None else (_os.cpu_count() or 1)
+    return max(1, min(int(resolved), len(shard)))
+
+
+def _shard_exec_env() -> tuple[str, dict[str, str], str]:
+    import os as _os
+    import sys
+
+    from common.paths import repo_root
+
+    root = str(repo_root())
+    env = dict(_os.environ)
+    env["PYTHONPATH"] = root + _os.pathsep + env.get("PYTHONPATH", "")
+    return sys.executable, env, root
 
 
 def run_task_shard(
@@ -183,37 +238,35 @@ def run_task_shard(
     worker_module: str,
     workers: int | None = None,
     on_result: Callable[[dict[str, Any]], None] | None = None,
+    retain_results: bool = True,
 ) -> list[dict[str, Any]]:
     """Run a list of ``as_dict()``-able tasks through a JSON-lines worker module.
 
     A thin public wrapper over the (deadlock-safe) subprocess plumbing used by
-    rollout, so other task types (e.g. ``train.collect``) reuse it instead of
-    re-implementing the two-pipe drain. Results are merged and sorted by ``index``.
+    rollout, so other task types reuse it instead of re-implementing the two-pipe
+    drain. Results are merged and sorted by ``index``.
+
+    Set ``retain_results=False`` to stream every result to ``on_result`` without
+    accumulating it in the parent (see :func:`stream_task_shard`); the returned
+    list is then empty. The default keeps the historical retain-all behaviour.
     """
-    import os as _os
-    import sys
-
-    from common.paths import repo_root
-
     shard = list(shard)
     if not shard:
         return []
-    resolved = workers if workers is not None else (_os.cpu_count() or 1)
-    resolved = max(1, min(int(resolved), len(shard)))
-    env = dict(_os.environ)
-    root = str(repo_root())
-    env["PYTHONPATH"] = root + _os.pathsep + env.get("PYTHONPATH", "")
-    python = sys.executable
+    resolved = _resolve_shard_workers(shard, workers)
+    python, env, root = _shard_exec_env()
 
     if resolved == 1:
-        return _run_shard_in_subprocess(
+        results, _received = _drive_worker(
             shard,
             python=python,
             env=env,
             repo_root=root,
             worker_module=worker_module,
             on_result=on_result,
+            retain_results=retain_results,
         )
+        return results
 
     from concurrent.futures import ThreadPoolExecutor
 
@@ -223,20 +276,82 @@ def run_task_shard(
     with ThreadPoolExecutor(max_workers=len(chunks)) as pool:
         futures = [
             pool.submit(
-                _run_shard_in_subprocess,
+                _drive_worker,
                 chunk,
                 python=python,
                 env=env,
                 repo_root=root,
                 worker_module=worker_module,
                 on_result=on_result,
+                retain_results=retain_results,
             )
             for chunk in chunks
         ]
         for future in futures:
-            results.extend(future.result())
+            part, _received = future.result()
+            results.extend(part)
     results.sort(key=lambda item: item.get("index", 0))
     return results
+
+
+def stream_task_shard(
+    shard: list[Any],
+    *,
+    worker_module: str,
+    workers: int | None = None,
+    on_result: Callable[[dict[str, Any]], None],
+) -> int:
+    """Stream a shard's results through ``on_result`` without retaining them.
+
+    Like :func:`run_task_shard`, but the parent never accumulates results: each
+    worker line is handed to ``on_result`` (typically an append to disk) and then
+    dropped, so parent RSS stays bounded regardless of shard size. Returns the
+    number of results received. This is the collector's path (A8): a 500-game
+    shard used to pin multiple GB in the parent and push the box into swap.
+    """
+    if on_result is None:
+        raise ValueError("stream_task_shard requires an on_result callback")
+    shard = list(shard)
+    if not shard:
+        return 0
+    resolved = _resolve_shard_workers(shard, workers)
+    python, env, root = _shard_exec_env()
+
+    if resolved == 1:
+        _results, received = _drive_worker(
+            shard,
+            python=python,
+            env=env,
+            repo_root=root,
+            worker_module=worker_module,
+            on_result=on_result,
+            retain_results=False,
+        )
+        return received
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    chunks = [shard[i::resolved] for i in range(resolved)]
+    chunks = [chunk for chunk in chunks if chunk]
+    total = 0
+    with ThreadPoolExecutor(max_workers=len(chunks)) as pool:
+        futures = [
+            pool.submit(
+                _drive_worker,
+                chunk,
+                python=python,
+                env=env,
+                repo_root=root,
+                worker_module=worker_module,
+                on_result=on_result,
+                retain_results=False,
+            )
+            for chunk in chunks
+        ]
+        for future in futures:
+            _results, received = future.result()
+            total += received
+    return total
 
 
 def normalize_workers(workers: int | None) -> int | None:

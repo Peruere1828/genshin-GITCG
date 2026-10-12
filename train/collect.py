@@ -12,7 +12,10 @@ Durability (D7):
 * a ``manifest.json`` sidecar pins a spec fingerprint (deck/opponents/seeds/teacher
   specs/encoder config) + the engine lock and refuses to resume against drift;
 * results stream to disk as they finish (``on_result``), so an interrupted job
-  keeps everything already completed.
+  keeps everything already completed;
+* the parent consumes the worker stream without retaining it
+  (``envs.rollout.stream_task_shard``), so RSS stays bounded as the run grows —
+  a 500-game shard no longer pins multiple GB (A8).
 
 Usage::
 
@@ -44,7 +47,7 @@ from typing import Any, Sequence
 from common.jsonl import dumps, ensure_trailing_newline
 from common.lock import load_engine_lock, runtime_metadata
 from common.paths import data_dir, ensure_dir
-from envs.rollout import run_task_shard
+from envs.rollout import stream_task_shard
 
 MANIFEST_NAME = "manifest.json"
 SAMPLES_NAME = "samples.jsonl"
@@ -440,6 +443,11 @@ def collect(
     written = {"games": 0, "samples": 0, "errors": 0}
 
     def _on_result(result: dict[str, Any]) -> None:
+        # One game arrives -> serialize and append immediately, then let the
+        # dict be dropped. Opening/closing per result keeps every completed game
+        # durable across a hard kill (D7). ``stream_task_shard`` (not
+        # ``run_task_shard``) is the key: the parent never accumulates the shard,
+        # so a 500-game run no longer pins multiple GB of RAM (A8).
         with lock:
             with samples_path.open("a", encoding="utf-8") as handle:
                 handle.write(dumps(result) + "\n")
@@ -448,7 +456,9 @@ def collect(
             written["errors"] += 1 if result.get("error") else 0
 
     if pending:
-        run_task_shard(pending, worker_module="train.collect_worker", workers=workers, on_result=_on_result)
+        stream_task_shard(
+            pending, worker_module="train.collect_worker", workers=workers, on_result=_on_result
+        )
 
     _done, total_games, total_samples, total_errors = _scan_samples(samples_path)
     manifest.update(

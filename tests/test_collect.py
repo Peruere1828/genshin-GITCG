@@ -144,6 +144,210 @@ def test_search_spec_roundtrips_and_enters_fingerprint():
     assert task.search == search
 
 
+# --------------------------------------------------------------------------- #
+# A8: bounded-memory streaming collection (parent must not accumulate a shard)
+# --------------------------------------------------------------------------- #
+# A fake worker emits one result line per task with a large payload, so the
+# parent-side memory behaviour is observable without running the engine. Follows
+# tests/test_rollout_subprocess.py (write the module to tmp_path, put it on
+# PYTHONPATH).
+FAKE_STREAM_WORKER = """\
+import json
+import sys
+
+blob = "x" * {size}
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    task = json.loads(line)
+    result = {{"index": task["index"], "samples": [{{"obs": blob}}], "error": None}}
+    sys.stdout.write(json.dumps(result) + "\\n")
+    sys.stdout.flush()
+"""
+
+
+def _write_fake_worker(tmp_path: Path, *, size: int) -> None:
+    (tmp_path / "fake_stream_worker.py").write_text(
+        FAKE_STREAM_WORKER.format(size=size), encoding="utf-8"
+    )
+
+
+def test_stream_task_shard_does_not_accumulate_results(tmp_path, monkeypatch):
+    """Parent memory stays bounded: 400 x 128 KiB streamed, not retained."""
+    import tracemalloc
+
+    from envs.rollout import stream_task_shard
+
+    size = 128 * 1024
+    _write_fake_worker(tmp_path, size=size)
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+
+    n = 400
+    tasks = CollectSpec(deck="a", opponents=("b",), seeds=tuple(range(n))).tasks()
+    seen: list[int] = []
+
+    def on_result(result: dict) -> None:
+        seen.append(int(result["index"]))
+
+    tracemalloc.start()
+    tracemalloc.reset_peak()
+    count = stream_task_shard(
+        tasks, worker_module="fake_stream_worker", workers=4, on_result=on_result
+    )
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert count == n
+    assert sorted(seen) == list(range(n))  # every game streamed exactly once
+    streamed = n * size
+    # Streaming keeps only in-flight lines resident; accumulation would pin
+    # ~streamed bytes. A 4x headroom keeps the assertion robust to allocator
+    # noise while still failing loudly if results are retained.
+    assert peak < streamed // 4, f"parent peak {peak} vs streamed {streamed}"
+
+
+def test_run_task_shard_retain_results_is_backward_compatible(tmp_path, monkeypatch):
+    from envs.rollout import run_task_shard, stream_task_shard
+
+    size = 8 * 1024
+    _write_fake_worker(tmp_path, size=size)
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+
+    tasks = CollectSpec(deck="a", opponents=("b",), seeds=tuple(range(12))).tasks()
+    seen: list[int] = []
+
+    def on_result(result: dict) -> None:
+        seen.append(int(result["index"]))
+
+    # Default (retain) returns every result, preserving rollout/arena behaviour.
+    retained = run_task_shard(
+        tasks, worker_module="fake_stream_worker", workers=3, on_result=on_result
+    )
+    assert sorted(r["index"] for r in retained) == list(range(12))
+    assert sorted(seen) == list(range(12))
+
+    # retain_results=False streams but returns an empty list (no accumulation).
+    seen.clear()
+    empty = run_task_shard(
+        tasks, worker_module="fake_stream_worker", workers=3,
+        on_result=on_result, retain_results=False,
+    )
+    assert empty == []
+    assert sorted(seen) == list(range(12))
+
+    # stream_task_shard is the dedicated no-retain entrypoint: returns the count.
+    seen.clear()
+    count = stream_task_shard(
+        tasks, worker_module="fake_stream_worker", workers=3, on_result=on_result
+    )
+    assert count == 12
+    assert sorted(seen) == list(range(12))
+
+
+def test_collect_streams_and_resumes_exactly_once(tmp_path, monkeypatch):
+    """collect() drives the streaming entrypoint and never duplicates on resume."""
+    monkeypatch.setenv("GITCG_DATA_DIR", str(tmp_path))
+    calls: list[int] = []
+
+    def fake_stream(shard, *, worker_module, workers=None, on_result):
+        for task in shard:
+            calls.append(task.index)
+            on_result(
+                {
+                    "index": task.index,
+                    "deck": task.deck,
+                    "opponent": task.opponent,
+                    "seed": task.seed,
+                    "error": None,
+                    "samples": [{"observation": {}, "teacher_index": 0}],
+                }
+            )
+        return len(shard)
+
+    monkeypatch.setattr("train.collect.stream_task_shard", fake_stream)
+
+    spec = CollectSpec(deck="a", opponents=("b",), seeds=(0, 1, 2))
+    first = collect(spec, tag="t", workers=2, progress=False)
+    assert first["ran_this_call"] == 3
+    assert first["games"] == 3
+    assert calls == [0, 1, 2]
+
+    calls.clear()
+    second = collect(spec, tag="t", workers=2, progress=False)
+    assert second["ran_this_call"] == 0
+    assert calls == []  # nothing pending -> streaming path not entered
+
+    records = list(iter_task_records(tmp_path / "replays" / "t" / "samples.jsonl"))
+    assert [r["index"] for r in records] == [0, 1, 2]  # exactly once, no dupes
+
+
+def test_collect_redoes_torn_trailing_game(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITCG_DATA_DIR", str(tmp_path))
+    calls: list[int] = []
+
+    def fake_stream(shard, *, worker_module, workers=None, on_result):
+        for task in shard:
+            calls.append(task.index)
+            on_result(
+                {
+                    "index": task.index,
+                    "deck": task.deck,
+                    "opponent": task.opponent,
+                    "seed": task.seed,
+                    "error": None,
+                    "samples": [],
+                }
+            )
+        return len(shard)
+
+    monkeypatch.setattr("train.collect.stream_task_shard", fake_stream)
+
+    spec = CollectSpec(deck="a", opponents=("b",), seeds=(0, 1))
+    collect(spec, tag="t", workers=1, progress=False)
+    path = tmp_path / "replays" / "t" / "samples.jsonl"
+    good = list(iter_task_records(path))
+    assert [r["index"] for r in good] == [0, 1]
+
+    # Simulate a hard kill mid-write: rewrite with game 1 as a torn line.
+    path.write_text(
+        json.dumps(good[0]) + "\n" + '{"index": 1, "samples": [',
+        encoding="utf-8",
+    )
+    calls.clear()
+    resumed = collect(spec, tag="t", workers=1, progress=False)
+    assert resumed["ran_this_call"] == 1
+    assert calls == [1]  # only the torn game is redone
+    assert [r["index"] for r in iter_task_records(path)] == [0, 1]
+
+
+def test_collect_fingerprint_guard_refuses_drift(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITCG_DATA_DIR", str(tmp_path))
+
+    def fake_stream(shard, *, worker_module, workers=None, on_result):
+        for task in shard:
+            on_result(
+                {
+                    "index": task.index,
+                    "deck": task.deck,
+                    "opponent": task.opponent,
+                    "seed": task.seed,
+                    "error": None,
+                    "samples": [],
+                }
+            )
+        return len(shard)
+
+    monkeypatch.setattr("train.collect.stream_task_shard", fake_stream)
+
+    spec = CollectSpec(deck="a", opponents=("b",), seeds=(0,))
+    collect(spec, tag="t", workers=1, progress=False)
+    drifted = CollectSpec(deck="a", opponents=("b",), seeds=(0, 1))
+    assert spec.fingerprint() != drifted.fingerprint()
+    with pytest.raises(SystemExit):
+        collect(drifted, tag="t", workers=1, progress=False)
+
+
 @pytest.mark.slow
 def test_collect_search_samples_carries_teacher_targets():
     from envs.fork_bridge import ForkBridge
