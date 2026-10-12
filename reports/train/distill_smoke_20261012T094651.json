@@ -1,0 +1,613 @@
+{
+  "kind": "distill_smoke",
+  "generated": "2026-10-12T09:48:03",
+  "deck": "superconduct_aggro",
+  "opponents": [
+    "natlan_battleship"
+  ],
+  "search": {
+    "iterations": 4,
+    "depth": 1,
+    "candidate_limit": 2,
+    "max_searches": 4,
+    "belief_samples": 2
+  },
+  "collect": {
+    "tag": "distill_smoke_big",
+    "replay_dir": "/home/ubuntuaaa/projects/genshin-GITCG/data/replays/distill_smoke_big",
+    "games": 20,
+    "samples": 1082,
+    "errors": 0,
+    "ran_this_call": 20,
+    "manifest": "/home/ubuntuaaa/projects/genshin-GITCG/data/replays/distill_smoke_big/manifest.json"
+  },
+  "sample_stats": {
+    "n": 1082,
+    "mean_options": 28.92513863216266,
+    "max_options": 192,
+    "distinct_request_types": [
+      "action",
+      "choose_active",
+      "reroll_dice",
+      "select_card",
+      "switch_hands"
+    ],
+    "win_fraction": 0.7652495378927912,
+    "n_search_targets": 80,
+    "search_fraction": 0.07393715341959335
+  },
+  "distill_metrics": {
+    "epochs": 20,
+    "n_train": 866,
+    "n_val": 216,
+    "n_search": 80,
+    "train_loss": 2.71852,
+    "train_policy_acc": 0.5703,
+    "train_value_mse": 0.12184,
+    "train_belief_loss": 3.14797,
+    "val_loss": 2.69364,
+    "val_policy_acc": 0.5951,
+    "val_value_mse": 0.15824,
+    "val_belief_loss": 3.17923
+  },
+  "distill_history": [
+    {
+      "epoch": 0,
+      "train_loss": 5.53776,
+      "train_policy_acc": 0.3672,
+      "train_value_mse": 0.27673,
+      "train_belief_loss": 5.70145,
+      "val_loss": 4.30177,
+      "val_policy_acc": 0.4193,
+      "val_value_mse": 0.22028,
+      "val_belief_loss": 4.15777
+    },
+    {
+      "epoch": 1,
+      "train_loss": 3.77045,
+      "train_policy_acc": 0.5446,
+      "train_value_mse": 0.1962,
+      "train_belief_loss": 3.63319,
+      "val_loss": 3.60596,
+      "val_policy_acc": 0.6094,
+      "val_value_mse": 0.21782,
+      "val_belief_loss": 3.41786
+    },
+    {
+      "epoch": 2,
+      "train_loss": 3.59261,
+      "train_policy_acc": 0.6127,
+      "train_value_mse": 0.19212,
+      "train_belief_loss": 3.44807,
+      "val_loss": 3.49738,
+      "val_policy_acc": 0.6328,
+      "val_value_mse": 0.21182,
+      "val_belief_loss": 3.3983
+    },
+    {
+      "epoch": 3,
+      "train_loss": 3.47739,
+      "train_policy_acc": 0.6116,
+      "train_value_mse": 0.1879,
+      "train_belief_loss": 3.42582,
+      "val_loss": 3.40337,
+      "val_policy_acc": 0.6484,
+      "val_value_mse": 0.20932,
+      "val_belief_loss": 3.37907
+    },
+    {
+      "epoch": 4,
+      "train_loss": 3.29276,
+      "train_policy_acc": 0.6496,
+      "train_value_mse": 0.17265,
+      "train_belief_loss": 3.37872,
+      "val_loss": 3.22015,
+      "val_policy_acc": 0.6406,
+      "val_value_mse": 0.20701,
+      "val_belief_loss": 3.34643
+    },
+    {
+      "epoch": 5,
+      "train_loss": 3.2254,
+      "train_policy_acc": 0.606,
+      "train_value_mse": 0.16566,
+      "train_belief_loss": 3.37674,
+      "val_loss": 3.12649,
+      "val_policy_acc": 0.6328,
+      "val_value_mse": 0.22108,
+      "val_belief_loss": 3.32212
+    },
+    {
+      "epoch": 6,
+      "train_loss": 3.07691,
+      "train_policy_acc": 0.5647,
+      "train_value_mse": 0.16598,
+      "train_belief_loss": 3.32773,
+      "val_loss": 3.08078,
+      "val_policy_acc": 0.5755,
+      "val_value_mse": 0.20932,
+      "val_belief_loss": 3.28872
+    },
+    {
+      "epoch": 7,
+      "train_loss": 3.00995,
+      "train_policy_acc": 0.5424,
+      "train_value_mse": 0.16098,
+      "train_belief_loss": 3.30056,
+      "val_loss": 3.06708,
+      "val_policy_acc": 0.5807,
+      "val_value_mse": 0.19794,
+      "val_belief_loss": 3.25689
+    },
+    {
+      "epoch": 8,
+      "train_loss": 2.97976,
+      "train_policy_acc": 0.5558,
+      "train_value_mse": 0.15589,
+      "train_belief_loss": 3.24943,
+      "val_loss": 3.03499,
+      "val_policy_acc": 0.5716,
+      "val_value_mse": 0.20186,
+      "val_belief_loss": 3.22711
+    },
+    {
+      "epoch": 9,
+      "train_loss": 2.90972,
+      "train_policy_acc": 0.5625,
+      "train_value_mse": 0.16374,
+      "train_belief_loss": 3.23815,
+      "val_loss": 3.00501,
+      "val_policy_acc": 0.5911,
+      "val_value_mse": 0.19459,
+      "val_belief_loss": 3.21854
+    },
+    {
+      "epoch": 10,
+      "train_loss": 2.88701,
+      "train_policy_acc": 0.5737,
+      "train_value_mse": 0.15924,
+      "train_belief_loss": 3.21441,
+      "val_loss": 2.98229,
+      "val_policy_acc": 0.6029,
+      "val_value_mse": 0.18371,
+      "val_belief_loss": 3.2152
+    },
+    {
+      "epoch": 11,
+      "train_loss": 2.8932,
+      "train_policy_acc": 0.5569,
+      "train_value_mse": 0.15616,
+      "train_belief_loss": 3.22311,
+      "val_loss": 2.91146,
+      "val_policy_acc": 0.5911,
+      "val_value_mse": 0.17617,
+      "val_belief_loss": 3.2063
+    },
+    {
+      "epoch": 12,
+      "train_loss": 2.84417,
+      "train_policy_acc": 0.558,
+      "train_value_mse": 0.15646,
+      "train_belief_loss": 3.19689,
+      "val_loss": 2.91842,
+      "val_policy_acc": 0.5872,
+      "val_value_mse": 0.19385,
+      "val_belief_loss": 3.19993
+    },
+    {
+      "epoch": 13,
+      "train_loss": 2.84836,
+      "train_policy_acc": 0.5469,
+      "train_value_mse": 0.16579,
+      "train_belief_loss": 3.19456,
+      "val_loss": 2.83069,
+      "val_policy_acc": 0.5911,
+      "val_value_mse": 0.17637,
+      "val_belief_loss": 3.21132
+    },
+    {
+      "epoch": 14,
+      "train_loss": 2.78123,
+      "train_policy_acc": 0.5625,
+      "train_value_mse": 0.13874,
+      "train_belief_loss": 3.18579,
+      "val_loss": 2.79361,
+      "val_policy_acc": 0.5911,
+      "val_value_mse": 0.16879,
+      "val_belief_loss": 3.19648
+    },
+    {
+      "epoch": 15,
+      "train_loss": 2.84384,
+      "train_policy_acc": 0.548,
+      "train_value_mse": 0.13563,
+      "train_belief_loss": 3.18519,
+      "val_loss": 2.76908,
+      "val_policy_acc": 0.5872,
+      "val_value_mse": 0.16449,
+      "val_belief_loss": 3.22125
+    },
+    {
+      "epoch": 16,
+      "train_loss": 2.8483,
+      "train_policy_acc": 0.5714,
+      "train_value_mse": 0.13355,
+      "train_belief_loss": 3.18516,
+      "val_loss": 2.75241,
+      "val_policy_acc": 0.5951,
+      "val_value_mse": 0.1645,
+      "val_belief_loss": 3.21562
+    },
+    {
+      "epoch": 17,
+      "train_loss": 2.72562,
+      "train_policy_acc": 0.5558,
+      "train_value_mse": 0.14617,
+      "train_belief_loss": 3.16698,
+      "val_loss": 2.74003,
+      "val_policy_acc": 0.5911,
+      "val_value_mse": 0.15616,
+      "val_belief_loss": 3.17377
+    },
+    {
+      "epoch": 18,
+      "train_loss": 2.79965,
+      "train_policy_acc": 0.5725,
+      "train_value_mse": 0.12702,
+      "train_belief_loss": 3.15377,
+      "val_loss": 2.68896,
+      "val_policy_acc": 0.5964,
+      "val_value_mse": 0.15805,
+      "val_belief_loss": 3.16654
+    },
+    {
+      "epoch": 19,
+      "train_loss": 2.71852,
+      "train_policy_acc": 0.5703,
+      "train_value_mse": 0.12184,
+      "train_belief_loss": 3.14797,
+      "val_loss": 2.69364,
+      "val_policy_acc": 0.5951,
+      "val_value_mse": 0.15824,
+      "val_belief_loss": 3.17923
+    }
+  ],
+  "baseline_metrics": {
+    "epochs": 20,
+    "n_train": 866,
+    "n_val": 216,
+    "n_search": 80,
+    "train_loss": 2.73102,
+    "train_policy_acc": 0.5513,
+    "train_value_mse": 0.13686,
+    "train_belief_loss": 3.15342,
+    "val_loss": 2.70504,
+    "val_policy_acc": 0.5742,
+    "val_value_mse": 0.17383,
+    "val_belief_loss": 3.18127
+  },
+  "baseline_history": [
+    {
+      "epoch": 0,
+      "train_loss": 5.55648,
+      "train_policy_acc": 0.4364,
+      "train_value_mse": 0.2615,
+      "train_belief_loss": 5.77537,
+      "val_loss": 4.34765,
+      "val_policy_acc": 0.5247,
+      "val_value_mse": 0.19995,
+      "val_belief_loss": 4.30564
+    },
+    {
+      "epoch": 1,
+      "train_loss": 3.78148,
+      "train_policy_acc": 0.5647,
+      "train_value_mse": 0.17999,
+      "train_belief_loss": 3.67171,
+      "val_loss": 3.62029,
+      "val_policy_acc": 0.6107,
+      "val_value_mse": 0.20032,
+      "val_belief_loss": 3.42802
+    },
+    {
+      "epoch": 2,
+      "train_loss": 3.59939,
+      "train_policy_acc": 0.6049,
+      "train_value_mse": 0.17448,
+      "train_belief_loss": 3.44619,
+      "val_loss": 3.51106,
+      "val_policy_acc": 0.6146,
+      "val_value_mse": 0.20056,
+      "val_belief_loss": 3.39347
+    },
+    {
+      "epoch": 3,
+      "train_loss": 3.488,
+      "train_policy_acc": 0.6038,
+      "train_value_mse": 0.17679,
+      "train_belief_loss": 3.42561,
+      "val_loss": 3.41852,
+      "val_policy_acc": 0.6107,
+      "val_value_mse": 0.20017,
+      "val_belief_loss": 3.3773
+    },
+    {
+      "epoch": 4,
+      "train_loss": 3.30385,
+      "train_policy_acc": 0.6328,
+      "train_value_mse": 0.16769,
+      "train_belief_loss": 3.37822,
+      "val_loss": 3.23246,
+      "val_policy_acc": 0.5964,
+      "val_value_mse": 0.2001,
+      "val_belief_loss": 3.34563
+    },
+    {
+      "epoch": 5,
+      "train_loss": 3.23812,
+      "train_policy_acc": 0.5893,
+      "train_value_mse": 0.16639,
+      "train_belief_loss": 3.37962,
+      "val_loss": 3.13527,
+      "val_policy_acc": 0.6107,
+      "val_value_mse": 0.20605,
+      "val_belief_loss": 3.32414
+    },
+    {
+      "epoch": 6,
+      "train_loss": 3.09319,
+      "train_policy_acc": 0.5692,
+      "train_value_mse": 0.16626,
+      "train_belief_loss": 3.33318,
+      "val_loss": 3.10326,
+      "val_policy_acc": 0.5391,
+      "val_value_mse": 0.21821,
+      "val_belief_loss": 3.28944
+    },
+    {
+      "epoch": 7,
+      "train_loss": 3.0291,
+      "train_policy_acc": 0.5268,
+      "train_value_mse": 0.16605,
+      "train_belief_loss": 3.30763,
+      "val_loss": 3.08933,
+      "val_policy_acc": 0.5547,
+      "val_value_mse": 0.20084,
+      "val_belief_loss": 3.26126
+    },
+    {
+      "epoch": 8,
+      "train_loss": 3.00273,
+      "train_policy_acc": 0.5413,
+      "train_value_mse": 0.16104,
+      "train_belief_loss": 3.25763,
+      "val_loss": 3.04642,
+      "val_policy_acc": 0.5469,
+      "val_value_mse": 0.20006,
+      "val_belief_loss": 3.22327
+    },
+    {
+      "epoch": 9,
+      "train_loss": 2.93347,
+      "train_policy_acc": 0.5424,
+      "train_value_mse": 0.17562,
+      "train_belief_loss": 3.2462,
+      "val_loss": 3.01855,
+      "val_policy_acc": 0.569,
+      "val_value_mse": 0.19366,
+      "val_belief_loss": 3.21301
+    },
+    {
+      "epoch": 10,
+      "train_loss": 2.90845,
+      "train_policy_acc": 0.5592,
+      "train_value_mse": 0.17067,
+      "train_belief_loss": 3.21963,
+      "val_loss": 2.99394,
+      "val_policy_acc": 0.5846,
+      "val_value_mse": 0.18963,
+      "val_belief_loss": 3.21569
+    },
+    {
+      "epoch": 11,
+      "train_loss": 2.90812,
+      "train_policy_acc": 0.5391,
+      "train_value_mse": 0.16661,
+      "train_belief_loss": 3.23238,
+      "val_loss": 2.93114,
+      "val_policy_acc": 0.569,
+      "val_value_mse": 0.1924,
+      "val_belief_loss": 3.20939
+    },
+    {
+      "epoch": 12,
+      "train_loss": 2.84894,
+      "train_policy_acc": 0.5458,
+      "train_value_mse": 0.15403,
+      "train_belief_loss": 3.20287,
+      "val_loss": 2.9095,
+      "val_policy_acc": 0.5651,
+      "val_value_mse": 0.18446,
+      "val_belief_loss": 3.20249
+    },
+    {
+      "epoch": 13,
+      "train_loss": 2.84823,
+      "train_policy_acc": 0.5324,
+      "train_value_mse": 0.15888,
+      "train_belief_loss": 3.20234,
+      "val_loss": 2.83407,
+      "val_policy_acc": 0.569,
+      "val_value_mse": 0.17732,
+      "val_belief_loss": 3.2111
+    },
+    {
+      "epoch": 14,
+      "train_loss": 2.79066,
+      "train_policy_acc": 0.5536,
+      "train_value_mse": 0.14537,
+      "train_belief_loss": 3.19396,
+      "val_loss": 2.80189,
+      "val_policy_acc": 0.5807,
+      "val_value_mse": 0.1795,
+      "val_belief_loss": 3.19878
+    },
+    {
+      "epoch": 15,
+      "train_loss": 2.85922,
+      "train_policy_acc": 0.5379,
+      "train_value_mse": 0.14244,
+      "train_belief_loss": 3.19001,
+      "val_loss": 2.77346,
+      "val_policy_acc": 0.5768,
+      "val_value_mse": 0.17941,
+      "val_belief_loss": 3.23409
+    },
+    {
+      "epoch": 16,
+      "train_loss": 2.86283,
+      "train_policy_acc": 0.5714,
+      "train_value_mse": 0.1436,
+      "train_belief_loss": 3.19585,
+      "val_loss": 2.76857,
+      "val_policy_acc": 0.5846,
+      "val_value_mse": 0.17663,
+      "val_belief_loss": 3.23753
+    },
+    {
+      "epoch": 17,
+      "train_loss": 2.74503,
+      "train_policy_acc": 0.5446,
+      "train_value_mse": 0.15088,
+      "train_belief_loss": 3.18558,
+      "val_loss": 2.7394,
+      "val_policy_acc": 0.5781,
+      "val_value_mse": 0.1692,
+      "val_belief_loss": 3.17889
+    },
+    {
+      "epoch": 18,
+      "train_loss": 2.8262,
+      "train_policy_acc": 0.558,
+      "train_value_mse": 0.13994,
+      "train_belief_loss": 3.16199,
+      "val_loss": 2.6964,
+      "val_policy_acc": 0.582,
+      "val_value_mse": 0.17677,
+      "val_belief_loss": 3.17697
+    },
+    {
+      "epoch": 19,
+      "train_loss": 2.73102,
+      "train_policy_acc": 0.5513,
+      "train_value_mse": 0.13686,
+      "train_belief_loss": 3.15342,
+      "val_loss": 2.70504,
+      "val_policy_acc": 0.5742,
+      "val_value_mse": 0.17383,
+      "val_belief_loss": 3.18127
+    }
+  ],
+  "checkpoints": {
+    "distill": "/home/ubuntuaaa/projects/genshin-GITCG/data/checkpoints/20261012T094651_distill_smoke_big_distill.pt",
+    "bc": "/home/ubuntuaaa/projects/genshin-GITCG/data/checkpoints/20261012T094651_distill_smoke_big_bc.pt"
+  },
+  "gate": {
+    "paired": {
+      "n_pairs": 8,
+      "n_shared": 8,
+      "n_pairs_dropped": 0,
+      "invalid_a": 0,
+      "invalid_b": 0,
+      "delta": 0.0,
+      "se": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "rate_a": 0.5,
+      "rate_b": 0.5,
+      "opponent_cluster_ci_low": 0.0,
+      "opponent_cluster_ci_high": 1.0,
+      "cluster_boot_ci_low": 0.0,
+      "cluster_boot_ci_high": 1.0,
+      "per_opponent": {
+        "natlan_battleship": {
+          "n": 8,
+          "delta": 0.0
+        }
+      },
+      "significant_positive": false
+    },
+    "noninferiority": {
+      "tolerance": 0.02,
+      "ci_low": 0.0,
+      "accept": true
+    },
+    "merge_gate": {
+      "available": true,
+      "tolerance": 0.02,
+      "noninferior": true,
+      "clean": true,
+      "accept": true
+    },
+    "candidate_summary": {
+      "pooled_rate": 0.5,
+      "pooled_ci_low": 0.21521252682444186,
+      "pooled_ci_high": 0.7847874731755582,
+      "games": 8,
+      "quality": {
+        "decisions": 490,
+        "fallbacks": 0,
+        "fallback_rate": 0.0,
+        "illegal_rate": 0.0,
+        "mean_rounds": 9.75,
+        "mean_decisions_per_round": 6.282051282051282,
+        "draws": 0,
+        "draw_rate": 0.0,
+        "errors": 0,
+        "truncated": 0,
+        "invalid": 0,
+        "error_rate": 0.0,
+        "opponents_covered": 1
+      }
+    },
+    "candidate_gates": {
+      "pooled_threshold": 0.5,
+      "pooled_pass": true,
+      "strict_ci": false,
+      "floor": 0.45,
+      "floor_mode": "point",
+      "floor_pass": true,
+      "floor_violations": [],
+      "clean_pass": true,
+      "pass": true
+    }
+  },
+  "timing": {
+    "collect_seconds": 122.0838651759841
+  },
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}

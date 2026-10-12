@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from reps.observation_encoder import BeliefTarget, EncodedObservation
-from train.collect import CollectSpec, collect
+from train.collect import CollectSpec, CollectTask, SearchSpec, collect
 from train.data import (
     Sample,
     iter_task_records,
@@ -127,3 +127,51 @@ def test_collect_is_resumable(tmp_path: Path, monkeypatch):
     from train.data import load_samples
     samples = load_samples(tmp_path / "replays" / "t")
     assert len(samples) == first["samples"]
+
+
+# --------------------------------------------------------------------------- #
+# S-C search teacher (G6): spec wiring + engine smoke
+# --------------------------------------------------------------------------- #
+def test_search_spec_roundtrips_and_enters_fingerprint():
+    search = SearchSpec(iterations=3, depth=2, candidate_limit=4, max_searches=5, belief_samples=1)
+    assert SearchSpec.from_dict(search.as_dict()) == search
+    base = CollectSpec(deck="a", opponents=("b",), seeds=(0,))
+    with_search = CollectSpec(deck="a", opponents=("b",), seeds=(0,), search=search)
+    assert base.fingerprint() != with_search.fingerprint()  # search block is pinned
+    assert with_search.fingerprint() == with_search.fingerprint()
+    task = with_search.tasks()[0]
+    assert CollectTask.from_dict(task.as_dict()) == task
+    assert task.search == search
+
+
+@pytest.mark.slow
+def test_collect_search_samples_carries_teacher_targets():
+    from envs.fork_bridge import ForkBridge
+    from train.data import collect_search_samples
+    from envs.observation import default_encoder
+
+    with ForkBridge(workers=2) as bridge:
+        samples = collect_search_samples(
+            "superconduct_aggro",
+            "natlan_battleship",
+            (5,),
+            encoder=default_encoder(),
+            bridge=bridge,
+            iterations=2,
+            depth=1,
+            candidate_limit=2,
+            max_searches=1,
+            belief_samples=1,
+            request_types=("action",),
+        )
+    assert samples, "expected at least one encoded decision sample"
+    searched = [s for s in samples if s.policy_target is not None]
+    assert searched, "expected at least one solver-annotated decision"
+    for sample in searched:
+        assert len(sample.policy_target) == sample.n_options
+        assert sum(sample.policy_target) == pytest.approx(1.0)
+        assert sample.search_value is not None and -1.0 <= sample.search_value <= 1.0
+        # belief labels are captured (god view) for the belief head.
+        assert any(v > 0.0 for v in sample.observation.belief_target.group_hand_presence) or (
+            sample.observation.belief_target.hand_size > 0.0
+        )

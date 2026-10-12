@@ -45,6 +45,64 @@ SAMPLES_NAME = "samples.jsonl"
 
 
 @dataclass(frozen=True)
+class SearchSpec:
+    """MCCFR search-teacher knobs for a distillation collection (M3-CPU S-C).
+
+    When a :class:`CollectSpec` carries a ``search`` block the collector runs the
+    engine MCCFR adapter (``envs.cfr_search``) instead of the scripted-expert
+    behaviour-cloning teacher, and every searched decision is stored with its
+    teacher targets (root average strategy / root value / belief labels).
+    """
+
+    iterations: int = 8
+    depth: int = 1
+    candidate_limit: int | None = None
+    value_spec: str = ""
+    search_every: int = 1
+    max_searches: int | None = None
+    belief_root: bool = True
+    belief_samples: int = 2
+    request_types: tuple[str, ...] | None = None
+    bridge_workers: int = 2
+    # Label-only god view so the encoder fills belief/privileged targets.
+    capture_targets: bool = True
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "iterations": int(self.iterations),
+            "depth": int(self.depth),
+            "candidate_limit": None
+            if self.candidate_limit is None
+            else int(self.candidate_limit),
+            "value_spec": self.value_spec,
+            "search_every": int(self.search_every),
+            "max_searches": None if self.max_searches is None else int(self.max_searches),
+            "belief_root": bool(self.belief_root),
+            "belief_samples": int(self.belief_samples),
+            "request_types": None if self.request_types is None else list(self.request_types),
+            "bridge_workers": int(self.bridge_workers),
+            "capture_targets": bool(self.capture_targets),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "SearchSpec":
+        request_types = payload.get("request_types")
+        return cls(
+            iterations=int(payload.get("iterations", 8)),
+            depth=int(payload.get("depth", 1)),
+            candidate_limit=payload.get("candidate_limit"),
+            value_spec=payload.get("value_spec", ""),
+            search_every=int(payload.get("search_every", 1)),
+            max_searches=payload.get("max_searches"),
+            belief_root=bool(payload.get("belief_root", True)),
+            belief_samples=int(payload.get("belief_samples", 2)),
+            request_types=None if request_types is None else tuple(str(v) for v in request_types),
+            bridge_workers=int(payload.get("bridge_workers", 2)),
+            capture_targets=bool(payload.get("capture_targets", True)),
+        )
+
+
+@dataclass(frozen=True)
 class CollectTask:
     """One game to collect: teacher (player 0) vs opponent (player 1) at ``seed``."""
 
@@ -54,6 +112,7 @@ class CollectTask:
     seed: int
     teacher_spec: str | None = None
     opponent_spec: str | None = None
+    search: SearchSpec | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -63,10 +122,12 @@ class CollectTask:
             "seed": int(self.seed),
             "teacher_spec": self.teacher_spec,
             "opponent_spec": self.opponent_spec,
+            "search": None if self.search is None else self.search.as_dict(),
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "CollectTask":
+        search = payload.get("search")
         return cls(
             index=int(payload["index"]),
             deck=payload["deck"],
@@ -74,6 +135,7 @@ class CollectTask:
             seed=int(payload["seed"]),
             teacher_spec=payload.get("teacher_spec"),
             opponent_spec=payload.get("opponent_spec"),
+            search=None if search is None else SearchSpec.from_dict(search),
         )
 
 
@@ -85,8 +147,70 @@ def _worker_encoder():
     return default_encoder()
 
 
+_WORKER_BRIDGES: dict[int, Any] = {}
+
+
+def _worker_bridge(workers: int) -> Any:
+    """Per-process cached fork bridge for search-teacher collection.
+
+    The collector runs inside a ``train.collect_worker`` subprocess; the bridge
+    lazily spawns its own ``envs.fork_worker`` interpreters on first use. Caching
+    it here amortises the spawn across a shard instead of once per game.
+    """
+    key = max(1, int(workers))
+    bridge = _WORKER_BRIDGES.get(key)
+    if bridge is None:
+        from envs.fork_bridge import ForkBridge
+
+        bridge = ForkBridge(workers=key)
+        _WORKER_BRIDGES[key] = bridge
+    return bridge
+
+
+def run_search_collect_task(task: CollectTask) -> dict[str, Any]:
+    """Play one game with the MCCFR search teacher and return its samples."""
+    from train.data import collect_search_samples, sample_to_payload
+
+    search = task.search
+    assert search is not None
+    error: str | None = None
+    payloads: list[dict[str, Any]] = []
+    try:
+        samples = collect_search_samples(
+            task.deck,
+            task.opponent,
+            [task.seed],
+            encoder=_worker_encoder(),
+            bridge=_worker_bridge(search.bridge_workers),
+            iterations=search.iterations,
+            depth=search.depth,
+            candidate_limit=search.candidate_limit,
+            value_spec=search.value_spec,
+            search_every=search.search_every,
+            max_searches=search.max_searches,
+            belief_root=search.belief_root,
+            belief_samples=search.belief_samples,
+            request_types=search.request_types,
+            capture_targets=search.capture_targets,
+        )
+        payloads = [sample_to_payload(sample) for sample in samples]
+    except Exception as exc:  # engine/IO failures are otherwise swallowed by cffi
+        error = f"{type(exc).__name__}: {exc}"
+    return {
+        "index": task.index,
+        "deck": task.deck,
+        "opponent": task.opponent,
+        "seed": int(task.seed),
+        "error": error,
+        "samples": payloads,
+    }
+
+
 def run_collect_task(task: CollectTask) -> dict[str, Any]:
     """Play one game and return its encoded samples (worker body / sequential path)."""
+    if task.search is not None:
+        return run_search_collect_task(task)
+
     from train.data import collect_samples, sample_to_payload
 
     error: str | None = None
@@ -120,6 +244,7 @@ class CollectSpec:
     seeds: tuple[int, ...]
     teacher_spec: str | None = None
     opponent_spec: str | None = None
+    search: SearchSpec | None = None
 
     def tasks(self) -> list[CollectTask]:
         tasks: list[CollectTask] = []
@@ -134,6 +259,7 @@ class CollectSpec:
                         seed=int(seed),
                         teacher_spec=self.teacher_spec,
                         opponent_spec=self.opponent_spec,
+                        search=self.search,
                     )
                 )
                 index += 1
@@ -142,6 +268,16 @@ class CollectSpec:
     def fingerprint(self) -> str:
         from envs.observation import default_encoder
 
+        # ``bridge_workers`` is an execution knob, not a property of the data:
+        # exclude it so a resume with a different worker count is not refused.
+        search = self.search
+        search_spec = None
+        if search is not None:
+            search_spec = {
+                key: value
+                for key, value in search.as_dict().items()
+                if key != "bridge_workers"
+            }
         blob = json.dumps(
             {
                 "deck": self.deck,
@@ -149,6 +285,7 @@ class CollectSpec:
                 "seeds": list(self.seeds),
                 "teacher_spec": self.teacher_spec,
                 "opponent_spec": self.opponent_spec,
+                "search": search_spec,
                 "encoder": default_encoder().to_dict(),
             },
             sort_keys=True,
@@ -221,6 +358,7 @@ def collect(
                 "seeds": list(spec.seeds),
                 "teacher_spec": spec.teacher_spec,
                 "opponent_spec": spec.opponent_spec,
+                "search": None if spec.search is None else spec.search.as_dict(),
             },
             "engine_lock": load_engine_lock(),
             "runtime": runtime_metadata(),
@@ -306,6 +444,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--opponent-spec", default=None)
     parser.add_argument("--max-tasks", type=int, default=None)
     parser.add_argument("--tag", default="collect")
+    # S-C search teacher: with ``--search`` the collector runs MCCFR and stores
+    # solver targets instead of scripted-expert behaviour cloning.
+    parser.add_argument("--search", action="store_true", help="MCCFR search teacher (S-C distillation data)")
+    parser.add_argument("--iterations", type=int, default=8)
+    parser.add_argument("--depth", type=int, default=1)
+    parser.add_argument("--candidate-limit", type=int, default=None)
+    parser.add_argument("--value-spec", default="")
+    parser.add_argument("--search-every", type=int, default=1)
+    parser.add_argument("--max-searches", type=int, default=None)
+    parser.add_argument("--no-belief-root", action="store_true")
+    parser.add_argument("--belief-samples", type=int, default=2)
+    parser.add_argument("--bridge-workers", type=int, default=2)
     return parser
 
 
@@ -318,12 +468,26 @@ def main(argv: list[str] | None = None) -> int:
         opponents = opponent_names()
     if not opponents:
         raise SystemExit("provide --opponents ... or --all-opponents")
+    search = None
+    if args.search:
+        search = SearchSpec(
+            iterations=args.iterations,
+            depth=args.depth,
+            candidate_limit=args.candidate_limit,
+            value_spec=args.value_spec,
+            search_every=args.search_every,
+            max_searches=args.max_searches,
+            belief_root=not args.no_belief_root,
+            belief_samples=args.belief_samples,
+            bridge_workers=args.bridge_workers,
+        )
     spec = CollectSpec(
         deck=args.deck,
         opponents=tuple(opponents),
         seeds=tuple(range(args.seed_start, args.seed_start + args.seed_count)),
         teacher_spec=args.teacher_spec,
         opponent_spec=args.opponent_spec,
+        search=search,
     )
     summary = collect(spec, tag=args.tag, workers=args.workers, max_tasks=args.max_tasks)
     print(json.dumps(summary, ensure_ascii=False, indent=2))

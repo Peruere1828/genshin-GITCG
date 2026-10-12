@@ -120,11 +120,37 @@ LSF 模板：`scripts/cluster/lsf/collect.lsf`（单节点多 worker）、`colle
 - 测试 `tests/test_cfr_solver.py`：分布合法/归一、深度截断确定性、玩具 2×2 矩阵博弈收敛到
   已知混合 Nash（值 6/5）、bandit 收敛最优臂、prior 不删动作、belief 根对隐藏真值不变。
 
+### search-as-teacher 蒸馏 + belief 头（已实现，M3-CPU S-C，G6+G7）
+
+把 S-B 求解器的产出蒸馏回网络，构成 charter 的外环「搜索当老师、网络逼近求解器」：
+
+- **teacher 目标进 replay（G6）**：`train.collect --search`（`SearchSpec`，进 spec 指纹与可续跑 manifest）用
+  `envs.cfr_search.run_cfr_search_match` 打对局，`run_cfr_search_match` 新增 `built_sink`（逐决策回调）与
+  `full_state_for_agents`（仅填标签的上帝视角）。`train.data.collect_search_samples` 把每条**被搜索决策**写成
+  `Sample`：`policy_target`＝根平均策略按**语义 key** 重索引到编码选项序（`align_teacher_policy`，只剩 0 权而非删除，
+  §5.4）、`search_value`＝根价值（统一到 player-0 视角）、`action_values`（逐动作根价值）＋ `search_meta`；
+  未搜索的己方决策仍写硬 BC 样本（冷启动/辅助）。新字段可选，旧 replay 无损读取。
+- **belief 头（G7）**：`train/belief_head.py` 的 `BeliefHead` 输出 `belief_groups` 边缘（对手手牌/牌堆）、对手手牌
+  卡身份后验（softmax 覆盖编码器卡表）与两个标量（手牌数、爆发就绪数）；`belief_loss` 用 proper scoring
+  （Bernoulli 边缘 BCE + 卡身份 CE/KL + 标量 MSE），退化标签行进 mask。`train/model.py` 的 `CVPN`/`TransformerCVPN`
+  加 `belief_group_dim`/`belief_card_dim`/`belief_hidden`（默认 0 = 无头，旧 checkpoint 不变），新增
+  `forward_all→(logits, value, belief)`，`forward→(logits, value)` 二元组接口保持不变（policy/search 代码零改动）。
+- **蒸馏训练**：`train/distill.py` 的 `train_distill`：总损失＝`policy_coef·policy + value_coef·value + belief_coef·belief`；
+  policy 有 teacher 策略时走 soft CE（KL 至常数），否则回退硬 `teacher_index` CE；value 优先回归 `search_value`，否则
+  episode `value_target`；belief 走 proper scoring。`use_policy_target/use_search_value=False` 即退化为冷启动 BC。
+  `train/pipeline.run_distill_round`（`python -m train.pipeline --distill`）串起 collect→distill(带 belief 头)→eval→落盘。
+- **冒烟 + 门禁**：`scripts/run_distill_smoke.py` 跑一轮「采集→蒸馏→配对 A/B→落盘」，蒸馏臂对同数据冷启动 BC 臂
+  用 `scripts.eval_protocol` 的配对种子非劣门禁（`CI_low(Δ) ≥ −0.02`，`eval.scoreboard.merge_gate`）自动判定，
+  报告＋曲线落 `reports/train/distill_smoke_<ts>.json`。
+
 ## 待办（M3，按 `train/CONTINUAL_RESOLVING.md` 顺序，D15）
 
-1. **信念根化（G1+G3）**：`envs/fork_search.py` 搜索根换「公共信念 + 采样确定化」（禁用隐藏真值），`reps/belief_groups.py` 接入根与 update；**S-A 已交付**（`reps/belief.py`），剩余接入 MCCFR/belief 头。
+1. **信念根化（G1+G3）**：`envs/fork_search.py` 搜索根换「公共信念 + 采样确定化」（禁用隐藏真值），`reps/belief_groups.py` 接入根与 update；**S-A 已交付**（`reps/belief.py`），剩余接入 MCCFR 求解器的 belief 目标。
 2. **外采 MCCFR 脚手架（G2+G4）**：**S-B 已交付**（`train/cfr_solver.py`：regret matching + 根平均策略 + 根价值、深度受限 + CVPN frontier 价值）；剩余 S-C 把引擎转移 + frontier 接到 `ParticleGame`。
-3. **search-as-teacher（G6+G7）**：根平均策略/根价值/belief 目标写进 replay，训练改搜索蒸馏（policy CE + value 回归 + belief 评分），`train/model.py` 加 belief 头；
+3. **search-as-teacher（G6+G7）**：**S-C 已交付**——`envs/cfr_search.CFRSearchDecision` 导出根平均策略/根价值；
+   `train.collect --search`（`SearchSpec`）把每条被搜索决策的 teacher 目标写进 replay（语义 key 对齐、根价值、belief 标签）；
+   `train/belief_head.py` 加 belief 头（`belief_groups` 边缘 + 对手手牌卡后验 + 标量，proper scoring）；
+   `train/distill.py` 训练＝policy CE + value 回归 + belief 评分，专家 BC 降为冷启动/辅助；`scripts/run_distill_smoke.py` 冒烟。
 4. **M3-CPU 门禁（PLAN §4.3）**：「搜索+小网」纯策略对池整体 ≥ 50%（M2 口径）；搜索-蒸馏外环带候选 checkpoint 门禁（单测+泄漏+冒烟+评测不劣于）。
 
 规模放大留给机会算力（PLAN §5.1）：CVPN 放大（bf16/transformer）、`batched_inference`（按作业拉起，无常驻服务）、JS 侧批量 fork/rollout 吞吐优化。

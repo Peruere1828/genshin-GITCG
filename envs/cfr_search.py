@@ -516,6 +516,8 @@ def run_cfr_search_match(
     request_types: tuple[str, ...] | None = None,
     probe_fn: Any = None,
     record_final_state: bool = False,
+    built_sink: Any = None,
+    full_state_for_agents: bool = False,
 ) -> CfrMatchResult:
     """Play one game in which ``search_players`` solve each decision with MCCFR.
 
@@ -523,6 +525,14 @@ def run_cfr_search_match(
     snapshots, positional records); non-search players use an expert policy for
     their deck. Every searched decision logs a ``CFRSearchDecision`` with the root
     average strategy + root value (the S-C teacher targets).
+
+    ``built_sink(player, built, code)`` is called once per decision (after the
+    positional record is appended), so a distillation collector can join the
+    recorded decision contexts to the logged ``CFRSearchDecision`` targets by
+    ``(player, ordinal)``. ``full_state_for_agents`` gives each ``PolicyPlayer`` a
+    god-view ``context.full_state`` for **label** encoding only (belief/privileged
+    targets); the search root still comes from public-belief determinization and
+    only ``player_view`` feeds decision logic, so nothing leaks (charter §5.2).
     """
     from reps.action_hierarchy import reset_default_hierarchical_action_codebook
 
@@ -553,6 +563,8 @@ def run_cfr_search_match(
         for tracker in trackers:
             if tracker is not None:
                 _observe_public_record(tracker, player, built, code)
+        if built_sink is not None:
+            built_sink(int(player), built, int(code))
 
     context = SearchContext(
         bridge=bridge,
@@ -602,6 +614,11 @@ def run_cfr_search_match(
         policies.append(_RecordingPolicy(policy, player, context.records, on_decision=_on_decision))
 
     players = [PolicyPlayer(p, policies[p]) for p in (0, 1)]
+    if full_state_for_agents:
+        provider = lambda: game.state().json()  # noqa: E731 - label-only god view
+        players = [
+            PolicyPlayer(p, policies[p], full_state_provider=provider) for p in (0, 1)
+        ]
     game.set_player(0, players[0])
     game.set_player(1, players[1])
 

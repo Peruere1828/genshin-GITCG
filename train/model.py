@@ -19,6 +19,7 @@ import torch
 from torch import nn
 
 from reps.observation_encoder import EncodedObservation
+from train.belief_head import BeliefHead, BeliefOutput
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,13 @@ class CVPNConfig:
     option_hidden: int = 256
     value_hidden: int = 128
     dropout: float = 0.0
+    # M3-CPU S-C (G7): optional belief head. ``belief_group_dim`` = the
+    # ``reps.belief_groups`` marginal count, ``belief_card_dim`` = the encoder's
+    # card-vocabulary size. Both 0 (the default) keeps the historical
+    # policy+value network and loads pre-S-C checkpoints unchanged.
+    belief_group_dim: int = 0
+    belief_card_dim: int = 0
+    belief_hidden: int = 128
 
 
 class CVPN(nn.Module):
@@ -49,14 +57,23 @@ class CVPN(nn.Module):
         self.value_head = nn.Sequential(
             nn.Linear(d, config.value_hidden), nn.SiLU(), nn.Linear(config.value_hidden, 1)
         )
+        self.has_belief = bool(config.belief_group_dim or config.belief_card_dim)
+        if self.has_belief:
+            self.belief_head = BeliefHead(
+                d,
+                group_dim=config.belief_group_dim,
+                card_dim=config.belief_card_dim,
+                hidden=config.belief_hidden,
+            )
 
-    def forward(
+    def forward_all(
         self,
         tokens: torch.Tensor,          # (B, T, token_dim)
         token_mask: torch.Tensor,      # (B, T) bool
         options: torch.Tensor,         # (B, K, option_dim)
         option_mask: torch.Tensor,     # (B, K) bool
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, BeliefOutput | None]:
+        """Policy logits, value, and the (optional) belief prediction in one pass."""
         projected = self.token_proj(tokens)
         mask = token_mask.unsqueeze(-1).to(projected.dtype)
         denom = mask.sum(dim=1).clamp(min=1.0)
@@ -67,6 +84,17 @@ class CVPN(nn.Module):
         logits = self.option_scorer(torch.cat([repeated, option_vec], dim=-1)).squeeze(-1)
         logits = logits.masked_fill(~option_mask, float("-inf"))
         value = self.value_head(global_vec).squeeze(-1)  # (B,)
+        belief = self.belief_head(global_vec) if self.has_belief else None
+        return logits, value, belief
+
+    def forward(
+        self,
+        tokens: torch.Tensor,          # (B, T, token_dim)
+        token_mask: torch.Tensor,      # (B, T) bool
+        options: torch.Tensor,         # (B, K, option_dim)
+        option_mask: torch.Tensor,     # (B, K) bool
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        logits, value, _ = self.forward_all(tokens, token_mask, options, option_mask)
         return logits, value
 
     # -- persistence ------------------------------------------------------------
@@ -101,8 +129,11 @@ def checkpoint_encoder_config(path: str) -> dict | None:
     return payload.get("encoder_config")
 
 
-def config_for_encoder(encoder, **overrides) -> CVPNConfig:
+def config_for_encoder(encoder, *, belief: bool = False, **overrides) -> CVPNConfig:
     base = dict(token_dim=encoder.token_dim, option_dim=encoder.option_dim)
+    if belief:
+        base["belief_group_dim"] = int(encoder.belief_group_dim)
+        base["belief_card_dim"] = int(encoder.belief_histogram_dim)
     base.update(overrides)
     return CVPNConfig(**base)
 
@@ -147,6 +178,10 @@ class TransformerCVPNConfig:
     option_hidden: int = 256
     value_hidden: int = 128
     dropout: float = 0.0
+    # M3-CPU S-C (G7) belief head, mirroring :class:`CVPNConfig`.
+    belief_group_dim: int = 0
+    belief_card_dim: int = 0
+    belief_hidden: int = 128
 
 
 class TransformerCVPN(nn.Module):
@@ -187,14 +222,22 @@ class TransformerCVPN(nn.Module):
         self.value_head = nn.Sequential(
             nn.Linear(d, config.value_hidden), nn.SiLU(), nn.Linear(config.value_hidden, 1)
         )
+        self.has_belief = bool(config.belief_group_dim or config.belief_card_dim)
+        if self.has_belief:
+            self.belief_head = BeliefHead(
+                d,
+                group_dim=config.belief_group_dim,
+                card_dim=config.belief_card_dim,
+                hidden=config.belief_hidden,
+            )
 
-    def forward(
+    def forward_all(
         self,
         tokens: torch.Tensor,          # (B, T, token_dim)
         token_mask: torch.Tensor,      # (B, T) bool
         options: torch.Tensor,         # (B, K, option_dim)
         option_mask: torch.Tensor,     # (B, K) bool
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, BeliefOutput | None]:
         pad = ~token_mask  # True = ignore in attention
         encoded = self.encoder(self.token_proj(tokens), src_key_padding_mask=pad)  # (B,T,d)
 
@@ -209,6 +252,17 @@ class TransformerCVPN(nn.Module):
         logits = self.option_scorer(torch.cat([attended, option_vec], dim=-1)).squeeze(-1)
         logits = logits.masked_fill(~option_mask, float("-inf"))
         value = self.value_head(pooled).squeeze(-1)
+        belief = self.belief_head(pooled) if self.has_belief else None
+        return logits, value, belief
+
+    def forward(
+        self,
+        tokens: torch.Tensor,          # (B, T, token_dim)
+        token_mask: torch.Tensor,      # (B, T) bool
+        options: torch.Tensor,         # (B, K, option_dim)
+        option_mask: torch.Tensor,     # (B, K) bool
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        logits, value, _ = self.forward_all(tokens, token_mask, options, option_mask)
         return logits, value
 
     def save(self, path: str, encoder_config: dict | None = None) -> None:
@@ -231,8 +285,11 @@ class TransformerCVPN(nn.Module):
         return model
 
 
-def transformer_config_for_encoder(encoder, **overrides) -> TransformerCVPNConfig:
+def transformer_config_for_encoder(encoder, *, belief: bool = False, **overrides) -> TransformerCVPNConfig:
     base = dict(token_dim=encoder.token_dim, option_dim=encoder.option_dim)
+    if belief:
+        base["belief_group_dim"] = int(encoder.belief_group_dim)
+        base["belief_card_dim"] = int(encoder.belief_histogram_dim)
     base.update(overrides)
     return TransformerCVPNConfig(**base)
 

@@ -22,12 +22,21 @@
   客户端失败标 `degraded` + 连续失败中止、聚合报分/delta/`llm_quality`、流式续跑跳过已完成 + spec 指纹护栏 + 撕裂行容错。
 - `test_learning_curve.py`（L5.3）：曲线数据量过滤/去重/排序、固定验证留出集（各点同 holdout）、微型端到端扫描、`--eval-opponents` 缺 `--eval-seeds` 报错。
 - `test_fork_bridge.py`（L5.4）：fork 桥单元（位置重放 / 注入 / 前缀-rollout 策略、`ForkTask` JSON 往返、候选选取、搜索策略选优/平局取基座/预算开关）；慢测——纯重放 fork 进程内与**子进程桥**均逐字节复现活体终局、`run_search_match` 冒烟、在线搜索拒绝 `workers==0`。
-- `test_collect.py`（L5.6）：集群数据平面——观测/样本 JSON 往返无损、`CollectSpec` 任务网格与指纹稳定、撕裂行容错、replay 目录展平；慢测——并行采集 + 续跑不重复、`load_samples` 计数一致。
 - `test_belief_root.py`（M3-CPU S-A）：公共信念根化——`reps.belief` 补丁只改写隐藏区（合成隐藏 id、内联骰子）、
   belief 范围只依公共视图、确定化根对隐藏真值不变（可 fork 打完整局 + belief-root 搜索冒烟，slow）。
 - `test_cfr_solver.py`（M3-CPU S-B）：外采 MCCFR 脚手架——regret matching/先验回退与不删动作、分布归一、
   bandit 收敛最优臂、深度截断走 frontier 且同输入确定复现、玩具 2×2 矩阵博弈收敛到已知混合 Nash（值 6/5）、
   `belief_root_particles`/`public_infoset_key` 对隐藏真值不变（engine-free）。
+- `test_belief_head.py`（M3-CPU S-C，G7）：belief 头形状（`belief_groups` 边缘 + 对手手牌卡后验 + 标量）、
+  proper-scoring belief 损失在优化下降、全退化标签批次损失为 0、CVPN/Transformer 的 `forward_all` 形状与
+  `forward` 二元组兼容、belief 头 checkpoint 往返、旧 config（无 belief 字段）后向兼容（engine-free）。
+- `test_distill.py`（M3-CPU S-C，G6）：teacher 根策略按语义 key 重索引/归一/不删动作、样本 JSON 往返
+  （含 `policy_target`/`action_values`/`search_value`/`search_meta`）与旧格式缺字段容错、蒸馏损失数值 sanity
+  （soft 单热 == hard CE、value 目标 soft/hard 选择、总损失 == 系数加权分量和）、蒸馏训练损失/一致率/belief 损失下降、
+  冷启动 BC 退化、无 belief 头时 belief 损失为 0；慢测——`train.pipeline.run_distill_round` 端到端（真引擎评测）。
+- `test_collect.py`（L5.6 + S-C）：集群数据平面——观测/样本 JSON 往返无损、`CollectSpec` 任务网格与指纹稳定、
+  撕裂行容错、replay 目录展平；S-C 搜索 teacher 的 `SearchSpec` 往返 + 进 spec 指纹；慢测——并行采集 + 续跑不重复、
+  `load_samples` 计数一致、`collect_search_samples` 产出带 solver 目标（根策略归一、根价值、belief 标签）的样本。
 - `test_deck_corpus.py`（探索任务 1）：公开卡组语料——每条分享码经引擎编解码解出 3 角色 + 30 牌、
   `DeckSpec` 唯一且形状正确、loader 元数据/查找、分享码与存储 id 一致（需资产缓存，否则 skip）；
   语料 JSON 缺失（gitignore）时整个文件 skip，无网络。
