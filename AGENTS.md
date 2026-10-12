@@ -47,7 +47,7 @@
 
 - 并发统一走自建子进程协议（`python -m envs.rollout_worker` / `envs.fork_worker`，stdin/stdout JSON-lines，`cwd=仓库根`+`PYTHONPATH`）；父进程并发排空子进程 stdout 再发下一批。
 - 长任务结果流式落盘 + 按 `task_index` 断点续跑（arena 已实现）；长作业挂 tmux/setsid 跑。
-- 集群数据平面（CPU 采集 → 存储 → GPU 训练）：`python -m train.collect`（可续跑、一行一局、manifest 指纹护栏）写 `data/replays/<tag>/`；训练/学习曲线用 `--replays <dir...>` 读盘。LSF 模板见 `scripts/cluster/lsf/`，海量作业用 `collect_array.lsf`（每数组元素独立分片目录）；集群当前暂缓（D14，启用条件见 `scripts/cluster/README.md`）。
+- 集群数据平面（CPU 采集 → 存储 → GPU 训练）：`python -m train.collect`（可续跑、一行一局、manifest 指纹护栏）写 `data/replays/<tag>/`；采集可加 `--format compact [--no-privileged-state]`（fp16 base64，体积 0.54×/0.45×、编解码 2.6–3×，D23 数据先行 + A6；默认 `jsonl` 不变、读入透明兼容）。训练/学习曲线用 `--replays <dir...>` 读盘。LSF 模板见 `scripts/cluster/lsf/`，海量作业用 `collect_array.lsf`（每数组元素独立分片目录）；集群当前暂缓（D14，启用条件见 `scripts/cluster/README.md`）。
 - 对局确定性：`envs/match.py` 在 Python 侧按种子预洗牌并传 `NO_SHUFFLE=1`；每局开始调用 `reset_default_hierarchical_action_codebook()`。
 - 训练标签/embedding 用语义 key（`low_level_semantic_key_for_code`），不用裸 `action_code`（仅单局内稳定）。
 - policy spec 统一走 `envs.policy.build_policy`：`expert:<slug>` / `neural:<ckpt>[#t=<temp>]` / `heuristic` / `legal_random` / `random`；checkpoint 自带 encoder 配置，多进程 rollout/采集可直接用训练网络。
