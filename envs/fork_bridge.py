@@ -70,6 +70,15 @@ class ForkTask:
     max_steps: int = 5000
     tag: str = ""
     capture_terminal: bool = False
+    # "rollout" (default) forks + injects one option + rolls out to terminal.
+    # "probe" (S-C CFR search) replays *both* players' prefixes and stops at the
+    # next undecided decision, capturing that node's public info instead of
+    # rolling out (see ``envs.cfr_probe.run_probe_task``). This is the single-step
+    # transition the engine MCCFR adapter needs; it still forks only in a
+    # subprocess and still starts from an ``is_resumable()`` boundary.
+    kind: str = "rollout"
+    # Optional CVPN checkpoint for the probe's depth-limited frontier value.
+    value_spec: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -89,6 +98,8 @@ class ForkTask:
             "max_steps": int(self.max_steps),
             "tag": self.tag,
             "capture_terminal": bool(self.capture_terminal),
+            "kind": str(self.kind),
+            "value_spec": str(self.value_spec),
         }
 
     @classmethod
@@ -111,12 +122,20 @@ class ForkTask:
             max_steps=int(payload.get("max_steps", 5000)),
             tag=payload.get("tag", ""),
             capture_terminal=bool(payload.get("capture_terminal", False)),
+            kind=str(payload.get("kind", "rollout")),
+            value_spec=str(payload.get("value_spec", "")),
         )
 
 
 @dataclass(frozen=True)
 class ForkResult:
-    """Outcome of one branch (winner is ``None`` for a draw)."""
+    """Outcome of one branch (winner is ``None`` for a draw).
+
+    For ``kind == "probe"`` (:mod:`envs.cfr_probe`) the game is *not* rolled out;
+    instead the fields below ``terminal`` describe the next decision reached by
+    replaying the task's prefixes. ``winner``/``rounds`` then refer to the state
+    at that stopping point (winner is set only when the game finished first).
+    """
 
     index: int
     winner: int | None
@@ -125,6 +144,15 @@ class ForkResult:
     truncated: bool = False
     tag: str = ""
     terminal: str | None = None
+    kind: str = "rollout"
+    # -- probe fields (kind == "probe") ------------------------------------- #
+    acting_player: int | None = None
+    legal_options: tuple[int, ...] = ()
+    legal_keys: tuple[Any, ...] = ()
+    request_type: str | None = None
+    infoset_key: Any = None
+    node_terminal: bool = False
+    frontier_p0: float | None = None
 
     def outcome(self, perspective: int) -> float:
         if self.error is not None:
@@ -144,7 +172,45 @@ class ForkResult:
             truncated=bool(payload.get("truncated", False)),
             tag=payload.get("tag", ""),
             terminal=payload.get("terminal"),
+            kind=str(payload.get("kind", "rollout")),
+            acting_player=(
+                None
+                if payload.get("acting_player") is None
+                else int(payload["acting_player"])
+            ),
+            legal_options=tuple(int(i) for i in payload.get("legal_options", ())),
+            legal_keys=tuple(
+                _hashable_key(key) for key in payload.get("legal_keys", ())
+            ),
+            request_type=payload.get("request_type"),
+            infoset_key=(
+                None
+                if payload.get("infoset_key") is None
+                else _hashable_key(payload["infoset_key"])
+            ),
+            node_terminal=bool(payload.get("node_terminal", False)),
+            frontier_p0=(
+                None
+                if payload.get("frontier_p0") is None
+                else float(payload["frontier_p0"])
+            ),
         )
+
+
+def _jsonable_key(value: Any) -> Any:
+    """Convert a hashable semantic/infoset key into JSON-safe lists (tuples -> lists)."""
+    if isinstance(value, (tuple, list)):
+        return [_jsonable_key(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _jsonable_key(item) for key, item in value.items()}
+    return value
+
+
+def _hashable_key(value: Any) -> Any:
+    """Inverse of :func:`_jsonable_key`: nested lists -> tuples (stable/hashable)."""
+    if isinstance(value, (tuple, list)):
+        return tuple(_hashable_key(item) for item in value)
+    return value
 
 
 # --------------------------------------------------------------------------- #
@@ -226,6 +292,13 @@ def run_fork_task(task: ForkTask) -> dict[str, Any]:
     from envs.match import PolicyPlayer
     from envs.snapshot import capture_snapshot, fork_game
     from reps.action_hierarchy import reset_default_hierarchical_action_codebook
+
+    if str(task.kind) == "probe":
+        # S-C single-step fork: replay the prefixes and capture the next decision
+        # (no rollout). Imported lazily so the rollout path stays dependency-light.
+        from envs.cfr_probe import run_probe_task
+
+        return run_probe_task(task)
 
     # The codebook is process-global; reset so this fork's option orderings do not
     # depend on earlier tasks in the same worker (AGENTS.md replay determinism).
