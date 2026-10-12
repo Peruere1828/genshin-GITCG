@@ -85,6 +85,28 @@ LSF 模板：`scripts/cluster/lsf/collect.lsf`（单节点多 worker）、`colle
 `--teacher-spec`/`--opponent-spec` 支持任意 `build_policy` spec（含 `neural:<ckpt>`），
 故同一采集器可做脚本预热、网络自博弈、以及网络 vs 脚本 anchor 数据。
 
+### 紧凑载荷格式（A6，`--format compact`）
+
+落盘观测里稠密 float 数组（`option_features`/`token_features`/`privileged_state`/belief 直方图）
+原本逐值写成 JSON 文本，占单局体积 ~95% 且拖慢父进程序列化与训练读盘。`--format compact`
+把这几类字段改成 **base64 二进制 buffer + shape**（fp16 默认，`--compact-dtype float32` 可选），
+整数/布尔字段与「一局一行」信封不变，因此**续跑/断行容错照旧**；`train.data.load_samples`
+按字段自动识别两种格式（旧 JSONL 目录照常读）。
+
+- 体积：同一批对局 fp16 ≈ **0.54×**（`--no-privileged-state` ≈ **0.45×**）；fp32 ≈ 1.0×（体积不减，
+  但编解码 CPU 更省，纯为读盘/序列化加速）。
+- 默认仍是 `jsonl`（与现有 replay 完全一致，additive）；`format`/`compact_dtype`/`include_privileged_state`
+  **进 spec 指纹**——换格式 = 换指纹，需新 `--tag`。
+- 微基准与口径：`reports/train/collect_throughput_notes.md`（`python -m scripts.bench_payload_format`）。
+
+```bash
+python -m train.collect --deck superconduct_aggro --all-opponents \
+    --seed-start 0 --seed-count 100 --workers 48 --tag bc_c100 \
+    --format compact --no-privileged-state
+python -m train.pipeline --replays data/replays/bc_c100 --epochs 30 --tag cluster
+```
+
+
 ### replay-branch MC teacher（已实现，批量离线 teacher / 对照）
 
 `train/replay_branch.py`：整局对 `(卡组, 引擎种子, 动作序列)` 确定，所以任意决策点都能

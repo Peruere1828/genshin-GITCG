@@ -20,6 +20,12 @@ Usage::
         --opponents natlan_battleship dual_mualani_stacks \
         --seed-start 0 --seed-count 200 --workers 48 --tag coolstart
     # resume = same command again; completed games are skipped.
+
+    # A6: same job, compact on-disk payload (~2.4x smaller, faster to write/read):
+    python -m train.collect --deck superconduct_aggro --all-opponents \
+        --seed-start 0 --seed-count 200 --workers 48 --tag coolstart_c \
+        --format compact --compact-dtype float16 --no-privileged-state
+    # readers auto-detect the format (train.data.load_samples handles both).
 """
 
 from __future__ import annotations
@@ -113,6 +119,12 @@ class CollectTask:
     teacher_spec: str | None = None
     opponent_spec: str | None = None
     search: SearchSpec | None = None
+    # On-disk payload format (A6). ``jsonl`` is the historical dense-list format;
+    # ``compact`` packs dense float arrays as base64 fp16/fp32 buffers. Kept on
+    # the task so the worker serializes in the requested format directly.
+    payload_format: str = "jsonl"
+    compact_dtype: str = "float16"
+    include_privileged_state: bool = True
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -123,6 +135,9 @@ class CollectTask:
             "teacher_spec": self.teacher_spec,
             "opponent_spec": self.opponent_spec,
             "search": None if self.search is None else self.search.as_dict(),
+            "payload_format": self.payload_format,
+            "compact_dtype": self.compact_dtype,
+            "include_privileged_state": bool(self.include_privileged_state),
         }
 
     @classmethod
@@ -136,6 +151,9 @@ class CollectTask:
             teacher_spec=payload.get("teacher_spec"),
             opponent_spec=payload.get("opponent_spec"),
             search=None if search is None else SearchSpec.from_dict(search),
+            payload_format=payload.get("payload_format", "jsonl"),
+            compact_dtype=payload.get("compact_dtype", "float16"),
+            include_privileged_state=bool(payload.get("include_privileged_state", True)),
         )
 
 
@@ -167,9 +185,21 @@ def _worker_bridge(workers: int) -> Any:
     return bridge
 
 
+def _payload_for(task: CollectTask, sample: Any) -> dict[str, Any]:
+    """Serialize one sample in the task's requested payload format (A6)."""
+    from train.data import sample_to_payload
+
+    return sample_to_payload(
+        sample,
+        format=task.payload_format,
+        compact_dtype=task.compact_dtype,
+        include_privileged_state=task.include_privileged_state,
+    )
+
+
 def run_search_collect_task(task: CollectTask) -> dict[str, Any]:
     """Play one game with the MCCFR search teacher and return its samples."""
-    from train.data import collect_search_samples, sample_to_payload
+    from train.data import collect_search_samples
 
     search = task.search
     assert search is not None
@@ -193,7 +223,7 @@ def run_search_collect_task(task: CollectTask) -> dict[str, Any]:
             request_types=search.request_types,
             capture_targets=search.capture_targets,
         )
-        payloads = [sample_to_payload(sample) for sample in samples]
+        payloads = [_payload_for(task, sample) for sample in samples]
     except Exception as exc:  # engine/IO failures are otherwise swallowed by cffi
         error = f"{type(exc).__name__}: {exc}"
     return {
@@ -211,7 +241,7 @@ def run_collect_task(task: CollectTask) -> dict[str, Any]:
     if task.search is not None:
         return run_search_collect_task(task)
 
-    from train.data import collect_samples, sample_to_payload
+    from train.data import collect_samples
 
     error: str | None = None
     payloads: list[dict[str, Any]] = []
@@ -224,7 +254,7 @@ def run_collect_task(task: CollectTask) -> dict[str, Any]:
             teacher_spec=task.teacher_spec,
             opponent_spec=task.opponent_spec,
         )
-        payloads = [sample_to_payload(sample) for sample in samples]
+        payloads = [_payload_for(task, sample) for sample in samples]
     except Exception as exc:  # engine/IO failures are otherwise swallowed by cffi
         error = f"{type(exc).__name__}: {exc}"
     return {
@@ -245,6 +275,12 @@ class CollectSpec:
     teacher_spec: str | None = None
     opponent_spec: str | None = None
     search: SearchSpec | None = None
+    # A6 payload format. Part of the fingerprint: changing format (or dtype, or
+    # dumping privileged_state) is a different dataset, so a resume refuses and a
+    # fresh ``--tag`` must be used.
+    format: str = "jsonl"
+    compact_dtype: str = "float16"
+    include_privileged_state: bool = True
 
     def tasks(self) -> list[CollectTask]:
         tasks: list[CollectTask] = []
@@ -260,10 +296,24 @@ class CollectSpec:
                         teacher_spec=self.teacher_spec,
                         opponent_spec=self.opponent_spec,
                         search=self.search,
+                        payload_format=self.format,
+                        compact_dtype=self.compact_dtype,
+                        include_privileged_state=self.include_privileged_state,
                     )
                 )
                 index += 1
         return tasks
+
+    def format_block(self) -> dict[str, Any]:
+        block: dict[str, Any] = {
+            "format": self.format,
+            "compact_dtype": self.compact_dtype,
+        }
+        # Only compact honors the privileged-state flag, so a jsonl run that
+        # toggles it is still the same dataset (avoid a spurious resume refusal).
+        if self.format == "compact":
+            block["include_privileged_state"] = bool(self.include_privileged_state)
+        return block
 
     def fingerprint(self) -> str:
         from envs.observation import default_encoder
@@ -287,6 +337,10 @@ class CollectSpec:
                 "opponent_spec": self.opponent_spec,
                 "search": search_spec,
                 "encoder": default_encoder().to_dict(),
+                # Only the compact format adds the payload block, so a default
+                # jsonl spec keeps the *exact* pre-A6 fingerprint and existing
+                # replay dirs still resume (A6 is additive; PLAN discipline).
+                **({} if self.format == "jsonl" else {"payload": self.format_block()}),
             },
             sort_keys=True,
             ensure_ascii=False,
@@ -359,6 +413,7 @@ def collect(
                 "teacher_spec": spec.teacher_spec,
                 "opponent_spec": spec.opponent_spec,
                 "search": None if spec.search is None else spec.search.as_dict(),
+                **spec.format_block(),
             },
             "engine_lock": load_engine_lock(),
             "runtime": runtime_metadata(),
@@ -414,6 +469,7 @@ def collect(
         "errors": total_errors,
         "ran_this_call": written["games"],
         "manifest": str(manifest_path),
+        "format": spec.format,
     }
     if progress:
         print(
@@ -456,6 +512,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-belief-root", action="store_true")
     parser.add_argument("--belief-samples", type=int, default=2)
     parser.add_argument("--bridge-workers", type=int, default=2)
+    # A6 compact on-disk payload: same line-per-game envelope, dense float arrays
+    # packed as base64 fp16/fp32 buffers. Default ``jsonl`` keeps the historical
+    # format byte-for-byte.
+    parser.add_argument(
+        "--format",
+        choices=("jsonl", "compact"),
+        default="jsonl",
+        help="payload format: jsonl (historical, dense lists) or compact (base64 fp16 buffers)",
+    )
+    parser.add_argument(
+        "--compact-dtype",
+        choices=("float16", "float32"),
+        default="float16",
+        help="buffer precision for --format compact (float16 halves size, lossy ~1e-3)",
+    )
+    parser.add_argument(
+        "--no-privileged-state",
+        action="store_true",
+        help="drop the (large) privileged_state vector from compact payloads",
+    )
     return parser
 
 
@@ -488,6 +564,9 @@ def main(argv: list[str] | None = None) -> int:
         teacher_spec=args.teacher_spec,
         opponent_spec=args.opponent_spec,
         search=search,
+        format=args.format,
+        compact_dtype=args.compact_dtype,
+        include_privileged_state=not args.no_privileged_state,
     )
     summary = collect(spec, tag=args.tag, workers=args.workers, max_tasks=args.max_tasks)
     print(json.dumps(summary, ensure_ascii=False, indent=2))

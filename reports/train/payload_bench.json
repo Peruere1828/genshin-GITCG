@@ -1,0 +1,71 @@
+{
+  "source": "data/replays/datafirst_bc_sa500",
+  "games": 60,
+  "samples_per_game": 38,
+  "rows": [
+    {
+      "format": "jsonl",
+      "dtype": "float16",
+      "privileged_state": true,
+      "games": 60,
+      "samples": 3407,
+      "bytes_per_game": 1752846.8666666667,
+      "bytes_per_sample": 30869.037863222777,
+      "total_MB": 105.170812,
+      "encode_s": 2.4735,
+      "decode_s": 3.5016,
+      "encode_MB/s": 42.5,
+      "decode_MB/s": 30.0,
+      "encode_samples/s": 1377.4,
+      "decode_samples/s": 973.0
+    },
+    {
+      "format": "compact",
+      "dtype": "float32",
+      "privileged_state": true,
+      "games": 60,
+      "samples": 3407,
+      "bytes_per_game": 1761327.45,
+      "bytes_per_sample": 31018.387731141767,
+      "total_MB": 105.679647,
+      "encode_s": 1.2406,
+      "decode_s": 1.8899,
+      "encode_MB/s": 85.2,
+      "decode_MB/s": 55.9,
+      "encode_samples/s": 2746.3,
+      "decode_samples/s": 1802.8
+    },
+    {
+      "format": "compact",
+      "dtype": "float16",
+      "privileged_state": true,
+      "games": 60,
+      "samples": 3407,
+      "bytes_per_game": 942747.65,
+      "bytes_per_sample": 16602.541532139712,
+      "total_MB": 56.564859,
+      "encode_s": 0.9386,
+      "decode_s": 1.7795,
+      "encode_MB/s": 60.3,
+      "decode_MB/s": 31.8,
+      "encode_samples/s": 3629.9,
+      "decode_samples/s": 1914.6
+    },
+    {
+      "format": "compact",
+      "dtype": "float16",
+      "privileged_state": false,
+      "games": 60,
+      "samples": 3407,
+      "bytes_per_game": 783583.9666666667,
+      "bytes_per_sample": 13799.541532139712,
+      "total_MB": 47.015038,
+      "encode_s": 0.8109,
+      "decode_s": 1.4608,
+      "encode_MB/s": 58.0,
+      "decode_MB/s": 32.2,
+      "encode_samples/s": 4201.3,
+      "decode_samples/s": 2332.2
+    }
+  ]
+}
