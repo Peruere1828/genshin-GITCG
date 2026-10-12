@@ -1,0 +1,1222 @@
+{
+  "generated": "2026-10-12T11:59:01",
+  "question": "Can engine MCCFR search (D22 follow-up) significantly beat the expert/BC control at an affordable budget? Paired seeds, pure policy.",
+  "ladder_subset": {
+    "note": "6 opponents (spread of expert difficulty) x 6 seeds = 36 pairs/rung",
+    "opponents": [
+      "unyielding_geo",
+      "double_geo_navia",
+      "electrocharged_moon",
+      "dvalin_bonk",
+      "nahida_kokomi_raiden",
+      "natlan_battleship"
+    ],
+    "rungs": {
+      "ladder_A_i4_d1_c2_ms8": {
+        "tag": "ladder_A_i4_d1_c2_ms8",
+        "budget": "i4_d1_c2_ms8_bs1",
+        "spec": {
+          "deck": "superconduct_aggro",
+          "opponents": [
+            "unyielding_geo",
+            "double_geo_navia",
+            "electrocharged_moon",
+            "dvalin_bonk",
+            "nahida_kokomi_raiden",
+            "natlan_battleship"
+          ],
+          "seeds": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "iterations": 4,
+          "depth": 1,
+          "candidate_limit": 2,
+          "belief_root": true,
+          "belief_samples": 1,
+          "max_searches": 8,
+          "search_every": 1,
+          "request_types": [
+            "action"
+          ]
+        },
+        "matches": 72,
+        "pooled_expert": 0.4305555555555556,
+        "pooled_cfr": 0.3888888888888889,
+        "expert_wilson": [
+          0.28335123580498595,
+          0.5911517962017607
+        ],
+        "cfr_wilson": [
+          0.24784655417822943,
+          0.5513582970325652
+        ],
+        "paired_cfr_minus_expert": {
+          "n_pairs": 36,
+          "n_shared": 36,
+          "n_pairs_dropped": 0,
+          "invalid_a": 0,
+          "invalid_b": 0,
+          "delta": -0.041666666666666664,
+          "se": 0.0899183933370557,
+          "ci_low": -0.21790671760729582,
+          "ci_high": 0.1345733842739625,
+          "rate_a": 0.3888888888888889,
+          "rate_b": 0.4305555555555556,
+          "opponent_cluster_ci_low": -0.19566855721242157,
+          "opponent_cluster_ci_high": 0.11233522387908826,
+          "cluster_boot_ci_low": -0.13888888888888887,
+          "cluster_boot_ci_high": 0.06944444444444443,
+          "per_opponent": {
+            "double_geo_navia": {
+              "n": 6,
+              "delta": 0.08333333333333333
+            },
+            "dvalin_bonk": {
+              "n": 6,
+              "delta": -0.16666666666666666
+            },
+            "electrocharged_moon": {
+              "n": 6,
+              "delta": 0.16666666666666666
+            },
+            "nahida_kokomi_raiden": {
+              "n": 6,
+              "delta": -0.16666666666666666
+            },
+            "natlan_battleship": {
+              "n": 6,
+              "delta": -0.16666666666666666
+            },
+            "unyielding_geo": {
+              "n": 6,
+              "delta": 0.0
+            }
+          },
+          "significant_positive": false
+        },
+        "cost": {
+          "workers": 6,
+          "bridge_workers": 1,
+          "cfr_games": 36,
+          "expert_games": 36,
+          "cfr_wall_total_s": 363.3,
+          "expert_wall_total_s": 256.1,
+          "cfr_wall_per_game_s": 10.092,
+          "expert_wall_per_game_s": 7.113,
+          "total_searches": 288,
+          "searches_per_game": 8.0,
+          "seconds_per_search_mean": 0.372,
+          "seconds_per_search_median": 0.355,
+          "cfr_serial_core_hours": 0.101
+        },
+        "change": {
+          "cfr_games": 36,
+          "searched_decisions": 288,
+          "changed_decisions": 208,
+          "change_rate": 0.7222,
+          "games_with_any_change": 36,
+          "mean_changed_per_game": 5.78
+        },
+        "wall_seconds": 110.4
+      },
+      "ladder_B_i8_d1_c4_ms8": {
+        "tag": "ladder_B_i8_d1_c4_ms8",
+        "budget": "i8_d1_c4_ms8_bs1",
+        "spec": {
+          "deck": "superconduct_aggro",
+          "opponents": [
+            "unyielding_geo",
+            "double_geo_navia",
+            "electrocharged_moon",
+            "dvalin_bonk",
+            "nahida_kokomi_raiden",
+            "natlan_battleship"
+          ],
+          "seeds": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "iterations": 8,
+          "depth": 1,
+          "candidate_limit": 4,
+          "belief_root": true,
+          "belief_samples": 1,
+          "max_searches": 8,
+          "search_every": 1,
+          "request_types": [
+            "action"
+          ]
+        },
+        "matches": 72,
+        "pooled_expert": 0.4305555555555556,
+        "pooled_cfr": 0.3888888888888889,
+        "expert_wilson": [
+          0.28335123580498595,
+          0.5911517962017607
+        ],
+        "cfr_wilson": [
+          0.24784655417822943,
+          0.5513582970325652
+        ],
+        "paired_cfr_minus_expert": {
+          "n_pairs": 36,
+          "n_shared": 36,
+          "n_pairs_dropped": 0,
+          "invalid_a": 0,
+          "invalid_b": 0,
+          "delta": -0.041666666666666664,
+          "se": 0.08061027151062,
+          "ci_low": -0.19966279882748186,
+          "ci_high": 0.11632946549414855,
+          "rate_a": 0.3888888888888889,
+          "rate_b": 0.4305555555555556,
+          "opponent_cluster_ci_low": -0.31125867129279305,
+          "opponent_cluster_ci_high": 0.2279253379594597,
+          "cluster_boot_ci_low": -0.2222222222222222,
+          "cluster_boot_ci_high": 0.16666666666666666,
+          "per_opponent": {
+            "double_geo_navia": {
+              "n": 6,
+              "delta": 0.08333333333333333
+            },
+            "dvalin_bonk": {
+              "n": 6,
+              "delta": -0.3333333333333333
+            },
+            "electrocharged_moon": {
+              "n": 6,
+              "delta": 0.3333333333333333
+            },
+            "nahida_kokomi_raiden": {
+              "n": 6,
+              "delta": -0.3333333333333333
+            },
+            "natlan_battleship": {
+              "n": 6,
+              "delta": 0.0
+            },
+            "unyielding_geo": {
+              "n": 6,
+              "delta": 0.0
+            }
+          },
+          "significant_positive": false
+        },
+        "cost": {
+          "workers": 6,
+          "bridge_workers": 1,
+          "cfr_games": 36,
+          "expert_games": 36,
+          "cfr_wall_total_s": 368.9,
+          "expert_wall_total_s": 233.5,
+          "cfr_wall_per_game_s": 10.248,
+          "expert_wall_per_game_s": 6.486,
+          "total_searches": 288,
+          "searches_per_game": 8.0,
+          "seconds_per_search_mean": 0.47,
+          "seconds_per_search_median": 0.486,
+          "cfr_serial_core_hours": 0.102
+        },
+        "change": {
+          "cfr_games": 36,
+          "searched_decisions": 288,
+          "changed_decisions": 226,
+          "change_rate": 0.7847,
+          "games_with_any_change": 36,
+          "mean_changed_per_game": 6.28
+        },
+        "wall_seconds": 107.8
+      },
+      "ladder_C_i16_d1_c4_ms8": {
+        "tag": "ladder_C_i16_d1_c4_ms8",
+        "budget": "i16_d1_c4_ms8_bs1",
+        "spec": {
+          "deck": "superconduct_aggro",
+          "opponents": [
+            "unyielding_geo",
+            "double_geo_navia",
+            "electrocharged_moon",
+            "dvalin_bonk",
+            "nahida_kokomi_raiden",
+            "natlan_battleship"
+          ],
+          "seeds": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "iterations": 16,
+          "depth": 1,
+          "candidate_limit": 4,
+          "belief_root": true,
+          "belief_samples": 1,
+          "max_searches": 8,
+          "search_every": 1,
+          "request_types": [
+            "action"
+          ]
+        },
+        "matches": 72,
+        "pooled_expert": 0.4305555555555556,
+        "pooled_cfr": 0.3888888888888889,
+        "expert_wilson": [
+          0.28335123580498595,
+          0.5911517962017607
+        ],
+        "cfr_wilson": [
+          0.24784655417822943,
+          0.5513582970325652
+        ],
+        "paired_cfr_minus_expert": {
+          "n_pairs": 36,
+          "n_shared": 36,
+          "n_pairs_dropped": 0,
+          "invalid_a": 0,
+          "invalid_b": 0,
+          "delta": -0.041666666666666664,
+          "se": 0.08061027151062,
+          "ci_low": -0.19966279882748186,
+          "ci_high": 0.11632946549414855,
+          "rate_a": 0.3888888888888889,
+          "rate_b": 0.4305555555555556,
+          "opponent_cluster_ci_low": -0.31125867129279305,
+          "opponent_cluster_ci_high": 0.2279253379594597,
+          "cluster_boot_ci_low": -0.2222222222222222,
+          "cluster_boot_ci_high": 0.16666666666666666,
+          "per_opponent": {
+            "double_geo_navia": {
+              "n": 6,
+              "delta": 0.08333333333333333
+            },
+            "dvalin_bonk": {
+              "n": 6,
+              "delta": -0.3333333333333333
+            },
+            "electrocharged_moon": {
+              "n": 6,
+              "delta": 0.3333333333333333
+            },
+            "nahida_kokomi_raiden": {
+              "n": 6,
+              "delta": -0.3333333333333333
+            },
+            "natlan_battleship": {
+              "n": 6,
+              "delta": 0.0
+            },
+            "unyielding_geo": {
+              "n": 6,
+              "delta": 0.0
+            }
+          },
+          "significant_positive": false
+        },
+        "cost": {
+          "workers": 6,
+          "bridge_workers": 1,
+          "cfr_games": 36,
+          "expert_games": 36,
+          "cfr_wall_total_s": 370.9,
+          "expert_wall_total_s": 233.9,
+          "cfr_wall_per_game_s": 10.302,
+          "expert_wall_per_game_s": 6.498,
+          "total_searches": 288,
+          "searches_per_game": 8.0,
+          "seconds_per_search_mean": 0.475,
+          "seconds_per_search_median": 0.495,
+          "cfr_serial_core_hours": 0.103
+        },
+        "change": {
+          "cfr_games": 36,
+          "searched_decisions": 288,
+          "changed_decisions": 226,
+          "change_rate": 0.7847,
+          "games_with_any_change": 36,
+          "mean_changed_per_game": 6.28
+        },
+        "wall_seconds": 107.7
+      },
+      "ladder_D_i8_d2_c4_ms4": {
+        "tag": "ladder_D_i8_d2_c4_ms4",
+        "budget": "i8_d2_c4_ms4_bs1",
+        "spec": {
+          "deck": "superconduct_aggro",
+          "opponents": [
+            "unyielding_geo",
+            "double_geo_navia",
+            "electrocharged_moon",
+            "dvalin_bonk",
+            "nahida_kokomi_raiden",
+            "natlan_battleship"
+          ],
+          "seeds": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "iterations": 8,
+          "depth": 2,
+          "candidate_limit": 4,
+          "belief_root": true,
+          "belief_samples": 1,
+          "max_searches": 4,
+          "search_every": 1,
+          "request_types": [
+            "action"
+          ]
+        },
+        "matches": 72,
+        "pooled_expert": 0.4305555555555556,
+        "pooled_cfr": 0.5277777777777778,
+        "expert_wilson": [
+          0.28335123580498595,
+          0.5911517962017607
+        ],
+        "cfr_wilson": [
+          0.3700567162693947,
+          0.6801420709279067
+        ],
+        "paired_cfr_minus_expert": {
+          "n_pairs": 36,
+          "n_shared": 36,
+          "n_pairs_dropped": 0,
+          "invalid_a": 0,
+          "invalid_b": 0,
+          "delta": 0.09722222222222222,
+          "se": 0.07405340320048223,
+          "ci_low": -0.047922448050722946,
+          "ci_high": 0.2423668924951674,
+          "rate_a": 0.5277777777777778,
+          "rate_b": 0.4305555555555556,
+          "opponent_cluster_ci_low": -0.04290739659351728,
+          "opponent_cluster_ci_high": 0.2373518410379617,
+          "cluster_boot_ci_low": 0.013888888888888888,
+          "cluster_boot_ci_high": 0.20833333333333334,
+          "per_opponent": {
+            "double_geo_navia": {
+              "n": 6,
+              "delta": 0.08333333333333333
+            },
+            "dvalin_bonk": {
+              "n": 6,
+              "delta": 0.0
+            },
+            "electrocharged_moon": {
+              "n": 6,
+              "delta": 0.3333333333333333
+            },
+            "nahida_kokomi_raiden": {
+              "n": 6,
+              "delta": 0.0
+            },
+            "natlan_battleship": {
+              "n": 6,
+              "delta": 0.0
+            },
+            "unyielding_geo": {
+              "n": 6,
+              "delta": 0.16666666666666666
+            }
+          },
+          "significant_positive": false
+        },
+        "cost": {
+          "workers": 6,
+          "bridge_workers": 1,
+          "cfr_games": 36,
+          "expert_games": 36,
+          "cfr_wall_total_s": 1133.0,
+          "expert_wall_total_s": 229.2,
+          "cfr_wall_per_game_s": 31.473,
+          "expert_wall_per_game_s": 6.366,
+          "total_searches": 144,
+          "searches_per_game": 4.0,
+          "seconds_per_search_mean": 6.277,
+          "seconds_per_search_median": 6.019,
+          "cfr_serial_core_hours": 0.315
+        },
+        "change": {
+          "cfr_games": 36,
+          "searched_decisions": 144,
+          "changed_decisions": 136,
+          "change_rate": 0.9444,
+          "games_with_any_change": 36,
+          "mean_changed_per_game": 3.78
+        },
+        "wall_seconds": 241.7
+      },
+      "ladder_E_i16_d2_c4_ms4": {
+        "tag": "ladder_E_i16_d2_c4_ms4",
+        "budget": "i16_d2_c4_ms4_bs1",
+        "spec": {
+          "deck": "superconduct_aggro",
+          "opponents": [
+            "unyielding_geo",
+            "double_geo_navia",
+            "electrocharged_moon",
+            "dvalin_bonk",
+            "nahida_kokomi_raiden",
+            "natlan_battleship"
+          ],
+          "seeds": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "iterations": 16,
+          "depth": 2,
+          "candidate_limit": 4,
+          "belief_root": true,
+          "belief_samples": 1,
+          "max_searches": 4,
+          "search_every": 1,
+          "request_types": [
+            "action"
+          ]
+        },
+        "matches": 72,
+        "pooled_expert": 0.4305555555555556,
+        "pooled_cfr": 0.3611111111111111,
+        "expert_wilson": [
+          0.28335123580498595,
+          0.5911517962017607
+        ],
+        "cfr_wilson": [
+          0.2247538679218132,
+          0.5242521960916802
+        ],
+        "paired_cfr_minus_expert": {
+          "n_pairs": 36,
+          "n_shared": 36,
+          "n_pairs_dropped": 0,
+          "invalid_a": 0,
+          "invalid_b": 0,
+          "delta": -0.06944444444444445,
+          "se": 0.06347345957600498,
+          "ci_low": -0.1938524252134142,
+          "ci_high": 0.0549635363245253,
+          "rate_a": 0.3611111111111111,
+          "rate_b": 0.4305555555555556,
+          "opponent_cluster_ci_low": -0.2299334422068387,
+          "opponent_cluster_ci_high": 0.09104455331794982,
+          "cluster_boot_ci_low": -0.16666666666666666,
+          "cluster_boot_ci_high": 0.041666666666666664,
+          "per_opponent": {
+            "double_geo_navia": {
+              "n": 6,
+              "delta": 0.08333333333333333
+            },
+            "dvalin_bonk": {
+              "n": 6,
+              "delta": -0.16666666666666666
+            },
+            "electrocharged_moon": {
+              "n": 6,
+              "delta": 0.16666666666666666
+            },
+            "nahida_kokomi_raiden": {
+              "n": 6,
+              "delta": -0.16666666666666666
+            },
+            "natlan_battleship": {
+              "n": 6,
+              "delta": -0.16666666666666666
+            },
+            "unyielding_geo": {
+              "n": 6,
+              "delta": -0.16666666666666666
+            }
+          },
+          "significant_positive": false
+        },
+        "cost": {
+          "workers": 6,
+          "bridge_workers": 1,
+          "cfr_games": 36,
+          "expert_games": 36,
+          "cfr_wall_total_s": 1184.8,
+          "expert_wall_total_s": 228.5,
+          "cfr_wall_per_game_s": 32.912,
+          "expert_wall_per_game_s": 6.348,
+          "total_searches": 144,
+          "searches_per_game": 4.0,
+          "seconds_per_search_mean": 6.641,
+          "seconds_per_search_median": 6.68,
+          "cfr_serial_core_hours": 0.329
+        },
+        "change": {
+          "cfr_games": 36,
+          "searched_decisions": 144,
+          "changed_decisions": 138,
+          "change_rate": 0.9583,
+          "games_with_any_change": 36,
+          "mean_changed_per_game": 3.83
+        },
+        "wall_seconds": 250.6
+      }
+    }
+  },
+  "full_pool": {
+    "note": "all 20 scripted opponents x 20 seeds = 400 pairs/rung (Wilson half-width ~0.05)",
+    "rungs": {
+      "ladder_fullB_i8_d1_c4_ms8": {
+        "tag": "ladder_fullB_i8_d1_c4_ms8",
+        "budget": "i8_d1_c4_ms8_bs1",
+        "spec": {
+          "deck": "superconduct_aggro",
+          "opponents": [
+            "natlan_battleship",
+            "klee_mavuika_mualani",
+            "superconduct_mika_attack",
+            "dual_mualani_stacks",
+            "superconduct_aggro",
+            "mualani_double_pyro",
+            "yelan_clorinde_ororon",
+            "electrocharged_moon",
+            "aywolfskirk",
+            "dvalin_bonk",
+            "shenhe_double_swirl",
+            "electro_manifestation_nuke",
+            "double_geo_navia",
+            "unyielding_geo",
+            "beidou_skirk_ayaka",
+            "skirk_chasca_freeze",
+            "skirk_ayaka_navia",
+            "ice_water_battleship",
+            "nahida_kokomi_raiden",
+            "trial_skirk_ayaka_navia"
+          ],
+          "seeds": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "iterations": 8,
+          "depth": 1,
+          "candidate_limit": 4,
+          "belief_root": true,
+          "belief_samples": 1,
+          "max_searches": 8,
+          "search_every": 1,
+          "request_types": [
+            "action"
+          ],
+          "value_spec": "",
+          "checkpoint": null
+        },
+        "matches": 800,
+        "pooled_expert": 0.56125,
+        "pooled_cfr": 0.495,
+        "expert_wilson": [
+          0.5122647437642298,
+          0.6090699577623093
+        ],
+        "cfr_wilson": [
+          0.44628359498707637,
+          0.5438115314189205
+        ],
+        "paired_cfr_minus_expert": {
+          "n_pairs": 400,
+          "n_shared": 400,
+          "n_pairs_dropped": 0,
+          "invalid_a": 0,
+          "invalid_b": 0,
+          "delta": -0.06625,
+          "se": 0.029775094195247133,
+          "ci_low": -0.12460918462268439,
+          "ci_high": -0.007890815377315626,
+          "rate_a": 0.495,
+          "rate_b": 0.56125,
+          "opponent_cluster_ci_low": -0.14276427826150023,
+          "opponent_cluster_ci_high": 0.01026427826150024,
+          "cluster_boot_ci_low": -0.1325,
+          "cluster_boot_ci_high": 0.007531249999999827,
+          "per_opponent": {
+            "aywolfskirk": {
+              "n": 20,
+              "delta": 0.2
+            },
+            "beidou_skirk_ayaka": {
+              "n": 20,
+              "delta": -0.25
+            },
+            "double_geo_navia": {
+              "n": 20,
+              "delta": 0.075
+            },
+            "dual_mualani_stacks": {
+              "n": 20,
+              "delta": -0.1
+            },
+            "dvalin_bonk": {
+              "n": 20,
+              "delta": -0.3
+            },
+            "electro_manifestation_nuke": {
+              "n": 20,
+              "delta": -0.15
+            },
+            "electrocharged_moon": {
+              "n": 20,
+              "delta": 0.15
+            },
+            "ice_water_battleship": {
+              "n": 20,
+              "delta": -0.15
+            },
+            "klee_mavuika_mualani": {
+              "n": 20,
+              "delta": 0.35
+            },
+            "mualani_double_pyro": {
+              "n": 20,
+              "delta": -0.1
+            },
+            "nahida_kokomi_raiden": {
+              "n": 20,
+              "delta": -0.25
+            },
+            "natlan_battleship": {
+              "n": 20,
+              "delta": -0.05
+            },
+            "shenhe_double_swirl": {
+              "n": 20,
+              "delta": -0.2
+            },
+            "skirk_ayaka_navia": {
+              "n": 20,
+              "delta": -0.15
+            },
+            "skirk_chasca_freeze": {
+              "n": 20,
+              "delta": -0.05
+            },
+            "superconduct_aggro": {
+              "n": 20,
+              "delta": -0.05
+            },
+            "superconduct_mika_attack": {
+              "n": 20,
+              "delta": -0.05
+            },
+            "trial_skirk_ayaka_navia": {
+              "n": 20,
+              "delta": -0.2
+            },
+            "unyielding_geo": {
+              "n": 20,
+              "delta": -0.1
+            },
+            "yelan_clorinde_ororon": {
+              "n": 20,
+              "delta": 0.05
+            }
+          },
+          "significant_positive": false
+        },
+        "cost": {
+          "workers": 6,
+          "bridge_workers": 1,
+          "cfr_games": 400,
+          "expert_games": 400,
+          "cfr_wall_total_s": 3456.9,
+          "expert_wall_total_s": 2037.3,
+          "cfr_wall_per_game_s": 8.642,
+          "expert_wall_per_game_s": 5.093,
+          "total_searches": 3198,
+          "searches_per_game": 8.0,
+          "seconds_per_search_mean": 0.444,
+          "seconds_per_search_median": 0.447,
+          "cfr_serial_core_hours": 0.96
+        },
+        "change": {
+          "cfr_games": 400,
+          "searched_decisions": 3198,
+          "changed_decisions": 2769,
+          "change_rate": 0.8659,
+          "games_with_any_change": 400,
+          "mean_changed_per_game": 6.92
+        },
+        "wall_seconds": 921.6
+      },
+      "ladder_fullD_i8_d2_c4_ms4": {
+        "tag": "ladder_fullD_i8_d2_c4_ms4",
+        "budget": "i8_d2_c4_ms4_bs1",
+        "spec": {
+          "deck": "superconduct_aggro",
+          "opponents": [
+            "natlan_battleship",
+            "klee_mavuika_mualani",
+            "superconduct_mika_attack",
+            "dual_mualani_stacks",
+            "superconduct_aggro",
+            "mualani_double_pyro",
+            "yelan_clorinde_ororon",
+            "electrocharged_moon",
+            "aywolfskirk",
+            "dvalin_bonk",
+            "shenhe_double_swirl",
+            "electro_manifestation_nuke",
+            "double_geo_navia",
+            "unyielding_geo",
+            "beidou_skirk_ayaka",
+            "skirk_chasca_freeze",
+            "skirk_ayaka_navia",
+            "ice_water_battleship",
+            "nahida_kokomi_raiden",
+            "trial_skirk_ayaka_navia"
+          ],
+          "seeds": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "iterations": 8,
+          "depth": 2,
+          "candidate_limit": 4,
+          "belief_root": true,
+          "belief_samples": 1,
+          "max_searches": 4,
+          "search_every": 1,
+          "request_types": [
+            "action"
+          ],
+          "value_spec": "",
+          "checkpoint": null
+        },
+        "matches": 800,
+        "pooled_expert": 0.56125,
+        "pooled_cfr": 0.4475,
+        "expert_wilson": [
+          0.5122647437642298,
+          0.6090699577623093
+        ],
+        "cfr_wilson": [
+          0.39950002860195316,
+          0.4964987986610134
+        ],
+        "paired_cfr_minus_expert": {
+          "n_pairs": 400,
+          "n_shared": 400,
+          "n_pairs_dropped": 0,
+          "invalid_a": 0,
+          "invalid_b": 0,
+          "delta": -0.11375,
+          "se": 0.028438296106898863,
+          "ci_low": -0.16948906036952177,
+          "ci_high": -0.05801093963047824,
+          "rate_a": 0.4475,
+          "rate_b": 0.56125,
+          "opponent_cluster_ci_low": -0.1911257523404245,
+          "opponent_cluster_ci_high": -0.03637424765957549,
+          "cluster_boot_ci_low": -0.18625,
+          "cluster_boot_ci_high": -0.045,
+          "per_opponent": {
+            "aywolfskirk": {
+              "n": 20,
+              "delta": 0.0
+            },
+            "beidou_skirk_ayaka": {
+              "n": 20,
+              "delta": 0.05
+            },
+            "double_geo_navia": {
+              "n": 20,
+              "delta": -0.025
+            },
+            "dual_mualani_stacks": {
+              "n": 20,
+              "delta": 0.1
+            },
+            "dvalin_bonk": {
+              "n": 20,
+              "delta": -0.1
+            },
+            "electro_manifestation_nuke": {
+              "n": 20,
+              "delta": -0.25
+            },
+            "electrocharged_moon": {
+              "n": 20,
+              "delta": 0.1
+            },
+            "ice_water_battleship": {
+              "n": 20,
+              "delta": -0.15
+            },
+            "klee_mavuika_mualani": {
+              "n": 20,
+              "delta": 0.1
+            },
+            "mualani_double_pyro": {
+              "n": 20,
+              "delta": 0.0
+            },
+            "nahida_kokomi_raiden": {
+              "n": 20,
+              "delta": -0.15
+            },
+            "natlan_battleship": {
+              "n": 20,
+              "delta": -0.1
+            },
+            "shenhe_double_swirl": {
+              "n": 20,
+              "delta": -0.3
+            },
+            "skirk_ayaka_navia": {
+              "n": 20,
+              "delta": -0.1
+            },
+            "skirk_chasca_freeze": {
+              "n": 20,
+              "delta": -0.1
+            },
+            "superconduct_aggro": {
+              "n": 20,
+              "delta": -0.5
+            },
+            "superconduct_mika_attack": {
+              "n": 20,
+              "delta": -0.35
+            },
+            "trial_skirk_ayaka_navia": {
+              "n": 20,
+              "delta": -0.1
+            },
+            "unyielding_geo": {
+              "n": 20,
+              "delta": -0.05
+            },
+            "yelan_clorinde_ororon": {
+              "n": 20,
+              "delta": -0.35
+            }
+          },
+          "significant_positive": false
+        },
+        "cost": {
+          "workers": 6,
+          "bridge_workers": 1,
+          "cfr_games": 400,
+          "expert_games": 400,
+          "cfr_wall_total_s": 11281.3,
+          "expert_wall_total_s": 2036.6,
+          "cfr_wall_per_game_s": 28.203,
+          "expert_wall_per_game_s": 5.092,
+          "total_searches": 1600,
+          "searches_per_game": 4.0,
+          "seconds_per_search_mean": 5.778,
+          "seconds_per_search_median": 5.732,
+          "cfr_serial_core_hours": 3.134
+        },
+        "change": {
+          "cfr_games": 400,
+          "searched_decisions": 1600,
+          "changed_decisions": 1420,
+          "change_rate": 0.8875,
+          "games_with_any_change": 400,
+          "mean_changed_per_game": 3.55
+        },
+        "wall_seconds": 2230.7
+      }
+    }
+  },
+  "network_sensitivity": {
+    "note": "S-C intended design: learned prior/value, 6 opponents x 6 seeds",
+    "rungs": {
+      "ladder_netH_i8_d2_c4_ms4": {
+        "tag": "ladder_netH_i8_d2_c4_ms4",
+        "budget": "i8_d2_c4_ms4_bs1_netprior_netvalue",
+        "spec": {
+          "deck": "superconduct_aggro",
+          "opponents": [
+            "unyielding_geo",
+            "double_geo_navia",
+            "electrocharged_moon",
+            "dvalin_bonk",
+            "nahida_kokomi_raiden",
+            "natlan_battleship"
+          ],
+          "seeds": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "iterations": 8,
+          "depth": 2,
+          "candidate_limit": 4,
+          "belief_root": true,
+          "belief_samples": 1,
+          "max_searches": 4,
+          "search_every": 1,
+          "request_types": [
+            "action"
+          ],
+          "value_spec": "",
+          "checkpoint": "data/checkpoints/20261012T101435_a3_distill_v1_d128.pt"
+        },
+        "matches": 72,
+        "pooled_expert": 0.4027777777777778,
+        "pooled_cfr": 0.3611111111111111,
+        "expert_wilson": [
+          0.25956791177721283,
+          0.5647363330322325
+        ],
+        "cfr_wilson": [
+          0.2247538679218132,
+          0.5242521960916802
+        ],
+        "paired_cfr_minus_expert": {
+          "n_pairs": 36,
+          "n_shared": 36,
+          "n_pairs_dropped": 0,
+          "invalid_a": 0,
+          "invalid_b": 0,
+          "delta": -0.041666666666666664,
+          "se": 0.08061027151062,
+          "ci_low": -0.19966279882748186,
+          "ci_high": 0.11632946549414855,
+          "rate_a": 0.3611111111111111,
+          "rate_b": 0.4027777777777778,
+          "opponent_cluster_ci_low": -0.14879166666666668,
+          "opponent_cluster_ci_high": 0.06545833333333337,
+          "cluster_boot_ci_low": -0.1111111111111111,
+          "cluster_boot_ci_high": 0.027777777777777776,
+          "per_opponent": {
+            "double_geo_navia": {
+              "n": 6,
+              "delta": 0.08333333333333333
+            },
+            "dvalin_bonk": {
+              "n": 6,
+              "delta": -0.16666666666666666
+            },
+            "electrocharged_moon": {
+              "n": 6,
+              "delta": 0.0
+            },
+            "nahida_kokomi_raiden": {
+              "n": 6,
+              "delta": -0.16666666666666666
+            },
+            "natlan_battleship": {
+              "n": 6,
+              "delta": 0.0
+            },
+            "unyielding_geo": {
+              "n": 6,
+              "delta": 0.0
+            }
+          },
+          "significant_positive": false
+        },
+        "cost": {
+          "workers": 6,
+          "bridge_workers": 1,
+          "cfr_games": 36,
+          "expert_games": 36,
+          "cfr_wall_total_s": 1186.5,
+          "expert_wall_total_s": 228.0,
+          "cfr_wall_per_game_s": 32.959,
+          "expert_wall_per_game_s": 6.333,
+          "total_searches": 144,
+          "searches_per_game": 4.0,
+          "seconds_per_search_mean": 6.656,
+          "seconds_per_search_median": 6.667,
+          "cfr_serial_core_hours": 0.33
+        },
+        "change": {
+          "cfr_games": 36,
+          "searched_decisions": 144,
+          "changed_decisions": 115,
+          "change_rate": 0.7986,
+          "games_with_any_change": 36,
+          "mean_changed_per_game": 3.19
+        },
+        "wall_seconds": 250.4
+      },
+      "ladder_netI_i8_d1_c4_ms8": {
+        "tag": "ladder_netI_i8_d1_c4_ms8",
+        "budget": "i8_d1_c4_ms8_bs1_netvalue",
+        "spec": {
+          "deck": "superconduct_aggro",
+          "opponents": [
+            "unyielding_geo",
+            "double_geo_navia",
+            "electrocharged_moon",
+            "dvalin_bonk",
+            "nahida_kokomi_raiden",
+            "natlan_battleship"
+          ],
+          "seeds": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "iterations": 8,
+          "depth": 1,
+          "candidate_limit": 4,
+          "belief_root": true,
+          "belief_samples": 1,
+          "max_searches": 8,
+          "search_every": 1,
+          "request_types": [
+            "action"
+          ],
+          "value_spec": "data/checkpoints/20261012T101435_a3_distill_v1_d128.pt",
+          "checkpoint": null
+        },
+        "matches": 72,
+        "pooled_expert": 0.4305555555555556,
+        "pooled_cfr": 0.4444444444444444,
+        "expert_wilson": [
+          0.28335123580498595,
+          0.5911517962017607
+        ],
+        "cfr_wilson": [
+          0.2954102987654314,
+          0.6041921268399659
+        ],
+        "paired_cfr_minus_expert": {
+          "n_pairs": 36,
+          "n_shared": 36,
+          "n_pairs_dropped": 0,
+          "invalid_a": 0,
+          "invalid_b": 0,
+          "delta": 0.013888888888888888,
+          "se": 0.08088329607387579,
+          "ci_low": -0.14464237141590763,
+          "ci_high": 0.17242014919368542,
+          "rate_a": 0.4444444444444444,
+          "rate_b": 0.4305555555555556,
+          "opponent_cluster_ci_low": -0.21025024588259883,
+          "opponent_cluster_ci_high": 0.23802802366037662,
+          "cluster_boot_ci_low": -0.1111111111111111,
+          "cluster_boot_ci_high": 0.18055555555555558,
+          "per_opponent": {
+            "double_geo_navia": {
+              "n": 6,
+              "delta": 0.4166666666666667
+            },
+            "dvalin_bonk": {
+              "n": 6,
+              "delta": 0.0
+            },
+            "electrocharged_moon": {
+              "n": 6,
+              "delta": 0.0
+            },
+            "nahida_kokomi_raiden": {
+              "n": 6,
+              "delta": -0.16666666666666666
+            },
+            "natlan_battleship": {
+              "n": 6,
+              "delta": 0.0
+            },
+            "unyielding_geo": {
+              "n": 6,
+              "delta": -0.16666666666666666
+            }
+          },
+          "significant_positive": false
+        },
+        "cost": {
+          "workers": 6,
+          "bridge_workers": 1,
+          "cfr_games": 36,
+          "expert_games": 36,
+          "cfr_wall_total_s": 375.6,
+          "expert_wall_total_s": 210.4,
+          "cfr_wall_per_game_s": 10.433,
+          "expert_wall_per_game_s": 5.844,
+          "total_searches": 288,
+          "searches_per_game": 8.0,
+          "seconds_per_search_mean": 0.574,
+          "seconds_per_search_median": 0.616,
+          "cfr_serial_core_hours": 0.104
+        },
+        "change": {
+          "cfr_games": 36,
+          "searched_decisions": 288,
+          "changed_decisions": 219,
+          "change_rate": 0.7604,
+          "games_with_any_change": 36,
+          "mean_changed_per_game": 6.08
+        },
+        "wall_seconds": 104.5
+      }
+    }
+  },
+  "expert_control_profile": {
+    "note": "expert (no search) vs the 20-opponent pool, 3 seeds (pilot)",
+    "report": "profile_expert_20261012T104304.json",
+    "pooled": 0.7083333333333334
+  },
+  "verdict": {
+    "any_rung_significant_positive": false,
+    "full_pool_B_significantly_negative": true,
+    "full_pool_D_significantly_negative": true,
+    "recommendation": "search teacher has no measurable gain (and is significantly worse than the expert control at n=400); do not scale search distillation -- resequence to BC/self-play data first (D22 replan branch)"
+  }
+}

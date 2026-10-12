@@ -1,0 +1,323 @@
+{
+  "generated": "2026-10-12T10:49:10",
+  "wall_seconds": 107.7,
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  },
+  "tag": "ladder_C_i16_d1_c4_ms8",
+  "budget": "i16_d1_c4_ms8_bs1",
+  "spec": {
+    "deck": "superconduct_aggro",
+    "opponents": [
+      "unyielding_geo",
+      "double_geo_navia",
+      "electrocharged_moon",
+      "dvalin_bonk",
+      "nahida_kokomi_raiden",
+      "natlan_battleship"
+    ],
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "iterations": 16,
+    "depth": 1,
+    "candidate_limit": 4,
+    "belief_root": true,
+    "belief_samples": 1,
+    "max_searches": 8,
+    "search_every": 1,
+    "request_types": [
+      "action"
+    ]
+  },
+  "matches": 72,
+  "modes": {
+    "expert": {
+      "games": 36,
+      "matches": 36,
+      "pooled_rate": 0.4305555555555556,
+      "pooled_ci_low": 0.28335123580498595,
+      "pooled_ci_high": 0.5911517962017607,
+      "cluster_mean": 0.4305555555555556,
+      "cluster_ci_low": 0.08768117126478087,
+      "cluster_ci_high": 0.7734299398463302,
+      "cluster_boot_ci_low": 0.20833333333333334,
+      "cluster_boot_ci_high": 0.667013888888887,
+      "per_opponent": {
+        "double_geo_navia": {
+          "games": 6,
+          "score": 0.5,
+          "rate": 0.08333333333333333,
+          "ci_low": 0.008762028510600428,
+          "ci_high": 0.48319049953362,
+          "mean_rounds": 8.166666666666666,
+          "mean_rounds_wins": 0.0,
+          "mean_rounds_losses": 6.8
+        },
+        "dvalin_bonk": {
+          "games": 6,
+          "score": 3.0,
+          "rate": 0.5,
+          "ci_low": 0.18761280689940868,
+          "ci_high": 0.8123871931005913,
+          "mean_rounds": 6.0,
+          "mean_rounds_wins": 7.0,
+          "mean_rounds_losses": 5.0
+        },
+        "electrocharged_moon": {
+          "games": 6,
+          "score": 2.0,
+          "rate": 0.3333333333333333,
+          "ci_low": 0.09676933255921683,
+          "ci_high": 0.7000116786584712,
+          "mean_rounds": 5.5,
+          "mean_rounds_wins": 7.0,
+          "mean_rounds_losses": 4.75
+        },
+        "nahida_kokomi_raiden": {
+          "games": 6,
+          "score": 3.0,
+          "rate": 0.5,
+          "ci_low": 0.18761280689940868,
+          "ci_high": 0.8123871931005913,
+          "mean_rounds": 6.333333333333333,
+          "mean_rounds_wins": 6.666666666666667,
+          "mean_rounds_losses": 6.0
+        },
+        "natlan_battleship": {
+          "games": 6,
+          "score": 6.0,
+          "rate": 1.0,
+          "ci_low": 0.6096569663469354,
+          "ci_high": 0.9999999999999999,
+          "mean_rounds": 8.5,
+          "mean_rounds_wins": 8.5,
+          "mean_rounds_losses": 0.0
+        },
+        "unyielding_geo": {
+          "games": 6,
+          "score": 1.0,
+          "rate": 0.16666666666666666,
+          "ci_low": 0.03005258587173032,
+          "ci_high": 0.563509436563646,
+          "mean_rounds": 7.833333333333333,
+          "mean_rounds_wins": 8.0,
+          "mean_rounds_losses": 7.8
+        }
+      },
+      "quality": {
+        "decisions": 1778,
+        "fallbacks": 0,
+        "fallback_rate": 0.0,
+        "illegal_rate": 0.0,
+        "mean_rounds": 7.055555555555555,
+        "mean_decisions_per_round": 7.0,
+        "draws": 1,
+        "draw_rate": 0.027777777777777776,
+        "errors": 0,
+        "truncated": 0,
+        "invalid": 0,
+        "error_rate": 0.0,
+        "opponents_covered": 6
+      },
+      "floor": 0.45,
+      "floor_violations": [
+        "double_geo_navia",
+        "electrocharged_moon",
+        "unyielding_geo"
+      ]
+    },
+    "cfr": {
+      "games": 36,
+      "matches": 36,
+      "pooled_rate": 0.3888888888888889,
+      "pooled_ci_low": 0.24784655417822943,
+      "pooled_ci_high": 0.5513582970325652,
+      "cluster_mean": 0.38888888888888884,
+      "cluster_ci_low": 0.010987409958496452,
+      "cluster_ci_high": 0.7667903678192812,
+      "cluster_boot_ci_low": 0.16666666666666666,
+      "cluster_boot_ci_high": 0.6666666666666666,
+      "per_opponent": {
+        "double_geo_navia": {
+          "games": 6,
+          "score": 1.0,
+          "rate": 0.16666666666666666,
+          "ci_low": 0.03005258587173032,
+          "ci_high": 0.563509436563646,
+          "mean_rounds": 6.333333333333333,
+          "mean_rounds_wins": 5.0,
+          "mean_rounds_losses": 6.6
+        },
+        "dvalin_bonk": {
+          "games": 6,
+          "score": 1.0,
+          "rate": 0.16666666666666666,
+          "ci_low": 0.03005258587173032,
+          "ci_high": 0.563509436563646,
+          "mean_rounds": 6.0,
+          "mean_rounds_wins": 4.0,
+          "mean_rounds_losses": 6.4
+        },
+        "electrocharged_moon": {
+          "games": 6,
+          "score": 4.0,
+          "rate": 0.6666666666666666,
+          "ci_low": 0.29998832134152864,
+          "ci_high": 0.9032306674407831,
+          "mean_rounds": 5.166666666666667,
+          "mean_rounds_wins": 4.75,
+          "mean_rounds_losses": 6.0
+        },
+        "nahida_kokomi_raiden": {
+          "games": 6,
+          "score": 1.0,
+          "rate": 0.16666666666666666,
+          "ci_low": 0.03005258587173032,
+          "ci_high": 0.563509436563646,
+          "mean_rounds": 5.666666666666667,
+          "mean_rounds_wins": 3.0,
+          "mean_rounds_losses": 6.2
+        },
+        "natlan_battleship": {
+          "games": 6,
+          "score": 6.0,
+          "rate": 1.0,
+          "ci_low": 0.6096569663469354,
+          "ci_high": 0.9999999999999999,
+          "mean_rounds": 7.0,
+          "mean_rounds_wins": 7.0,
+          "mean_rounds_losses": 0.0
+        },
+        "unyielding_geo": {
+          "games": 6,
+          "score": 1.0,
+          "rate": 0.16666666666666666,
+          "ci_low": 0.03005258587173032,
+          "ci_high": 0.563509436563646,
+          "mean_rounds": 7.333333333333333,
+          "mean_rounds_wins": 6.0,
+          "mean_rounds_losses": 7.6
+        }
+      },
+      "quality": {
+        "decisions": 1694,
+        "fallbacks": 0,
+        "fallback_rate": 0.0,
+        "illegal_rate": 0.0,
+        "mean_rounds": 6.25,
+        "mean_decisions_per_round": 7.528888888888889,
+        "draws": 0,
+        "draw_rate": 0.0,
+        "errors": 0,
+        "truncated": 0,
+        "invalid": 0,
+        "error_rate": 0.0,
+        "opponents_covered": 6
+      },
+      "floor": 0.45,
+      "floor_violations": [
+        "double_geo_navia",
+        "dvalin_bonk",
+        "nahida_kokomi_raiden",
+        "unyielding_geo"
+      ]
+    }
+  },
+  "pooled_expert": 0.4305555555555556,
+  "pooled_cfr": 0.3888888888888889,
+  "paired_cfr_minus_expert": {
+    "n_pairs": 36,
+    "n_shared": 36,
+    "n_pairs_dropped": 0,
+    "invalid_a": 0,
+    "invalid_b": 0,
+    "delta": -0.041666666666666664,
+    "se": 0.08061027151062,
+    "ci_low": -0.19966279882748186,
+    "ci_high": 0.11632946549414855,
+    "rate_a": 0.3888888888888889,
+    "rate_b": 0.4305555555555556,
+    "opponent_cluster_ci_low": -0.31125867129279305,
+    "opponent_cluster_ci_high": 0.2279253379594597,
+    "cluster_boot_ci_low": -0.2222222222222222,
+    "cluster_boot_ci_high": 0.16666666666666666,
+    "per_opponent": {
+      "double_geo_navia": {
+        "n": 6,
+        "delta": 0.08333333333333333
+      },
+      "dvalin_bonk": {
+        "n": 6,
+        "delta": -0.3333333333333333
+      },
+      "electrocharged_moon": {
+        "n": 6,
+        "delta": 0.3333333333333333
+      },
+      "nahida_kokomi_raiden": {
+        "n": 6,
+        "delta": -0.3333333333333333
+      },
+      "natlan_battleship": {
+        "n": 6,
+        "delta": 0.0
+      },
+      "unyielding_geo": {
+        "n": 6,
+        "delta": 0.0
+      }
+    },
+    "significant_positive": false
+  },
+  "cost": {
+    "workers": 6,
+    "bridge_workers": 1,
+    "cfr_games": 36,
+    "expert_games": 36,
+    "cfr_wall_total_s": 370.9,
+    "expert_wall_total_s": 233.9,
+    "cfr_wall_per_game_s": 10.302,
+    "expert_wall_per_game_s": 6.498,
+    "total_searches": 288,
+    "searches_per_game": 8.0,
+    "seconds_per_search_mean": 0.475,
+    "seconds_per_search_median": 0.495,
+    "cfr_serial_core_hours": 0.103
+  },
+  "change": {
+    "cfr_games": 36,
+    "searched_decisions": 288,
+    "changed_decisions": 226,
+    "change_rate": 0.7847,
+    "games_with_any_change": 36,
+    "mean_changed_per_game": 6.28
+  }
+}
