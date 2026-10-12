@@ -65,8 +65,7 @@ done
 
 ## 3. GPU 训练放大（A800 80G）★窗口首要
 
-> 训练 CLI 正由 S-C 后半（蒸馏 + belief 头 + 网络规模参数）扩展；**开始前先 `git pull` 并看 `--help`**。
-> 当前（已 push）可用入口：`train.pipeline --replays`（默认网络配置）与 `train.learning_curve --replays`（可扫 d_model）。
+> **已 push**：`train.pipeline --distill --d-model ...`（蒸馏 + belief 头 + 网络规模参数）与 `train.learning_curve --replays --d-models ...`。开跑前先 `git pull` 并 `--help` 核对。
 
 ```bash
 # 数据量 × 网络规模 的 scale 关系（M3 用；可扫 d_model，committed 已支持）
@@ -96,11 +95,22 @@ python -m scripts.eval_protocol --contestant neural:<new>.pt --baseline neural:<
 
 ---
 
-## 5. 待主分支落地后追加（S-C 后半：搜索蒸馏数据）
+## 5. 搜索蒸馏数据采集（S-C 已交付；M3 关键，窗口内优先）
 
-搜索 teacher 采集（`train.collect --search`）与蒸馏训练随 **S-C(b)** 一并 push；
-操作员 `git pull` 后按 `train.collect --help` 使用，预算用 `--search-every/--max-searches/--iterations/--depth`
-控制（MCCFR 昂贵，先小样本量吞吐再放量）。**搜索 teacher 数据是 M3 蒸馏的关键，落地后优先采集。**
+`train.collect --search` 用 MCCFR 搜索当 teacher，逐搜索决策记录**根平均策略 / 根价值 / belief 目标**（S-C 蒸馏数据）：
+
+```bash
+python -m train.collect --deck superconduct_aggro --all-opponents --search \
+    --iterations 8 --depth 1 --candidate-limit 4 --max-searches 8 --belief-samples 2 \
+    --seed-start 0 --seed-count 100 --workers 120 --tag a800_distill
+```
+- MCCFR + 子进程 fork **很贵**：先小样本量吞吐（用 `--max-searches/--iterations/--depth` 控预算），再按实测吞吐放量。
+- 蒸馏训练：
+```bash
+python -m train.pipeline --distill --replays data/replays/a800_distill \
+    --device cuda --d-model 256 --epochs 50 --tag a800_distill
+```
+- `--search` 有 spec 指纹护栏与断点续跑；**换搜索参数会改指纹**，重跑请换 `--tag`。
 
 ---
 

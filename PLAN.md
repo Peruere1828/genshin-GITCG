@@ -270,7 +270,7 @@ GPU 放大前的 go/no-go——**「信念根化 MCCFR 搜索 + 小网」纯策�
 |------|------|------|
 | S-A 信念根化（G1+G3） | 搜索根换「公共信念 + 采样确定化」（禁用隐藏真值），`reps/belief_groups.py` 接入根与 update | 信息泄漏测试覆盖 belief 根；搜索不再读取隐藏真值 |
 | S-B 外采 MCCFR 脚手架（G2+G4） | `train/cfr_solver.py`：regret matching + 根平均策略 + 根价值，深度受限 + CVPN frontier 价值 | 单测（分布合法、平均策略归一、深度截断一致）+ 玩具域收敛 sanity |
-| S-C search-as-teacher（G6+G7） | 根平均策略/根价值/belief 目标写进 replay，蒸馏回网络（policy CE + value 回归 + belief 评分），网络加 belief 头 | 一轮采集→训练→评测→落盘零报错；门禁（候选不劣于）可自动判定 |
+| S-C search-as-teacher（G6+G7）**✅ 2026-10-12** | 根平均策略/根价值/belief 目标写进 replay，蒸馏回网络（policy CE + value 回归 + belief 评分），网络加 belief 头 | 一轮采集→训练→评测→落盘零报错 ✅；门禁（候选不劣于）可自动判定 ✅；`train/belief_head.py`+`train/distill.py`+`train.collect --search`+`scripts/run_distill_smoke.py` |
 | **M3-CPU 门禁** | 搜索+小网纯策略 vs 评测池 | **整体胜率 ≥ 50%（M2 口径，纯策略模式）** |
 
 训练规模走 CPU 档：d_model 64–128、1e3–1e4 样本、fp32；WSL MX550 小网络训练试验的结论决定训练节点归属（§5.2）。
@@ -393,7 +393,7 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
 
 模型主线（A）维持 §4.3（M3-CPU）；NPC（B）与 Web（C）为新增并行线（D16–D20）。阶段划分如下。
 
-**进度（2026-10-12）**：B0 ✅（`engine-overlay/`，pin `v0.21.0`，V8 直编，162 passed）｜A1/S-B ✅（`train/cfr_solver.py`）｜A2/S-C(a) ✅（`envs/cfr_search.py` 引擎适配 + `CFRSearchPolicy` + 冒烟）｜B4 NPC 数据 ✅（19 类敌人 + 16 关，`configs/npc/`）。**C 线受限**：`static-data.piovium.org` 不可达，standalone 前端构建待解（§7 风险表）。
+**进度（2026-10-12）**：B0 ✅（`engine-overlay/`，pin `v0.21.0`，V8 直编，162 passed）｜**模型主线 S-A/S-B/S-C 全 ✅**（`reps/belief.py`、`train/cfr_solver.py`、`envs/cfr_search.py`、`train/belief_head.py`+`train/distill.py`，186 passed）｜B4 NPC 数据 ✅（19 类敌人 + 16 关，`configs/npc/`）。**C 线阻断已解除**（static-data 走可达 v5 镜像，§7）。**下一步**：A3=M3-CPU 认证（搜索+小网纯策略 vs 20 池 ≥50%）、B1 敌人 `.gts`（进行中）、C0 standalone。
 
 **阶段 1（立即）**：B0 构建链 go/no-go（Docker 内建 V8，D20）**✅** ‖ A1 S-B MCCFR 脚手架 **✅**
 
