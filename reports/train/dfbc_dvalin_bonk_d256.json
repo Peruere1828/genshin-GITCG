@@ -1,0 +1,211 @@
+{
+  "kind": "datafirst_bc",
+  "generated": "2026-10-12T16:03:03",
+  "store_cache": "data/store/dvalin_bonk.pt",
+  "arch": "cvpn",
+  "d_model": 256,
+  "belief_head": false,
+  "config": {
+    "epochs": 12,
+    "lr": 0.001,
+    "batch_size": 128,
+    "value_coef": 0.5,
+    "belief_coef": 0.5,
+    "weight_decay": 0.0,
+    "seed": 0,
+    "device": "cpu",
+    "log_every": 1
+  },
+  "store_meta": {
+    "replay_dirs": [
+      "data/replays/dfbc_dvalin_bonk_c80"
+    ],
+    "games": 1600,
+    "skipped_games": 0,
+    "duplicate_games": 0,
+    "events": 78057,
+    "train_samples": 73904,
+    "val_samples": 4153,
+    "load_seconds": 14.0,
+    "seed_start": 0,
+    "val_every": 25
+  },
+  "n_train_full": 73904,
+  "n_val_full": 4153,
+  "n_train": 30000,
+  "n_val": 4000,
+  "train_limit": 30000,
+  "train_seconds": 1863.7,
+  "history": [
+    {
+      "epoch": 0,
+      "loss": 1.55658,
+      "ce": 1.46002,
+      "value": 0.19312,
+      "belief": 0.0,
+      "acc": 0.51504,
+      "val_ce": 1.09222,
+      "val_acc": 0.6395,
+      "val_value": 0.16711,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 1,
+      "loss": 1.16158,
+      "ce": 1.07487,
+      "value": 0.17342,
+      "belief": 0.0,
+      "acc": 0.64883,
+      "val_ce": 0.98605,
+      "val_acc": 0.6745,
+      "val_value": 0.16117,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 2,
+      "loss": 1.04184,
+      "ce": 0.9593,
+      "value": 0.16508,
+      "belief": 0.0,
+      "acc": 0.67948,
+      "val_ce": 0.9031,
+      "val_acc": 0.6943,
+      "val_value": 0.14503,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 3,
+      "loss": 0.9558,
+      "ce": 0.87563,
+      "value": 0.16032,
+      "belief": 0.0,
+      "acc": 0.70227,
+      "val_ce": 0.85184,
+      "val_acc": 0.702,
+      "val_value": 0.145,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 4,
+      "loss": 0.90984,
+      "ce": 0.83169,
+      "value": 0.1563,
+      "belief": 0.0,
+      "acc": 0.71372,
+      "val_ce": 0.82876,
+      "val_acc": 0.7087,
+      "val_value": 0.15788,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 5,
+      "loss": 0.87332,
+      "ce": 0.79642,
+      "value": 0.1538,
+      "belief": 0.0,
+      "acc": 0.72477,
+      "val_ce": 0.85709,
+      "val_acc": 0.681,
+      "val_value": 0.14227,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 6,
+      "loss": 0.85441,
+      "ce": 0.77847,
+      "value": 0.15187,
+      "belief": 0.0,
+      "acc": 0.7297,
+      "val_ce": 0.84999,
+      "val_acc": 0.6865,
+      "val_value": 0.15217,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 7,
+      "loss": 0.83273,
+      "ce": 0.75791,
+      "value": 0.14964,
+      "belief": 0.0,
+      "acc": 0.73429,
+      "val_ce": 0.75759,
+      "val_acc": 0.741,
+      "val_value": 0.1402,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 8,
+      "loss": 0.81836,
+      "ce": 0.74425,
+      "value": 0.14823,
+      "belief": 0.0,
+      "acc": 0.74057,
+      "val_ce": 0.76064,
+      "val_acc": 0.724,
+      "val_value": 0.13795,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 9,
+      "loss": 0.80743,
+      "ce": 0.73458,
+      "value": 0.14569,
+      "belief": 0.0,
+      "acc": 0.74404,
+      "val_ce": 0.77268,
+      "val_acc": 0.7305,
+      "val_value": 0.15569,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 10,
+      "loss": 0.78766,
+      "ce": 0.71449,
+      "value": 0.14633,
+      "belief": 0.0,
+      "acc": 0.74898,
+      "val_ce": 0.75442,
+      "val_acc": 0.7275,
+      "val_value": 0.14529,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 11,
+      "loss": 0.77487,
+      "ce": 0.70234,
+      "value": 0.14505,
+      "belief": 0.0,
+      "acc": 0.75228,
+      "val_ce": 0.73281,
+      "val_acc": 0.7345,
+      "val_value": 0.1404,
+      "val_belief": 0.0
+    }
+  ],
+  "checkpoint": "data/checkpoints/dfbc_dvalin_bonk_d256.pt",
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}

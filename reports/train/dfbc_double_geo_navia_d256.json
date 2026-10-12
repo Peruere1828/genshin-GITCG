@@ -1,0 +1,139 @@
+{
+  "kind": "datafirst_bc",
+  "generated": "2026-10-12T18:24:54",
+  "store_cache": "data/store/double_geo_navia.pt",
+  "arch": "cvpn",
+  "d_model": 256,
+  "belief_head": false,
+  "config": {
+    "epochs": 6,
+    "lr": 0.001,
+    "batch_size": 128,
+    "value_coef": 0.5,
+    "belief_coef": 0.5,
+    "weight_decay": 0.0,
+    "seed": 0,
+    "device": "cpu",
+    "log_every": 1
+  },
+  "store_meta": {
+    "replay_dirs": [
+      "data/replays/dfbc_double_geo_navia_c80"
+    ],
+    "games": 930,
+    "skipped_games": 0,
+    "duplicate_games": 0,
+    "events": 45657,
+    "train_samples": 42856,
+    "val_samples": 2801,
+    "load_seconds": 6.3,
+    "seed_start": 0,
+    "val_every": 25
+  },
+  "n_train_full": 42856,
+  "n_val_full": 2801,
+  "n_train": 20000,
+  "n_val": 2801,
+  "train_limit": 20000,
+  "train_seconds": 1440.1,
+  "history": [
+    {
+      "epoch": 0,
+      "loss": 1.5899,
+      "ce": 1.48099,
+      "value": 0.21782,
+      "belief": 0.0,
+      "acc": 0.58713,
+      "val_ce": 1.17292,
+      "val_acc": 0.5941,
+      "val_value": 0.18622,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 1,
+      "loss": 1.1236,
+      "ce": 1.02136,
+      "value": 0.20447,
+      "belief": 0.0,
+      "acc": 0.62629,
+      "val_ce": 1.07688,
+      "val_acc": 0.5901,
+      "val_value": 0.17713,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 2,
+      "loss": 1.0518,
+      "ce": 0.95338,
+      "value": 0.19684,
+      "belief": 0.0,
+      "acc": 0.64281,
+      "val_ce": 1.01348,
+      "val_acc": 0.6073,
+      "val_value": 0.16592,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 3,
+      "loss": 0.98691,
+      "ce": 0.8916,
+      "value": 0.19061,
+      "belief": 0.0,
+      "acc": 0.66172,
+      "val_ce": 0.98931,
+      "val_acc": 0.6162,
+      "val_value": 0.16164,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 4,
+      "loss": 0.95289,
+      "ce": 0.8608,
+      "value": 0.18418,
+      "belief": 0.0,
+      "acc": 0.67481,
+      "val_ce": 0.95756,
+      "val_acc": 0.6523,
+      "val_value": 0.15981,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 5,
+      "loss": 0.92176,
+      "ce": 0.83072,
+      "value": 0.18207,
+      "belief": 0.0,
+      "acc": 0.68601,
+      "val_ce": 0.99552,
+      "val_acc": 0.658,
+      "val_value": 0.15865,
+      "val_belief": 0.0
+    }
+  ],
+  "checkpoint": "data/checkpoints/dfbc_double_geo_navia_d256.pt",
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}

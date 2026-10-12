@@ -1,0 +1,153 @@
+{
+  "kind": "datafirst_bc",
+  "generated": "2026-10-12T19:42:40",
+  "store_cache": "data/store/sa_all.pt",
+  "arch": "cvpn",
+  "d_model": 128,
+  "belief_head": false,
+  "config": {
+    "epochs": 6,
+    "lr": 0.001,
+    "batch_size": 128,
+    "value_coef": 0.5,
+    "belief_coef": 0.5,
+    "weight_decay": 0.0,
+    "seed": 0,
+    "device": "cpu",
+    "log_every": 1
+  },
+  "store_meta": {
+    "replay_dirs": [
+      "data/replays/datafirst_bc_sa500",
+      "data/replays/df_aywolfskirk",
+      "data/replays/df_beidou_skirk_ayaka",
+      "data/replays/df_double_geo_navia",
+      "data/replays/df_dvalin_bonk",
+      "data/replays/df_electrocharged_moon",
+      "data/replays/df_electro_manifestation_nuke",
+      "data/replays/df_ice_water_battleship",
+      "data/replays/df_nahida_kokomi_raiden",
+      "data/replays/df_shenhe_double_swirl",
+      "data/replays/df_skirk_ayaka_navia",
+      "data/replays/df_skirk_chasca_freeze",
+      "data/replays/df_trial_skirk_ayaka_navia",
+      "data/replays/df_unyielding_geo",
+      "data/replays/df_yelan_clorinde_ororon"
+    ],
+    "games": 8061,
+    "skipped_games": 0,
+    "duplicate_games": 17,
+    "events": 372270,
+    "train_samples": 334734,
+    "val_samples": 37536,
+    "load_seconds": 606.8,
+    "seed_start": 1000000,
+    "val_every": 10
+  },
+  "n_train_full": 334734,
+  "n_val_full": 37536,
+  "n_train": 20000,
+  "n_val": 3000,
+  "train_limit": 20000,
+  "train_seconds": 410.9,
+  "history": [
+    {
+      "epoch": 0,
+      "loss": 1.78195,
+      "ce": 1.65454,
+      "value": 0.25482,
+      "belief": 0.0,
+      "acc": 0.57658,
+      "val_ce": 1.13451,
+      "val_acc": 0.635,
+      "val_value": 0.23867,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 1,
+      "loss": 1.19044,
+      "ce": 1.07479,
+      "value": 0.23129,
+      "belief": 0.0,
+      "acc": 0.64092,
+      "val_ce": 1.06781,
+      "val_acc": 0.625,
+      "val_value": 0.21949,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 2,
+      "loss": 1.12506,
+      "ce": 1.01555,
+      "value": 0.21903,
+      "belief": 0.0,
+      "acc": 0.65486,
+      "val_ce": 0.99417,
+      "val_acc": 0.6727,
+      "val_value": 0.20843,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 3,
+      "loss": 1.06501,
+      "ce": 0.96044,
+      "value": 0.20914,
+      "belief": 0.0,
+      "acc": 0.68282,
+      "val_ce": 0.99082,
+      "val_acc": 0.684,
+      "val_value": 0.2006,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 4,
+      "loss": 1.02802,
+      "ce": 0.92605,
+      "value": 0.20392,
+      "belief": 0.0,
+      "acc": 0.69437,
+      "val_ce": 0.93297,
+      "val_acc": 0.691,
+      "val_value": 0.18777,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 5,
+      "loss": 1.00404,
+      "ce": 0.90681,
+      "value": 0.19446,
+      "belief": 0.0,
+      "acc": 0.68486,
+      "val_ce": 0.92623,
+      "val_acc": 0.692,
+      "val_value": 0.1859,
+      "val_belief": 0.0
+    }
+  ],
+  "checkpoint": "data/checkpoints/dfbc_sacurve_n20000.pt",
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}

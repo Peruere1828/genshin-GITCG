@@ -1,0 +1,308 @@
+{
+  "certs": {
+    "superconduct_aggro(d256,6ep)": {
+      "tag": "sa",
+      "seeds": 10,
+      "games": 400,
+      "pooled": 0.405,
+      "wilson": [
+        0.358,
+        0.454
+      ],
+      "cluster": [
+        0.294,
+        0.516
+      ],
+      "expert_pooled": 0.509,
+      "delta": -0.104,
+      "delta_ci": [
+        -0.161,
+        -0.047
+      ],
+      "n_pairs": 400,
+      "significant_positive": false,
+      "pooled_pass": false,
+      "floor_pass": false,
+      "clean_pass": true,
+      "pass": false,
+      "n_floor_violations": 18,
+      "fallback_rate": 0.0,
+      "draw_rate": 0.0
+    },
+    "superconduct_aggro(d256,15ep)": {
+      "tag": "sa_e15",
+      "seeds": 10,
+      "games": 400,
+      "pooled": 0.48,
+      "wilson": [
+        0.431,
+        0.529
+      ],
+      "cluster": [
+        0.367,
+        0.593
+      ],
+      "expert_pooled": 0.509,
+      "delta": -0.029,
+      "delta_ci": [
+        -0.081,
+        0.023
+      ],
+      "n_pairs": 400,
+      "significant_positive": false,
+      "pooled_pass": false,
+      "floor_pass": false,
+      "clean_pass": true,
+      "pass": false,
+      "n_floor_violations": 15,
+      "fallback_rate": 0.0,
+      "draw_rate": 0.01
+    },
+    "superconduct_aggro(d128,6ep)": {
+      "tag": "sa_d128",
+      "seeds": 10,
+      "games": 400,
+      "pooled": 0.395,
+      "wilson": [
+        0.348,
+        0.444
+      ],
+      "cluster": [
+        0.274,
+        0.516
+      ],
+      "expert_pooled": 0.509,
+      "delta": -0.114,
+      "delta_ci": [
+        -0.17,
+        -0.057
+      ],
+      "n_pairs": 400,
+      "significant_positive": false,
+      "pooled_pass": false,
+      "floor_pass": false,
+      "clean_pass": true,
+      "pass": false,
+      "n_floor_violations": 16,
+      "fallback_rate": 0.0,
+      "draw_rate": 0.0
+    },
+    "dvalin_bonk(d256,12ep)": {
+      "tag": "dvalin_bonk",
+      "seeds": 20,
+      "games": 800,
+      "pooled": 0.701,
+      "wilson": [
+        0.669,
+        0.732
+      ],
+      "cluster": [
+        0.61,
+        0.792
+      ],
+      "expert_pooled": 0.736,
+      "delta": -0.034,
+      "delta_ci": [
+        -0.067,
+        -0.001
+      ],
+      "n_pairs": 800,
+      "significant_positive": false,
+      "pooled_pass": true,
+      "floor_pass": false,
+      "clean_pass": true,
+      "pass": false,
+      "n_floor_violations": 7,
+      "fallback_rate": 0.0,
+      "draw_rate": 0.018
+    },
+    "unyielding_geo(d256,6ep)": {
+      "tag": "unyielding_geo",
+      "seeds": 10,
+      "games": 400,
+      "pooled": 0.709,
+      "wilson": [
+        0.662,
+        0.751
+      ],
+      "cluster": [
+        0.606,
+        0.812
+      ],
+      "expert_pooled": 0.799,
+      "delta": -0.09,
+      "delta_ci": [
+        -0.137,
+        -0.043
+      ],
+      "n_pairs": 400,
+      "significant_positive": false,
+      "pooled_pass": true,
+      "floor_pass": false,
+      "clean_pass": true,
+      "pass": false,
+      "n_floor_violations": 6,
+      "fallback_rate": 0.0,
+      "draw_rate": 0.062
+    },
+    "double_geo_navia(d256,6ep)": {
+      "tag": "double_geo_navia",
+      "seeds": 10,
+      "games": 400,
+      "pooled": 0.689,
+      "wilson": [
+        0.642,
+        0.732
+      ],
+      "cluster": [
+        0.568,
+        0.809
+      ],
+      "expert_pooled": 0.681,
+      "delta": 0.007,
+      "delta_ci": [
+        -0.045,
+        0.06
+      ],
+      "n_pairs": 400,
+      "significant_positive": false,
+      "pooled_pass": true,
+      "floor_pass": false,
+      "clean_pass": true,
+      "pass": false,
+      "n_floor_violations": 8,
+      "fallback_rate": 0.0,
+      "draw_rate": 0.037
+    },
+    "natlan_battleship(d256,6ep)": {
+      "tag": "natlan_battleship",
+      "seeds": 10,
+      "games": 400,
+      "pooled": 0.14,
+      "wilson": [
+        0.109,
+        0.177
+      ],
+      "cluster": [
+        0.074,
+        0.206
+      ],
+      "expert_pooled": 0.225,
+      "delta": -0.085,
+      "delta_ci": [
+        -0.127,
+        -0.043
+      ],
+      "n_pairs": 400,
+      "significant_positive": false,
+      "pooled_pass": false,
+      "floor_pass": false,
+      "clean_pass": true,
+      "pass": false,
+      "n_floor_violations": 20,
+      "fallback_rate": 0.0,
+      "draw_rate": 0.03
+    }
+  },
+  "curve": {
+    "dfbc_curve_n10000": {
+      "games": 200,
+      "pooled": 0.405,
+      "wilson": [
+        0.339,
+        0.474
+      ]
+    },
+    "dfbc_curve_n20000": {
+      "games": 200,
+      "pooled": 0.375,
+      "wilson": [
+        0.311,
+        0.444
+      ]
+    }
+  },
+  "train": {
+    "dfbc_sa_d256": {
+      "d_model": 256,
+      "n_train": 40000,
+      "n_val": 3000,
+      "epochs": 6,
+      "train_seconds": 1786.3,
+      "final_train_acc": 0.75464,
+      "final_val_acc": 0.7637
+    },
+    "dfbc_sa_d256_e15": {
+      "d_model": 256,
+      "n_train": 50000,
+      "n_val": 3000,
+      "epochs": 15,
+      "train_seconds": 1159.5,
+      "final_train_acc": 0.8121,
+      "final_val_acc": 0.808
+    },
+    "dfbc_sa_d128": {
+      "d_model": 128,
+      "n_train": 40000,
+      "n_val": 3000,
+      "epochs": 6,
+      "train_seconds": 1334.1,
+      "final_train_acc": 0.72646,
+      "final_val_acc": 0.7287
+    },
+    "dfbc_dvalin_bonk_d256": {
+      "d_model": 256,
+      "n_train": 30000,
+      "n_val": 4000,
+      "epochs": 12,
+      "train_seconds": 1863.7,
+      "final_train_acc": 0.75228,
+      "final_val_acc": 0.7345
+    },
+    "dfbc_unyielding_geo_d256": {
+      "d_model": 256,
+      "n_train": 20000,
+      "n_val": 3000,
+      "epochs": 6,
+      "train_seconds": 835.4,
+      "final_train_acc": 0.63988,
+      "final_val_acc": 0.63
+    },
+    "dfbc_double_geo_navia_d256": {
+      "d_model": 256,
+      "n_train": 20000,
+      "n_val": 2801,
+      "epochs": 6,
+      "train_seconds": 1440.1,
+      "final_train_acc": 0.68601,
+      "final_val_acc": 0.658
+    },
+    "dfbc_natlan_battleship_d256": {
+      "d_model": 256,
+      "n_train": 20000,
+      "n_val": 3000,
+      "epochs": 6,
+      "train_seconds": 1434.2,
+      "final_train_acc": 0.49557,
+      "final_val_acc": 0.475
+    },
+    "dfbc_sacurve_n10000": {
+      "d_model": 128,
+      "n_train": 10000,
+      "n_val": 3000,
+      "epochs": 6,
+      "train_seconds": 446.4,
+      "final_train_acc": 0.6162,
+      "final_val_acc": 0.5813
+    },
+    "dfbc_sacurve_n20000": {
+      "d_model": 128,
+      "n_train": 20000,
+      "n_val": 3000,
+      "epochs": 6,
+      "train_seconds": 410.9,
+      "final_train_acc": 0.68486,
+      "final_val_acc": 0.692
+    }
+  }
+}

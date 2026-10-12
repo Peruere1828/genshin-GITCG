@@ -1,0 +1,261 @@
+{
+  "kind": "datafirst_bc",
+  "generated": "2026-10-12T20:13:52",
+  "store_cache": "data/store/sa_all.pt",
+  "arch": "cvpn",
+  "d_model": 256,
+  "belief_head": false,
+  "config": {
+    "epochs": 15,
+    "lr": 0.001,
+    "batch_size": 128,
+    "value_coef": 0.5,
+    "belief_coef": 0.5,
+    "weight_decay": 0.0,
+    "seed": 0,
+    "device": "cpu",
+    "log_every": 1
+  },
+  "store_meta": {
+    "replay_dirs": [
+      "data/replays/datafirst_bc_sa500",
+      "data/replays/df_aywolfskirk",
+      "data/replays/df_beidou_skirk_ayaka",
+      "data/replays/df_double_geo_navia",
+      "data/replays/df_dvalin_bonk",
+      "data/replays/df_electrocharged_moon",
+      "data/replays/df_electro_manifestation_nuke",
+      "data/replays/df_ice_water_battleship",
+      "data/replays/df_nahida_kokomi_raiden",
+      "data/replays/df_shenhe_double_swirl",
+      "data/replays/df_skirk_ayaka_navia",
+      "data/replays/df_skirk_chasca_freeze",
+      "data/replays/df_trial_skirk_ayaka_navia",
+      "data/replays/df_unyielding_geo",
+      "data/replays/df_yelan_clorinde_ororon"
+    ],
+    "games": 8061,
+    "skipped_games": 0,
+    "duplicate_games": 17,
+    "events": 372270,
+    "train_samples": 334734,
+    "val_samples": 37536,
+    "load_seconds": 606.8,
+    "seed_start": 1000000,
+    "val_every": 10
+  },
+  "n_train_full": 334734,
+  "n_val_full": 37536,
+  "n_train": 50000,
+  "n_val": 3000,
+  "train_limit": 50000,
+  "train_seconds": 1159.5,
+  "history": [
+    {
+      "epoch": 0,
+      "loss": 1.3631,
+      "ce": 1.2465,
+      "value": 0.23319,
+      "belief": 0.0,
+      "acc": 0.60953,
+      "val_ce": 0.98062,
+      "val_acc": 0.6163,
+      "val_value": 0.20886,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 1,
+      "loss": 1.02047,
+      "ce": 0.91949,
+      "value": 0.20195,
+      "belief": 0.0,
+      "acc": 0.67904,
+      "val_ce": 0.88875,
+      "val_acc": 0.6987,
+      "val_value": 0.19209,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 2,
+      "loss": 0.93897,
+      "ce": 0.84403,
+      "value": 0.18987,
+      "belief": 0.0,
+      "acc": 0.71491,
+      "val_ce": 0.81431,
+      "val_acc": 0.7233,
+      "val_value": 0.18261,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 3,
+      "loss": 0.87233,
+      "ce": 0.77907,
+      "value": 0.18652,
+      "belief": 0.0,
+      "acc": 0.73786,
+      "val_ce": 0.75816,
+      "val_acc": 0.7527,
+      "val_value": 0.18411,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 4,
+      "loss": 0.8192,
+      "ce": 0.72586,
+      "value": 0.18668,
+      "belief": 0.0,
+      "acc": 0.75858,
+      "val_ce": 0.72383,
+      "val_acc": 0.7643,
+      "val_value": 0.18658,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 5,
+      "loss": 0.78569,
+      "ce": 0.69339,
+      "value": 0.18459,
+      "belief": 0.0,
+      "acc": 0.76951,
+      "val_ce": 0.68568,
+      "val_acc": 0.7677,
+      "val_value": 0.18048,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 6,
+      "loss": 0.76247,
+      "ce": 0.67028,
+      "value": 0.18438,
+      "belief": 0.0,
+      "acc": 0.77852,
+      "val_ce": 0.6602,
+      "val_acc": 0.78,
+      "val_value": 0.18704,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 7,
+      "loss": 0.73908,
+      "ce": 0.64651,
+      "value": 0.18514,
+      "belief": 0.0,
+      "acc": 0.78686,
+      "val_ce": 0.6412,
+      "val_acc": 0.788,
+      "val_value": 0.18262,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 8,
+      "loss": 0.72363,
+      "ce": 0.63157,
+      "value": 0.18412,
+      "belief": 0.0,
+      "acc": 0.79146,
+      "val_ce": 0.63598,
+      "val_acc": 0.7923,
+      "val_value": 0.17989,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 9,
+      "loss": 0.7079,
+      "ce": 0.61652,
+      "value": 0.18277,
+      "belief": 0.0,
+      "acc": 0.79621,
+      "val_ce": 0.62087,
+      "val_acc": 0.7927,
+      "val_value": 0.18095,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 10,
+      "loss": 0.69596,
+      "ce": 0.60442,
+      "value": 0.18309,
+      "belief": 0.0,
+      "acc": 0.80053,
+      "val_ce": 0.60131,
+      "val_acc": 0.7967,
+      "val_value": 0.1775,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 11,
+      "loss": 0.68407,
+      "ce": 0.59279,
+      "value": 0.18257,
+      "belief": 0.0,
+      "acc": 0.80525,
+      "val_ce": 0.60053,
+      "val_acc": 0.802,
+      "val_value": 0.17938,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 12,
+      "loss": 0.67433,
+      "ce": 0.58331,
+      "value": 0.18205,
+      "belief": 0.0,
+      "acc": 0.80804,
+      "val_ce": 0.59397,
+      "val_acc": 0.801,
+      "val_value": 0.18393,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 13,
+      "loss": 0.66539,
+      "ce": 0.57512,
+      "value": 0.18054,
+      "belief": 0.0,
+      "acc": 0.81098,
+      "val_ce": 0.57598,
+      "val_acc": 0.8117,
+      "val_value": 0.1794,
+      "val_belief": 0.0
+    },
+    {
+      "epoch": 14,
+      "loss": 0.65871,
+      "ce": 0.56812,
+      "value": 0.18118,
+      "belief": 0.0,
+      "acc": 0.8121,
+      "val_ce": 0.57822,
+      "val_acc": 0.808,
+      "val_value": 0.17873,
+      "val_belief": 0.0
+    }
+  ],
+  "checkpoint": "data/checkpoints/dfbc_sa_d256_e15.pt",
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}
