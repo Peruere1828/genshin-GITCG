@@ -110,6 +110,30 @@ def _run_tasks_sequential(tasks: list[MatchTask]) -> list[dict[str, Any]]:
     return [run_task(task) for task in tasks]
 
 
+_TIMEOUT_BASE_SECONDS = 600.0
+_TIMEOUT_PER_TASK_SECONDS = 30.0
+_MAX_DRAIN_ERRORS = 8
+
+
+def _shard_timeout(shard_len: int) -> float:
+    """Generous hang guard for one worker shard.
+
+    The baseline is ~4.4 s/game single-core (``reports/LOCAL_BASELINE.md``), so
+    ``30 s/task + 10 min`` gives ~7x headroom for the slowest worker: this must
+    only ever trip on a *permanent* stall, never on a merely slow run. Override
+    with ``GITCG_ROLLOUT_TIMEOUT`` (seconds) for unusual shards.
+    """
+    raw = os.environ.get("GITCG_ROLLOUT_TIMEOUT")
+    if raw:
+        try:
+            override = float(raw)
+        except ValueError:
+            override = 0.0
+        if override > 0:
+            return override
+    return _TIMEOUT_BASE_SECONDS + _TIMEOUT_PER_TASK_SECONDS * max(0, int(shard_len))
+
+
 def _drive_worker(
     shard: list[Any],
     *,
@@ -119,6 +143,7 @@ def _drive_worker(
     worker_module: str = "envs.rollout_worker",
     on_result: Callable[[dict[str, Any]], None] | None = None,
     retain_results: bool = True,
+    timeout: float | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Run one shard through a fresh worker subprocess.
 
@@ -128,6 +153,14 @@ def _drive_worker(
     to ``on_result`` and immediately dropped, so a 500-game collector shard does
     not pin multiple GB in the parent (the A5 scaling blocker). ``results`` is
     empty in that mode.
+
+    A reader thread that dies (a non-JSON line on stdout, or ``on_result``
+    raising -- e.g. the collector's per-result disk append hitting ENOSPC) would
+    otherwise leave the worker blocked on a full stdout pipe while the parent
+    waits forever in ``process.wait()``. So every drain failure is recorded,
+    the child is killed, and the parent raises promptly with a diagnosable
+    message. ``timeout`` (default :func:`_shard_timeout`) is a last-resort hang
+    guard around the joins/``wait``; on expiry the child is killed too.
     """
     import subprocess
     import threading
@@ -146,25 +179,68 @@ def _drive_worker(
     stderr_chunks: list[str] = []
     results: list[dict[str, Any]] = []
     received = 0
+    drain_errors: list[str] = []
+    killed = threading.Event()
+
+    def _record_error(message: str) -> None:
+        if len(drain_errors) < _MAX_DRAIN_ERRORS:
+            drain_errors.append(message)
+
+    def _kill_process() -> None:
+        # SIGKILL closes the worker's pipe write ends, so the drain loops see
+        # EOF and the parent never blocks on a full pipe. Idempotent.
+        if killed.is_set():
+            return
+        killed.set()
+        try:
+            process.kill()
+        except Exception:  # noqa: BLE001 - already dead / not started
+            pass
 
     def _drain_stderr() -> None:
         assert process.stderr is not None
-        for line in process.stderr:
-            stderr_chunks.append(line)
+        try:
+            for line in process.stderr:
+                stderr_chunks.append(line)
+        except Exception as exc:  # noqa: BLE001 - never let a reader die silently
+            _record_error(f"stderr reader crashed: {type(exc).__name__}: {exc}")
+            _kill_process()
 
     def _drain_stdout() -> None:
         nonlocal received
         assert process.stdout is not None
-        for line in process.stdout:
-            line = line.strip()
-            if not line:
-                continue
-            match = json.loads(line)
-            received += 1
-            if retain_results:
-                results.append(match)
-            if on_result is not None:
-                on_result(match)
+        try:
+            for line in process.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                if drain_errors:
+                    # Already failing: keep draining so the worker is never
+                    # blocked on the pipe, but drop the work.
+                    continue
+                try:
+                    match = json.loads(line)
+                except Exception as exc:  # noqa: BLE001 - engine noise on stdout
+                    _record_error(
+                        f"non-JSON line from worker ({type(exc).__name__}: {exc}): {line[:200]!r}"
+                    )
+                    _kill_process()
+                    continue
+                received += 1
+                if retain_results:
+                    results.append(match)
+                if on_result is not None:
+                    try:
+                        on_result(match)
+                    except Exception as exc:  # noqa: BLE001 - e.g. ENOSPC on append
+                        _record_error(
+                            f"on_result failed ({type(exc).__name__}: {exc}) on result "
+                            f"index={match.get('index')!r}"
+                        )
+                        _kill_process()
+        except Exception as exc:  # noqa: BLE001 - never let a reader die silently
+            _record_error(f"stdout reader crashed: {type(exc).__name__}: {exc}")
+            _kill_process()
 
     # Both pipes must drain *while* tasks are being written: a large shard can
     # fill the worker's stdout pipe (64 KiB) before stdin is fully written, which
@@ -176,15 +252,53 @@ def _drive_worker(
     stdout_thread.start()
 
     assert process.stdin is not None and process.stdout is not None
-    for task in shard:
-        process.stdin.write(json.dumps(task.as_dict(), ensure_ascii=False) + "\n")
-    process.stdin.close()
+    stdin_error: Exception | None = None
+    try:
+        for task in shard:
+            process.stdin.write(json.dumps(task.as_dict(), ensure_ascii=False) + "\n")
+        process.stdin.close()
+    except (BrokenPipeError, OSError) as exc:
+        # Worker died before consuming stdin: surface its stderr below instead
+        # of leaking a bare BrokenPipeError.
+        stdin_error = exc
+        try:
+            process.stdin.close()
+        except Exception:  # noqa: BLE001
+            pass
 
-    stdout_thread.join()
-    returncode = process.wait()
+    limit = _shard_timeout(len(shard)) if timeout is None else float(timeout)
+    stdout_thread.join(timeout=limit)
+    if stdout_thread.is_alive():
+        _kill_process()
+        stdout_thread.join(timeout=5.0)
+        raise RuntimeError(
+            f"rollout worker hung: stdout not closed after {limit:.0f}s "
+            f"({received}/{len(shard)} results); killed pid={process.pid}"
+        )
+    try:
+        returncode = process.wait(timeout=limit)
+    except subprocess.TimeoutExpired:
+        _kill_process()
+        process.wait(timeout=5.0)
+        raise RuntimeError(
+            f"rollout worker hung: process did not exit within {limit:.0f}s "
+            f"({received}/{len(shard)} results); killed pid={process.pid}"
+        ) from None
     stderr_thread.join(timeout=1)
+
+    detail = "".join(stderr_chunks)[-2000:]
+    if drain_errors:
+        joined = "\n".join(drain_errors)
+        raise RuntimeError(
+            f"rollout worker stream failed (rc={returncode}, {received}/{len(shard)} "
+            f"results):\n{joined}\n{detail}"
+        )
+    if stdin_error is not None:
+        raise RuntimeError(
+            f"rollout worker stdin failed (rc={returncode}, {received}/{len(shard)} "
+            f"results): {type(stdin_error).__name__}: {stdin_error}\n{detail}"
+        )
     if returncode != 0 or received != len(shard):
-        detail = "".join(stderr_chunks)[-2000:]
         raise RuntimeError(
             f"rollout worker failed (rc={returncode}, {received}/{len(shard)} results):\n{detail}"
         )
