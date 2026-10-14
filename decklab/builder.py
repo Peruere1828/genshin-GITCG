@@ -93,14 +93,6 @@ def card_kind(card_id: int) -> str:
     return _card_kind_index().get(int(card_id), "event")
 
 
-def _expand(ids: Sequence[int], *, copies: int = MAX_COPIES) -> list[int]:
-    """Expand an ordered id list to its repeated form (one entry == one copy)."""
-    out: list[int] = []
-    for card_id in ids:
-        out.extend([int(card_id)] * int(copies))
-    return out
-
-
 def build_deck(
     pool: CardPool,
     characters: Sequence[int],
@@ -132,11 +124,19 @@ def build_deck(
         if ordered.count(card_id) < copies:
             ordered.append(card_id)
 
-    for card_id in pool.cards:
-        if len(ordered) >= size:
+    # Top up from the rest of the pool until the deck is full. Repeat passes over
+    # the pool so a card that is still short of ``copies`` can gain its remaining
+    # copies (a single pass added at most one copy per pool card).
+    while len(ordered) < size:
+        added = False
+        for card_id in pool.cards:
+            if len(ordered) >= size:
+                break
+            if ordered.count(int(card_id)) < copies:
+                ordered.append(int(card_id))
+                added = True
+        if not added:
             break
-        if ordered.count(int(card_id)) < copies:
-            ordered.append(int(card_id))
 
     if len(ordered) < size:
         raise ValueError(

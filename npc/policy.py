@@ -66,7 +66,7 @@ class NpcPolicy:
         )
         if not pairs:
             raise RuntimeError("no legal actions available")
-        if context.request_type != DecisionType.ACTION or context.request_type == DecisionType.TERMINAL:
+        if context.request_type != DecisionType.ACTION:
             return self._choose_non_action(pairs)
         return self._choose_action(built, pairs)
 

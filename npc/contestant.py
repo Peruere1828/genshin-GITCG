@@ -123,16 +123,24 @@ def build_contestant_profile(deck: DeckSpec):
     )
 
 
-def _base_policy(deck: DeckSpec, base_slug: str | None):
-    """Build the wrapped base policy: a scripted expert or a generic expert."""
+def _base_policy(deck: DeckSpec, base_slug: str | None, *, seed: int = 0):
+    """Build the wrapped base policy: a scripted expert or a generic expert.
+
+    ``seed`` is forwarded to the scripted agent's RNG (as ``envs.policy`` does
+    for every other policy). Today the ported rules never consult their RNG, but
+    passing an explicit deterministic seed keeps the policy reproducible if that
+    ever changes (``random.Random(None)`` would seed from the OS).
+    """
     if base_slug:
         from envs.policy import expert_policy
 
-        return expert_policy(base_slug)
+        return expert_policy(base_slug, seed=int(seed))
     from agents.scripted.agent import ExpertRuleAgent
     from envs.policy import ScriptedPolicy
 
-    agent = ExpertRuleAgent(assets=_asset_catalog(), profile=build_contestant_profile(deck), seed=0)
+    agent = ExpertRuleAgent(
+        assets=_asset_catalog(), profile=build_contestant_profile(deck), seed=int(seed)
+    )
     return ScriptedPolicy(agent, name="generic_contestant")
 
 
@@ -238,10 +246,11 @@ def build_contestant_policy(
     *,
     inject_objectives: bool = True,
     base_slug: str | None = DEFAULT_BASE_SLUG,
+    seed: int = 0,
 ) -> ContestantPolicy:
     """Build the gate contestant policy for ``deck`` (optionally stage-aware)."""
     return ContestantPolicy(
-        base=_base_policy(deck, base_slug),
+        base=_base_policy(deck, base_slug, seed=seed),
         objectives=tuple(stage.objectives) if stage is not None else (),
         inject_objectives=inject_objectives,
         name="contestant" if inject_objectives else "contestant_plain",

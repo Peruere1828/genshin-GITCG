@@ -16,6 +16,7 @@ from decklab.builder import (
     POOL_C_FILL,
     POOL_C_META_CORE,
     POOL_C_SUPERCONDUCT_CHARACTERS,
+    CardPool,
     build_deck,
     build_pool_c_superconduct,
     card_kind,
@@ -80,3 +81,18 @@ def test_deck_summary_counts_kinds():
 
 def test_core_and_fill_fit_within_deck_size():
     assert len(POOL_C_META_CORE) + len(POOL_C_FILL) <= 30
+
+
+def test_top_up_fills_deck_with_multiple_copies():
+    # A pool with fewer distinct cards than the deck size forces the top-up to
+    # add up to ``copies`` of each card (a single pass used to add only one).
+    pool = CardPool(name="tiny", characters=(1101, 1403, 1405), cards=tuple(range(100, 110)))
+    deck = build_deck(pool, (1101, 1403, 1405), name="tiny", size=20, copies=2)
+    assert len(deck.cards) == 20
+    assert Counter(deck.cards) == Counter({card_id: 2 for card_id in range(100, 110)})
+
+
+def test_top_up_raises_when_pool_is_too_small():
+    pool = CardPool(name="tiny", characters=(1101, 1403, 1405), cards=(100, 101))
+    with pytest.raises(ValueError):
+        build_deck(pool, (1101, 1403, 1405), name="tiny", size=30, copies=2)

@@ -115,6 +115,30 @@ def test_task_grid_shape():
     assert grid[4][1] == ("b", 2)
 
 
+def test_task_grid_folds_base_seed_into_seed():
+    # ``base_seed`` must change the games (not only the fingerprint), so a spec
+    # resumed with a different base_seed is not silently accepted as identical.
+    spec = _spec(stage_names=("timaeus",), seeds=(1, 2), base_seed=100)
+    assert list(spec.task_grid()) == [("timaeus", 101), ("timaeus", 102)]
+    assert _spec_fingerprint(_spec(base_seed=0)) != _spec_fingerprint(spec)
+
+
+def test_objective_keys_disambiguate_same_type():
+    from npc.eval import _objective_keys
+    from npc.spec import NpcObjective
+
+    keys = _objective_keys(
+        [
+            NpcObjective("win"),
+            NpcObjective("play_event_cards", count=2),
+            NpcObjective("play_event_cards", count=3),
+            NpcObjective("win_within_rounds", n=5),
+        ]
+    )
+    assert keys == ["win", "play_event_cards", "play_event_cards#1", "win_within_rounds"]
+    assert len(keys) == len(set(keys))
+
+
 @pytest.mark.slow
 def test_run_npc_eval_end_to_end_and_resume(tmp_path: Path):
     from envs.decks import deck_spec

@@ -131,10 +131,36 @@ def _skill_type_name(value: int) -> str | None:
     return _SKILL_TYPE_NAMES.get(name, name.removeprefix("SKILL_TYPE_").lower())
 
 
-def _card_kind_from_entity(entity_type: int, equipment: int) -> str | None:
+@lru_cache(maxsize=1)
+def _talent_card_ids() -> frozenset[int]:
+    """Definition ids of talent cards (the engine type cannot distinguish them).
+
+    The engine reports a talent card in hand as ``ENTITY_TYPE_EVENT_CARD`` (it is
+    played like an event) and there is no talent ``EquipmentType``, so the
+    entity type/equipment pair alone cannot tell a talent from a plain event. We
+    fall back to the scripted-expert asset catalog's ``GCG_TAG_TALENT`` tag —
+    the same source ``decklab.builder.card_kind`` uses — so the *recorded* card
+    kind matches the contestant's selection vocabulary
+    (``weapon|artifact|talent|support|event``). Without this, a
+    ``play_equipment_card`` objective with ``kind="talent"`` could never pass.
+    """
+    from agents.scripted.assets import load_assets
+
+    return frozenset(
+        int(card_id)
+        for card_id, card in load_assets().cards.items()
+        if "GCG_TAG_TALENT" in set(card.tags)
+    )
+
+
+def _card_kind_from_entity(
+    entity_type: int, equipment: int, *, definition_id: int = 0
+) -> str | None:
     """Map an engine ``EntityState`` type/equipment pair to a card-kind label."""
     from gitcg.proto import state_pb2
 
+    if definition_id and int(definition_id) in _talent_card_ids():
+        return "talent"
     if int(entity_type) == int(state_pb2.EntityType.ENTITY_TYPE_EVENT_CARD):
         return "event"
     if int(entity_type) == int(state_pb2.EntityType.ENTITY_TYPE_SUPPORT):
@@ -253,6 +279,29 @@ class PolicyPlayer(Player):
     def on_io_error(self, error_msg: str) -> None:
         self.io_errors.append(str(error_msg))
 
+    def _register_entity_owners(self, state: Any) -> None:
+        """Record which player owns each entity id (best-effort attribution).
+
+        Beyond the player-level ``character``/``summon``/``support``/
+        ``combat_status`` entities, characters carry *attached* entities
+        (statuses/equipment) under ``CharacterState.entity``; those ids can be a
+        damage ``source_id`` too, so register them (and their attachments) as
+        well. Registration is additive across notifications, so an entity that
+        has already left the state still resolves to its owner.
+        """
+        for who in (0, 1):
+            player = state.player[who]
+            for field in ("character", "summon", "support", "combat_status"):
+                for entity in getattr(player, field):
+                    self._owner_by_entity_id[int(entity.id)] = who
+                    for attachment in getattr(entity, "attachment", ()):
+                        self._owner_by_entity_id[int(attachment.id)] = who
+            for character in player.character:
+                for entity in getattr(character, "entity", ()):
+                    self._owner_by_entity_id[int(entity.id)] = who
+                    for attachment in getattr(entity, "attachment", ()):
+                        self._owner_by_entity_id[int(attachment.id)] = who
+
     def _collect_events(self, notification: Any) -> None:
         """Project the engine's public mutation stream into ``MatchEvent``s.
 
@@ -265,13 +314,20 @@ class PolicyPlayer(Player):
             return
         state = getattr(notification, "state", None)
         if state is not None:
-            for who in (0, 1):
-                player = state.player[who]
-                for field in ("character", "summon", "support", "combat_status"):
-                    for entity in getattr(player, field):
-                        self._owner_by_entity_id[int(entity.id)] = who
+            self._register_entity_owners(state)
         round_number = int(getattr(state, "round_number", 0)) if state is not None else 0
-        for mutation in getattr(notification, "mutation", ()):
+        mutations = list(getattr(notification, "mutation", ()))
+        # The engine also counts reactions triggered by a *pure elemental
+        # application* (``applyAura`` with ``!opt.fromDamage``; mutator.ts
+        # ``recordReaction``) — not just by damage. Those mutations carry no
+        # source id, but the engine emits them in the same notification batch as
+        # the ``skill_used`` that applied the element, so attribute the reaction
+        # to that skill's player (``None`` if the batch has no ``skill_used``).
+        batch_skill_who: int | None = None
+        for mutation in mutations:
+            if mutation.WhichOneof("mutation") == "skill_used":
+                batch_skill_who = int(mutation.skill_used.who)
+        for mutation in mutations:
             which = mutation.WhichOneof("mutation")
             if which == "skill_used":
                 skill = mutation.skill_used
@@ -296,6 +352,21 @@ class PolicyPlayer(Player):
                         round_number=round_number,
                         reaction_type=_reaction_name(int(damage.reaction_type)),
                         source_definition_id=int(damage.source_definition_id),
+                    )
+                )
+            elif which == "apply_aura":
+                aura = mutation.apply_aura
+                if int(aura.reaction_type) == 0:
+                    continue
+                sink.append(
+                    MatchEvent(
+                        kind="reaction",
+                        player=batch_skill_who,
+                        round_number=round_number,
+                        reaction_type=_reaction_name(int(aura.reaction_type)),
+                        # ``applyAura`` carries no source entity; the target is
+                        # not a "source", so leave the source definition empty.
+                        source_definition_id=0,
                     )
                 )
 
@@ -429,7 +500,9 @@ class PolicyPlayer(Player):
             return None
         for card in hand:
             if int(card.definition_id) == int(definition_id):
-                return _card_kind_from_entity(int(card.type), int(card.equipment))
+                return _card_kind_from_entity(
+                    int(card.type), int(card.equipment), definition_id=int(definition_id)
+                )
         return None
 
     @staticmethod

@@ -56,7 +56,18 @@ class NpcEvalSpec:
     base_seed: int = 0
 
     def task_grid(self) -> list[tuple[str, int]]:
-        return [(stage, int(seed)) for stage in self.stage_names for seed in self.seeds]
+        # ``base_seed`` is folded into every match seed (the ``base_seed + raw``
+        # convention used by ``envs.rollout.make_task_grid``), so two specs that
+        # differ only in ``base_seed`` play *different* games — consistent with
+        # the fingerprint, which already includes ``base_seed``. Previously the
+        # field was read only by the fingerprint, so callers passing a nonzero
+        # ``base_seed`` got identical games under a different fingerprint and a
+        # resumed run was wrongly rejected.
+        return [
+            (stage, int(self.base_seed) + int(seed))
+            for stage in self.stage_names
+            for seed in self.seeds
+        ]
 
 
 @dataclass(frozen=True)
@@ -148,6 +159,7 @@ def run_npc_match(
         record_final_state=True,
     )
     stars = evaluate_stage(stage, record)
+    objective_keys = _objective_keys(stars.objectives)
     row: dict[str, Any] = {
         "task_index": int(task_index),
         "index": int(task_index),
@@ -164,9 +176,13 @@ def run_npc_match(
         "rounds": int(record.rounds),
         "stars": int(stars.stars),
         "three_star": bool(stars.three_star),
-        "objectives": {objective.type: objective.achieved for objective in stars.objectives},
+        "objectives": {
+            key: objective.achieved
+            for key, objective in zip(objective_keys, stars.objectives, strict=True)
+        },
         "objective_details": {
-            objective.type: objective.detail for objective in stars.objectives
+            key: objective.detail
+            for key, objective in zip(objective_keys, stars.objectives, strict=True)
         },
         "decisions0": int(record.decisions0),
         "decisions1": int(record.decisions1),
@@ -236,6 +252,25 @@ def _aggregate_by(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, A
     return {name: _aggregate(group) for name, group in sorted(grouped.items())}
 
 
+def _objective_keys(objectives: Iterable[Any]) -> list[str]:
+    """Per-objective dict keys that stay unique when a type repeats.
+
+    The challenge schema allows several objectives of the same type (e.g. two
+    ``play_event_cards`` with different counts). Keying the result dicts by
+    ``type`` alone collapsed them and made ``n_objectives`` disagree with the
+    recorded dict; duplicates get a ``#<n>`` suffix while a unique type keeps its
+    bare name, so existing per-type reports are unchanged.
+    """
+    seen: dict[str, int] = {}
+    keys: list[str] = []
+    for objective in objectives:
+        objective_type = str(objective.type)
+        ordinal = seen.get(objective_type, 0)
+        keys.append(objective_type if ordinal == 0 else f"{objective_type}#{ordinal}")
+        seen[objective_type] = ordinal + 1
+    return keys
+
+
 def _objective_rates(rows: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
     grouped: dict[str, list[bool]] = {}
     for row in rows:
@@ -274,6 +309,23 @@ def _spec_fingerprint(spec: NpcEvalSpec) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
+def _read_rows(raw_path: Path) -> list[dict[str, Any]]:
+    """Parse a raw JSONL file, skipping blank/torn trailing lines."""
+    rows: list[dict[str, Any]] = []
+    if not raw_path.exists():
+        return rows
+    with raw_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue  # torn trailing line from a hard kill
+    return rows
+
+
 def _stream_state(spec: NpcEvalSpec, raw_path: Path):
     meta_path = raw_path.with_name(raw_path.name.removesuffix(".jsonl") + ".meta.json")
     fingerprint = _spec_fingerprint(spec)
@@ -290,15 +342,7 @@ def _stream_state(spec: NpcEvalSpec, raw_path: Path):
                 f"{raw_path} was produced by a different spec (fingerprint mismatch); "
                 "use another --tag or delete the old raw/meta files"
             )
-        with raw_path.open(encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    done.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue  # torn trailing line from a hard kill
+        done = _read_rows(raw_path)
     else:
         raw_path.parent.mkdir(parents=True, exist_ok=True)
         meta_path.write_text(
@@ -319,7 +363,13 @@ def run_npc_eval(
     workers: int = 1,
     progress: bool = False,
 ) -> NpcEvalResult:
-    """Run the stage x seed grid, streaming rows and resuming by ``task_index``."""
+    """Run the stage x seed grid, streaming rows and resuming by ``task_index``.
+
+    When ``raw_path`` is given the parent streams each finished row straight to
+    disk (via the worker's ``on_result``) and does not retain it in memory during
+    the run; the rows are read back once at the end to build the summary. Without
+    ``raw_path`` there is nowhere to stream to, so rows are retained.
+    """
     for stage_name in spec.stage_names:
         get_stage(stage_name)  # fail fast on an unknown stage
 
@@ -334,17 +384,21 @@ def run_npc_eval(
     done_indices = {int(row.get("task_index", -1)) for row in done}
     pending = [(index, item) for index, item in grid if index not in done_indices]
 
+    # Only populated when there is no raw file to re-read from (see docstring).
     fresh: list[dict[str, Any]] = []
     write_lock = threading.Lock()
+    completed = len(done)
 
     def _record(row: dict[str, Any]) -> None:
+        nonlocal completed
         with write_lock:
-            fresh.append(row)
             if handle is not None:
                 handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
                 handle.flush()
+            else:
+                fresh.append(row)
+            completed += 1
         if progress:
-            completed = len(fresh) + len(done)
             print(
                 f"[npc-eval] {completed}/{len(grid)} "
                 f"{row['stage']} seed={row['seed']} winner={row['winner']} "
@@ -374,7 +428,10 @@ def run_npc_eval(
         else:
             # Reuse the repo's deadlock-safe JSON-lines subprocess workers
             # (multiprocessing fork deadlocks the engine's embedded JS runtime).
-            from envs.rollout import run_task_shard
+            # ``stream_task_shard`` (not ``run_task_shard``) so the parent never
+            # accumulates worker results: each row goes to ``_record`` and is
+            # dropped, keeping parent RSS bounded on large grids (A8 pattern).
+            from envs.rollout import stream_task_shard
 
             tasks = [
                 NpcTask(
@@ -388,7 +445,7 @@ def run_npc_eval(
                 for index, (stage_name, seed) in pending
             ]
             if tasks:
-                run_task_shard(
+                stream_task_shard(
                     tasks,
                     worker_module="npc.eval_worker",
                     workers=int(workers),
@@ -398,7 +455,11 @@ def run_npc_eval(
         if handle is not None:
             handle.close()
 
-    rows = sorted(done + fresh, key=lambda row: int(row.get("task_index", -1)))
+    if handle is not None:
+        # Re-read the (resumed + freshly streamed) rows from disk.
+        rows = sorted(_read_rows(raw_path), key=lambda row: int(row.get("task_index", -1)))
+    else:
+        rows = sorted(done + fresh, key=lambda row: int(row.get("task_index", -1)))
     metadata = {
         "engine_lock": load_engine_lock(),
         "runtime": runtime_metadata(),

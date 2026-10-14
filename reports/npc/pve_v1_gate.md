@@ -69,6 +69,14 @@ B2/B3 冒烟（`reports/npc/npc_pve_smoke_v1.json (PvE-B2/B3)`）：48 局 = 16 
 - PvE 机制近似（D17）：NPC 无手牌/无骰子/不打出行动牌；引擎只有全局手牌/骰子配置，NPC 仍持有被 `NpcPolicy` 闲置的手牌与骰子。
 - `win_within_rounds`（多数 n=5）是主要失分项：打装备/事件牌会牺牲节奏，「目标达成」与「速胜」存在张力，是当前三星率的主要上限。
 
+## 代码评审后的复核（2026-10-14）
+
+评审 M4 指出 `envs/match.py::_collect_events` 漏记**非伤害路径**的元素反应（引擎在纯元素附着 `applyAura` 上也计反应）。已修（新增 `apply_aura` 记录分支 + 扩展实体 owner 登记）。
+
+修复后按同一配置复跑（`--tag pve_v1_gate2`，384 局），与本报告**逐臂、逐目标、逐关、逐局完全一致**：primary 三星 287/384 = 0.747396、win 383/384；`trigger_elemental_reactions` 84/96；384 行的 `winner/rounds/stars/objectives/decisions/errors` **0 处不同**。原因：门禁配置中 `applyAura` 反应仅出现 **5 次，全部在 `irontonguetian` 且全部为 NPC（player=1）侧**，contestant 侧 0 次；更宽扫描（1152 局）12 次亦全为 NPC。故 M4 对本门禁结果**零影响**，评审设想的 `patton/buyun/shitou/lan` 掉星**未能复现**。
+
+同批复核另修 `npc/eval.py`（`base_seed` 折进 seed、同类型 objectives 去重键、流式落盘降内存）、`npc/contestant.py`（seed 透传）、`npc/policy.py`（死子句）、`decklab/builder.py`（补牌）——均**不改变**门禁数字。
+
 ## 复现
 
 ```bash
