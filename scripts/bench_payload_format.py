@@ -106,18 +106,6 @@ def _synthetic_games(n_games: int, n_samples: int) -> list[list[Sample]]:
     return games
 
 
-def _line(games: list[list[Sample]], fmt: str, dtype: str, priv: bool) -> str:
-    record = {
-        "index": 0,
-        "error": None,
-        "samples": [
-            sample_to_payload(s, format=fmt, compact_dtype=dtype, include_privileged_state=priv)
-            for s in games[0]
-        ],
-    }
-    return json.dumps(record, ensure_ascii=False)
-
-
 def _time(fn, repeats: int) -> float:
     best = float("inf")
     for _ in range(repeats):
@@ -215,8 +203,12 @@ def main(argv: list[str] | None = None) -> int:
     if not games:
         raise SystemExit("no games loaded")
 
+    # ``jsonl`` is the lossless historical format: ``sample_to_payload`` ignores
+    # both ``compact_dtype`` and ``include_privileged_state`` for it, so it is
+    # labelled ``n/a`` rather than implying a dtype it never applies (the dtype
+    # only matters for the base64 ``compact`` rows).
     configs = [
-        ("jsonl", "float16", True),
+        ("jsonl", "n/a", True),
         ("compact", "float32", True),
         ("compact", "float16", True),
         ("compact", "float16", False),

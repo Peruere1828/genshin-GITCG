@@ -21,7 +21,11 @@ fingerprint idea) but adds what a budget sweep needs:
 
 Rows stream to ``data/search/<tag>.jsonl`` (gitignored) with a fingerprint
 sidecar so an interrupted run resumes; only an aggregate lands in
-``reports/search/``. Pure-policy only (no LLM).
+``reports/search/``. Pure-policy only (no LLM). A single task's exception is
+caught per-future, recorded in the report's ``failures`` block, and does not
+abort the run (a broken worker pool cancels the queue instead of waiting for
+every remaining game); the streamed rows stay resumable either way. A stream
+whose ``.meta.json`` sidecar is missing is refused, like ``eval.arena``.
 
 Usage::
 
@@ -40,6 +44,7 @@ import json
 import multiprocessing as _mp
 import os
 import time
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -202,6 +207,8 @@ _WORKER: dict[str, Any] = {}
 
 
 def _init_worker(spec_dict: dict[str, Any], bridge_workers: int) -> None:
+    import atexit
+
     from envs.fork_bridge import ForkBridge
 
     spec = LadderSpec(**spec_dict)
@@ -210,9 +217,15 @@ def _init_worker(spec_dict: dict[str, Any], bridge_workers: int) -> None:
         from train.resolver import prior_resolver_from_checkpoint
 
         prior = prior_resolver_from_checkpoint(spec.checkpoint)
+    bridge = ForkBridge(workers=int(bridge_workers))
     _WORKER["spec"] = spec
     _WORKER["prior"] = prior
-    _WORKER["bridge"] = ForkBridge(workers=int(bridge_workers))
+    _WORKER["bridge"] = bridge
+    # The pool worker owns its fork subprocesses; tear them down on interpreter
+    # exit so a finished/idle worker does not leak orphan ``envs.fork_worker``
+    # interpreters (mirrors the ``finally: bridge.close()`` in
+    # ``scripts.run_search_agent``/``run_cfr_search_agent``).
+    atexit.register(bridge.close)
 
 
 def _worker_run(task_dict: dict[str, Any]) -> dict[str, Any]:
@@ -223,6 +236,36 @@ def _worker_run(task_dict: dict[str, Any]) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # aggregation
 # --------------------------------------------------------------------------- #
+def _dedup_rows(rows: Sequence[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    """Collapse duplicate ``(opponent, seed, mode)`` rows, keeping the last one.
+
+    Two runs sharing a ``--tag`` (e.g. accidentally launched in parallel) can
+    append the same task twice. ``summarize`` groups every row, so a duplicate
+    double-counts a game, while ``paired_difference`` is keyed by
+    ``(opponent, seed, side)`` and collapses it -- the two aggregates then
+    disagree. Deduping by task key makes every aggregate see the same games.
+    """
+    by_key: dict[tuple[str, int, str], dict[str, Any]] = {}
+    duplicates = 0
+    for row in rows:
+        key = (str(row["opponent"]), int(row["seed"]), str(row["mode"]))
+        if key in by_key:
+            duplicates += 1
+        by_key[key] = row
+    return list(by_key.values()), duplicates
+
+
+def _median_upper(sorted_values: Sequence[float]) -> float:
+    """Median taking the *upper* of the two middle values for an even count.
+
+    Documented convention: with an even number of samples there is no single
+    middle element, so we report ``sorted_values[len // 2]`` (the larger middle)
+    rather than averaging -- the number stays an actually observed per-search
+    cost instead of an interpolation.
+    """
+    return sorted_values[len(sorted_values) // 2]
+
+
 def _outcomes(rows: Sequence[dict[str, Any]], mode: str) -> list[MatchOutcome]:
     return [
         MatchOutcome(
@@ -273,9 +316,8 @@ def _cost(spec: LadderSpec, rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "total_searches": total_searches,
         "searches_per_game": round(total_searches / len(cfr), 2) if cfr else None,
         "seconds_per_search_mean": round(sum(per_search) / len(per_search), 3) if per_search else None,
-        "seconds_per_search_median": (
-            round(per_search[len(per_search) // 2], 3) if per_search else None
-        ),
+        # upper middle on an even count (see _median_upper)
+        "seconds_per_search_median": round(_median_upper(per_search), 3) if per_search else None,
         "cfr_serial_core_hours": round(cfr_wall / 3600.0, 3),
     }
 
@@ -301,6 +343,7 @@ def _summarize_mode(rows: Sequence[dict[str, Any]], mode: str) -> dict[str, Any]
 
 
 def aggregate(spec: LadderSpec, rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    rows, duplicates = _dedup_rows(rows)
     modes = {mode: _summarize_mode(rows, mode) for mode in spec.modes}
     paired = None
     if EXPERT in spec.modes and CFR in spec.modes:
@@ -324,6 +367,7 @@ def aggregate(spec: LadderSpec, rows: Sequence[dict[str, Any]]) -> dict[str, Any
             "checkpoint": spec.checkpoint,
         },
         "matches": len(rows),
+        "duplicate_rows": duplicates,
         "modes": modes,
         "pooled_expert": modes.get(EXPERT, {}).get("pooled_rate"),
         "pooled_cfr": modes.get(CFR, {}).get("pooled_rate"),
@@ -338,6 +382,63 @@ def aggregate(spec: LadderSpec, rows: Sequence[dict[str, Any]]) -> dict[str, Any
 # --------------------------------------------------------------------------- #
 def _load_meta(path: Path) -> dict[str, Any] | None:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+def _open_stream(stream_path: Path, meta_path: Path, spec: LadderSpec) -> set[str]:
+    """Validate/seed the fingerprint sidecar and return the completed task keys.
+
+    Mirrors ``eval.arena._stream_state``: a raw stream with no sidecar is
+    **refused** (the fingerprint cannot be verified, so rows from a different
+    budget/config could be silently mixed into the resume), and a fingerprint
+    mismatch is refused. Returns the set of ``opponent|seed|mode`` keys already
+    present so the caller can skip them.
+    """
+    fingerprint = spec.fingerprint()
+    meta = _load_meta(meta_path)
+    if meta is not None:
+        if meta.get("fingerprint") != fingerprint:
+            raise SystemExit(
+                f"refusing to resume {stream_path}: spec fingerprint changed "
+                f"(delete {stream_path} + {meta_path} to start a new run)"
+            )
+    else:
+        if stream_path.exists():
+            raise SystemExit(
+                f"refusing to resume {stream_path}: {meta_path.name} sidecar is missing, "
+                f"so the spec fingerprint cannot be verified (delete the raw file or "
+                f"use another --tag)"
+            )
+        ensure_dir(stream_path.parent)
+        meta_path.write_text(
+            json.dumps(
+                {
+                    "fingerprint": fingerprint,
+                    "spec": asdict(spec),
+                    "engine_lock": load_engine_lock(),
+                    "runtime": runtime_metadata(),
+                    "pid": os.getpid(),
+                    "started": _dt.datetime.now().isoformat(timespec="seconds"),
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    return {
+        f"{r['opponent']}|{r['seed']}|{r['mode']}"
+        for r in read_jsonl(stream_path, tolerate_torn=True)
+    }
+
+
+def _failure_row(task: LadderTask, exc: BaseException) -> dict[str, Any]:
+    """A minimal record for a task whose future raised before producing a row."""
+    return {
+        "task_index": task.index,
+        "opponent": task.opponent,
+        "seed": task.seed,
+        "mode": task.mode,
+        "error": f"{type(exc).__name__}: {exc}",
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -363,6 +464,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tag", default="cfr_ladder")
     args = parser.parse_args(argv)
 
+    if args.workers < 1:
+        raise SystemExit(f"--workers must be >= 1 (got {args.workers})")
+    if args.bridge_workers < 1:
+        raise SystemExit(
+            f"--bridge-workers must be >= 1 (got {args.bridge_workers}); the search "
+            "forks only in subprocesses (workers == 0 would corrupt the JS runtime)"
+        )
+    if args.seeds < 1:
+        raise SystemExit(f"--seeds must be >= 1 (got {args.seeds})")
+
     pool = [opp.name for opp in scripted_opponents()]
     opponents = tuple(args.opponents) if args.opponents else tuple(pool[:3])
     missing = set(opponents) - set(pool)
@@ -387,32 +498,7 @@ def main(argv: list[str] | None = None) -> int:
 
     stream_path = data_dir("search", f"{spec.tag}.jsonl")
     meta_path = data_dir("search", f"{spec.tag}.meta.json")
-    fingerprint = spec.fingerprint()
-    meta = _load_meta(meta_path)
-    if meta is not None and meta.get("fingerprint") != fingerprint:
-        raise SystemExit(
-            f"refusing to resume {stream_path}: spec fingerprint changed "
-            f"(delete {stream_path} + {meta_path} to start a new run)"
-        )
-    if meta is None:
-        ensure_dir(stream_path.parent)
-        meta_path.write_text(
-            json.dumps(
-                {
-                    "fingerprint": fingerprint,
-                    "spec": asdict(spec),
-                    "engine_lock": load_engine_lock(),
-                    "runtime": runtime_metadata(),
-                    "pid": os.getpid(),
-                    "started": _dt.datetime.now().isoformat(timespec="seconds"),
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-
-    done = {f"{r['opponent']}|{r['seed']}|{r['mode']}" for r in read_jsonl(stream_path, tolerate_torn=True)}
+    done = _open_stream(stream_path, meta_path, spec)
     pending = [t for t in spec.tasks() if t.key not in done]
     print(
         f"[ladder] {spec.budget_label()} {spec.tag}: {len(done)} done, {len(pending)} to run "
@@ -422,26 +508,76 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     start = time.perf_counter()
+    failures: list[dict[str, Any]] = []
     if pending:
         ctx = _mp.get_context("spawn")
-        with _futures.ProcessPoolExecutor(
+        executor = _futures.ProcessPoolExecutor(
             max_workers=int(args.workers),
             mp_context=ctx,
             initializer=_init_worker,
             initargs=(asdict(spec), int(args.bridge_workers)),
-        ) as pool_exec:
-            futures = {pool_exec.submit(_worker_run, asdict(t)): t for t in pending}
-            for future in _futures.as_completed(futures):
-                task = futures[future]
-                row = future.result()
-                append_jsonl(stream_path, row)
-                print(
-                    f"[ladder] {task.opponent:<24} seed={task.seed:<3} {task.mode:<6} "
-                    f"winner={row['winner']} outcome={row['outcome']} "
-                    f"searched={row['searched_decisions']} changed={row['changed_decisions']} "
-                    f"{row['wall_seconds']}s" + (f" error={row['error']}" if row["error"] else ""),
-                    flush=True,
-                )
+        )
+        aborted = False
+        try:
+            futures: dict[Any, LadderTask] = {}
+            for t in pending:
+                try:
+                    futures[executor.submit(_worker_run, asdict(t))] = t
+                except BrokenProcessPool as exc:
+                    # The pool can die *during* submission too (the initializer
+                    # raised on a bad --checkpoint); stop submitting and keep the
+                    # rows already streamed.
+                    failures.append(_failure_row(t, exc))
+                    aborted = True
+                    print(
+                        f"[ladder] worker pool broke while submitting "
+                        f"({type(exc).__name__}: {exc}); streamed rows kept",
+                        flush=True,
+                    )
+                    break
+            if not aborted:
+                for future in _futures.as_completed(futures):
+                    task = futures[future]
+                    try:
+                        row = future.result()
+                    except BrokenProcessPool as exc:
+                        # The worker pool itself died: no queued task can run, so
+                        # stop and keep whatever already streamed.
+                        # ``shutdown(cancel_futures=True)`` below avoids waiting
+                        # for the queue only to discard it.
+                        failures.append(_failure_row(task, exc))
+                        aborted = True
+                        print(
+                            f"[ladder] worker pool broke ({type(exc).__name__}: {exc}); "
+                            f"stopping after {len(failures)} failure(s); streamed rows kept",
+                            flush=True,
+                        )
+                        break
+                    except BaseException as exc:  # noqa: BLE001 - one bad task must not kill the run
+                        # A single task's exception (engine build, capture_snapshot,
+                        # build_policy, worker init, ...) is recorded and skipped;
+                        # the remaining queued games still run and the report is
+                        # still written.
+                        failures.append(_failure_row(task, exc))
+                        print(
+                            f"[ladder] {task.opponent:<24} seed={task.seed:<3} {task.mode:<6} "
+                            f"FAILED: {type(exc).__name__}: {exc}",
+                            flush=True,
+                        )
+                        continue
+                    append_jsonl(stream_path, row)
+                    print(
+                        f"[ladder] {task.opponent:<24} seed={task.seed:<3} {task.mode:<6} "
+                        f"winner={row['winner']} outcome={row['outcome']} "
+                        f"searched={row['searched_decisions']} changed={row['changed_decisions']} "
+                        f"{row['wall_seconds']}s" + (f" error={row['error']}" if row["error"] else ""),
+                        flush=True,
+                    )
+        finally:
+            # Normal path: wait for the pool. Aborted path: cancel the queue
+            # instead of shutdown(wait=True), which would run every remaining
+            # game and then throw the results away.
+            executor.shutdown(wait=not aborted, cancel_futures=aborted)
     wall = time.perf_counter() - start
 
     rows = read_jsonl(stream_path, tolerate_torn=True)
@@ -450,6 +586,11 @@ def main(argv: list[str] | None = None) -> int:
         "wall_seconds": round(wall, 1),
         "engine_lock": load_engine_lock(),
         "runtime": runtime_metadata(),
+        "failures": {
+            "count": len(failures),
+            "items": failures[:50],
+            "items_truncated": len(failures) > 50,
+        },
         **aggregate(spec, rows),
     }
     out_dir = ensure_dir(reports_dir("search"))
@@ -466,8 +607,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"[ladder] cost={report['cost']}", flush=True)
     print(f"[ladder] change={report['change']}", flush=True)
+    if failures:
+        print(
+            f"[ladder] {len(failures)} task(s) failed (see report['failures']); "
+            f"re-run the same command to retry them",
+            flush=True,
+        )
     print(f"[ladder] wrote {report_path}", flush=True)
-    return 0
+    # A partial report is still written; a nonzero code flags the failures so a
+    # driving job/shell notices, while the streamed rows stay resumable.
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

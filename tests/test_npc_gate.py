@@ -10,8 +10,10 @@ from scripts.run_npc_gate import (
     build_decks,
     cluster_bootstrap_ci,
     render_markdown,
+    _reproduce_command,
     _seeds,
     _stages,
+    _unique,
 )
 
 
@@ -47,6 +49,26 @@ def test_stage_and_seed_parsing():
     assert _stages("all") == tuple(sorted(_stages("all")))
     assert _seeds("1,2,3", 10) == (1, 2, 3)
     assert _seeds(None, 3) == (1, 2, 3)
+
+
+def test_stage_and_seed_dedup():
+    # A repeated entry would run (and count) the same game twice, shrinking the CI.
+    assert _seeds("5,7,5", 10) == (5, 7)
+    assert _stages("a,b,a") == ("a", "b")
+    assert _unique(["x", "y", "x", "y", "z"]) == ("x", "y", "z")
+
+
+def test_reproduce_command_reflects_explicit_seeds():
+    explicit = _reproduce_command(
+        seeds_value="5,7", seeds=(5, 7), stages=("a", "b"), workers=4, tag="t"
+    )
+    assert "--seeds 5,7" in explicit
+    assert "--seed-count" not in explicit
+    derived = _reproduce_command(
+        seeds_value=None, seeds=(1, 2, 3), stages=("a",), workers=8, tag="t"
+    )
+    assert "--seed-count 3" in derived
+    assert "--seeds " not in derived
 
 
 def test_build_decks_shapes():

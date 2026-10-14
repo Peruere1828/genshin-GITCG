@@ -64,16 +64,57 @@ POOL_C_V2_FILL: tuple[int, ...] = (
 )
 
 
+def _unique(values: Sequence[Any]) -> tuple[Any, ...]:
+    """Order-preserving de-duplication.
+
+    A repeated ``--stages``/``--seeds`` entry would otherwise be run twice,
+    inflating the game count and (by counting the same game twice) shrinking the
+    Wilson/cluster CI around a rate that never actually got more samples.
+    """
+    out: list[Any] = []
+    seen: set[Any] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return tuple(out)
+
+
 def _stages(value: str | None) -> tuple[str, ...]:
     if not value or value == "all":
-        return tuple(stage_names())
-    return tuple(part.strip() for part in value.split(",") if part.strip())
+        return _unique(stage_names())
+    return _unique(part.strip() for part in value.split(",") if part.strip())
 
 
 def _seeds(value: str | None, count: int) -> tuple[int, ...]:
     if value:
-        return tuple(int(part.strip()) for part in value.split(",") if part.strip())
-    return tuple(range(1, int(count) + 1))
+        return _unique(int(part.strip()) for part in value.split(",") if part.strip())
+    return _unique(range(1, int(count) + 1))
+
+
+def _reproduce_command(
+    *,
+    seeds_value: str | None,
+    seeds: Sequence[int],
+    stages: Sequence[str],
+    workers: int,
+    tag: str,
+) -> str:
+    """The command that reproduces exactly the stages/seeds that were measured.
+
+    ``--seed-count N`` is only emitted when seeds were derived from the count;
+    an explicit ``--seeds 5,7`` is echoed back verbatim (rendering ``--seed-count
+    2`` there would re-run seeds 1,2 instead).
+    """
+    if seeds_value:
+        seeds_arg = "--seeds " + ",".join(str(s) for s in seeds)
+    else:
+        seeds_arg = f"--seed-count {len(seeds)}"
+    return (
+        f"python -m scripts.run_npc_gate --stages {','.join(stages)} "
+        f"{seeds_arg} --workers {workers} --tag {tag}"
+    )
 
 
 def build_decks() -> dict[str, Any]:
@@ -409,9 +450,12 @@ def main(argv: list[str] | None = None) -> int:
     overall = primary["overall"]
     gate_passed = float(overall["three_star_rate"]) >= GATE_THRESHOLD
 
-    command = (
-        f"python -m scripts.run_npc_gate --stages {args.stages} --seed-count {len(seeds)} "
-        f"--workers {args.workers} --tag {args.tag}"
+    command = _reproduce_command(
+        seeds_value=args.seeds,
+        seeds=seeds,
+        stages=stages,
+        workers=args.workers,
+        tag=args.tag,
     )
     payload: dict[str, Any] = {
         "generated_at": _dt.datetime.now().isoformat(timespec="seconds"),
