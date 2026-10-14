@@ -197,12 +197,22 @@ def main(argv: list[str] | None = None) -> int:
     meta_path = data_dir("search", f"{spec.tag}.meta.json")
     fingerprint = spec.fingerprint()
     meta = _load_meta(meta_path)
-    if meta is not None and meta.get("fingerprint") != fingerprint:
-        raise SystemExit(
-            f"refusing to resume {stream_path}: spec fingerprint changed "
-            f"(delete {stream_path} + {meta_path} to start a new run)"
-        )
-    if meta is None:
+    if meta is not None:
+        if meta.get("fingerprint") != fingerprint:
+            raise SystemExit(
+                f"refusing to resume {stream_path}: spec fingerprint changed "
+                f"(delete {stream_path} + {meta_path} to start a new run)"
+            )
+    else:
+        # Mirrors run_cfr_ladder._open_stream / eval.arena._stream_state: a raw
+        # stream with no sidecar is refused — its fingerprint cannot be verified,
+        # so rows from a different budget/config could be silently mixed in.
+        if stream_path.exists():
+            raise SystemExit(
+                f"refusing to resume {stream_path}: {meta_path.name} sidecar is missing, "
+                f"so the spec fingerprint cannot be verified (delete the raw file or "
+                f"use another --tag)"
+            )
         ensure_dir(stream_path.parent)
         meta_path.write_text(
             json.dumps(
