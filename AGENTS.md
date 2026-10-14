@@ -9,7 +9,7 @@
   - `agents/scripted/`：从 `gitcg_expert_system` 移植的 20 套脚本卡组规则，可跑完整对局。
   - `envs/`：`PolicyPlayer`（`gitcg.Player` 五类请求 → `Policy` 抽象）+ `run_match` + expert/baseline policy + 牌组装配 + `rollout`（多进程）+ `snapshot`（快照/分叉工具）+ `fork_bridge`/`fork_worker`（L5.4 子进程 fork 桥，JSON-lines）+ `fork_search`（实用版 continual-resolving：`ForkSearchPolicy` + `run_search_match`）。
   - `eval/`：`opponents`（20 脚本 + 基线池）+ `arena`（矩阵 + Wilson CI + Elo + 流式落盘/断点续跑）+ `ladder` + `stats`。
-  - `common/llm.py`：OpenAI 兼容 LLM 客户端（仅标准库），降级链 local→API→纯策略；`agents/llm_assist.py`（局内辅助）、`coach/replay.py`（复盘教练）、`decklab/sensitivity.py`（换卡敏感性）。
+  - `common/llm.py`：OpenAI 兼容 LLM 客户端（仅标准库），降级链 API→纯策略；`agents/llm_assist.py`（局内辅助）、`coach/replay.py`（复盘教练）、`decklab/sensitivity.py`（换卡敏感性）。
   - `scripts/run_llm_matrix.py`：L5.2 全对手池「纯策略 vs LLM 辅助」矩阵（分开报分，逐局流式落盘+断点续跑+spec 指纹护栏）。
   - `scripts/run_search_agent.py`：L5.4 fork 搜索 resolver 对池评测（配对种子 search vs expert 消融，流式落盘+指纹护栏+断点续跑）。
   - `train/`：CVPN + 采集/训练/评测管线 + `collect.py`/`collect_worker.py`（集群可续跑分片采集，CPU 数据平面）+ `replay_branch.py`（replay-branch MC teacher）+ `learning_curve.py`（L5.3 数据量×网络规模扫描）+ `resolver.py`；`agents/neural.py` 接回 env。

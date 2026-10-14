@@ -1,6 +1,7 @@
 # NOTICE
 
-This project is licensed AGPL-3.0-only.
+Copyright (C) 2026 Peruere1828. Licensed under AGPL-3.0-only — see [`LICENSE`](./LICENSE)
+for the full license text.
 
 ## Vendored / ported code
 
