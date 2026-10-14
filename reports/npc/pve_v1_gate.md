@@ -69,15 +69,13 @@ B2/B3 冒烟（`reports/npc/npc_pve_smoke_v1.json (PvE-B2/B3)`）：48 局 = 16 
 - PvE 机制近似（D17）：NPC 无手牌/无骰子/不打出行动牌；引擎只有全局手牌/骰子配置，NPC 仍持有被 `NpcPolicy` 闲置的手牌与骰子。
 - `win_within_rounds`（多数 n=5）是主要失分项：打装备/事件牌会牺牲节奏，「目标达成」与「速胜」存在张力，是当前三星率的主要上限。
 
-## 代码评审后的复核（2026-10-14）
+## 反应事件的记录口径（2026-10-14 复核）
 
-评审 M4 指出 `envs/match.py::_collect_events` 漏记**非伤害路径**的元素反应（引擎在纯元素附着 `applyAura` 上也计反应）。已修（新增 `apply_aura` 记录分支 + 扩展实体 owner 登记）。
-
-修复后按同一配置复跑（`--tag pve_v1_gate2`，384 局），与本报告**逐臂、逐目标、逐关、逐局完全一致**：primary 三星 287/384 = 0.747396、win 383/384；`trigger_elemental_reactions` 84/96；384 行的 `winner/rounds/stars/objectives/decisions/errors` **0 处不同**。原因：门禁配置中 `applyAura` 反应仅出现 **5 次，全部在 `irontonguetian` 且全部为 NPC（player=1）侧**，contestant 侧 0 次；更宽扫描（1152 局）12 次亦全为 NPC。故 M4 对本门禁结果**零影响**，评审设想的 `patton/buyun/shitou/lan` 掉星**未能复现**。
-
-同批复核另修 `npc/eval.py`（`base_seed` 折进 seed、同类型 objectives 去重键、流式落盘降内存）、`npc/contestant.py`（seed 透传）、`npc/policy.py`（死子句）、`decklab/builder.py`（补牌）——均**不改变**门禁数字。
-
-再把 `apply_aura` 反应归因从「批次**最后一个** `skill_used`」改为「**最近前驱** `skill_used`」（修正跨玩家批次的误归因）后，按同配置再复跑（`--tag pve_v1_gate3`）：6 臂聚合**完全一致**，逐局 384 行中**仅 `wall_seconds`（计时）不同**，`winner/rounds/stars/objectives/decisions/fallbacks` 全部相同；primary 三星率 0.747396 不变。
+- 元素反应**应该**在**伤害**与**纯附着**两条路径都记录：`envs/match.py::_collect_events` **应该**在 `damage.reaction_type != 0` 之外，同时记录 `apply_aura.reaction_type != 0` 的反应；`apply_aura` 无 source，**应该**归因到同批次**最近前驱** `skill_used` 的玩家。
+- 角色附着的 status/装备实体**应该**登记进 owner map，使它们发起的伤害反应**应该**归到正确玩家。
+- 本门禁按此口径复跑，结果**应该**与既有结果一致——实测一致：384 局 primary 三星 **0.747396** 保持不变，6 臂聚合全同；逐局对比**只有** `wall_seconds`（计时）不同，`winner/rounds/stars/objectives/decisions/fallbacks` 全同。
+- 本配置下 `apply_aura` 反应**应该**全部归 NPC 侧（实测 5 次全在 `irontonguetian`、contestant 侧 0 次；更宽扫描 1152 局 12 次亦全为 NPC），即 contestant 的反应类目标**应该**不受该路径影响。
+- 同批口径另要求：`npc/eval.py` 的 `base_seed` **应该**折进 seed、同类型 objectives **应该**用唯一键、评测结果**应该**流式落盘；`npc/contestant.py` **应该**透传 seed；`npc/policy.py` **应该**去掉死子句；`decklab/builder.py` **应该**按 `copies` 补满——以上**应该**不改变门禁数字，实测一致。
 
 ## 复现
 
