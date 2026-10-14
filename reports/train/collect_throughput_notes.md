@@ -90,6 +90,8 @@ python -m scripts.bench_payload_format --replays data/replays/datafirst_bc_sa500
     --games 60 --repeats 3 --json reports/train/payload_bench.json
 ```
 
+> 注（2026-10-14，代码评审清理）：`reports/train/payload_bench.json` 已**清除**——它的 jsonl 行标了 `dtype: float16`，但 jsonl writer 忽略 `compact_dtype`（`bench_payload_format.py` 已修：改标 `n/a`）。属标注问题、数字本身有效；**待下次 review 无误后用上面命令重新生成**。
+
 ---
 
 ## 5. 降种子采样口径（建议）
