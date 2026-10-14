@@ -119,10 +119,26 @@ def test_open_stream_creates_sidecar_and_reads_done(tmp_path):
     stream = tmp_path / "t.jsonl"
     meta = tmp_path / "t.meta.json"
     spec = _spec()
-    assert _open_stream(stream, meta, spec) == set()
+    assert _open_stream(stream, meta, spec) == (set(), set())
     assert json.loads(meta.read_text(encoding="utf-8"))["fingerprint"] == spec.fingerprint()
     stream.write_text(json.dumps(_row("a", 0, CFR, 1.0)) + "\n", encoding="utf-8")
-    assert _open_stream(stream, meta, spec) == {"a|0|cfr"}
+    assert _open_stream(stream, meta, spec) == ({"a|0|cfr"}, set())
+
+
+def test_open_stream_separates_error_rows(tmp_path):
+    """Error rows are still 'done' but reported separately so --retry-errors can
+    re-queue them (review follow-up #1: otherwise their pairs vanish)."""
+    stream = tmp_path / "t.jsonl"
+    meta = tmp_path / "t.meta.json"
+    spec = _spec()
+    _open_stream(stream, meta, spec)  # seed the sidecar
+    ok = _row("a", 0, CFR, 1.0)
+    bad = _row("b", 1, CFR, 0.0)
+    bad["error"] = "RuntimeError: boom"
+    stream.write_text(json.dumps(ok) + "\n" + json.dumps(bad) + "\n", encoding="utf-8")
+    done, errors = _open_stream(stream, meta, spec)
+    assert done == {"a|0|cfr", "b|1|cfr"}
+    assert errors == {"b|1|cfr"}
 
 
 @pytest.mark.parametrize(

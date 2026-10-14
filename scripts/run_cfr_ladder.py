@@ -384,14 +384,18 @@ def _load_meta(path: Path) -> dict[str, Any] | None:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
 
 
-def _open_stream(stream_path: Path, meta_path: Path, spec: LadderSpec) -> set[str]:
+def _open_stream(
+    stream_path: Path, meta_path: Path, spec: LadderSpec
+) -> tuple[set[str], set[str]]:
     """Validate/seed the fingerprint sidecar and return the completed task keys.
 
     Mirrors ``eval.arena._stream_state``: a raw stream with no sidecar is
     **refused** (the fingerprint cannot be verified, so rows from a different
     budget/config could be silently mixed into the resume), and a fingerprint
-    mismatch is refused. Returns the set of ``opponent|seed|mode`` keys already
-    present so the caller can skip them.
+    mismatch is refused. Returns ``(done_keys, error_keys)`` — the
+    ``opponent|seed|mode`` keys already present (so the caller can skip them) and
+    the subset whose streamed row carries an ``error`` (so a caller can retry
+    them; see ``--retry-errors``).
     """
     fingerprint = spec.fingerprint()
     meta = _load_meta(meta_path)
@@ -424,10 +428,14 @@ def _open_stream(stream_path: Path, meta_path: Path, spec: LadderSpec) -> set[st
             ),
             encoding="utf-8",
         )
-    return {
-        f"{r['opponent']}|{r['seed']}|{r['mode']}"
-        for r in read_jsonl(stream_path, tolerate_torn=True)
-    }
+    done: set[str] = set()
+    error_keys: set[str] = set()
+    for r in read_jsonl(stream_path, tolerate_torn=True):
+        key = f"{r['opponent']}|{r['seed']}|{r['mode']}"
+        done.add(key)
+        if r.get("error"):
+            error_keys.add(key)
+    return done, error_keys
 
 
 def _failure_row(task: LadderTask, exc: BaseException) -> dict[str, Any]:
@@ -462,6 +470,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workers", type=int, default=6, help="concurrent games (each with its own fork bridge)")
     parser.add_argument("--bridge-workers", type=int, default=1)
     parser.add_argument("--tag", default="cfr_ladder")
+    parser.add_argument(
+        "--retry-errors",
+        action="store_true",
+        help="re-queue streamed games whose row carries an error (they are otherwise "
+        "treated as done forever, and paired_difference silently drops their pairs)",
+    )
     args = parser.parse_args(argv)
 
     if args.workers < 1:
@@ -498,7 +512,22 @@ def main(argv: list[str] | None = None) -> int:
 
     stream_path = data_dir("search", f"{spec.tag}.jsonl")
     meta_path = data_dir("search", f"{spec.tag}.meta.json")
-    done = _open_stream(stream_path, meta_path, spec)
+    done, error_done = _open_stream(stream_path, meta_path, spec)
+    if args.retry_errors:
+        retried = done & error_done
+        done -= error_done
+        if retried:
+            print(
+                f"[ladder] --retry-errors: re-queuing {len(retried)} streamed game(s) that errored",
+                flush=True,
+            )
+    elif error_done:
+        print(
+            f"[ladder] WARNING: {len(error_done)} streamed game(s) errored and stay 'done'; "
+            f"paired_difference drops their pairs (survivorship bias). "
+            f"Re-run with --retry-errors to retry them.",
+            flush=True,
+        )
     pending = [t for t in spec.tasks() if t.key not in done]
     print(
         f"[ladder] {spec.budget_label()} {spec.tag}: {len(done)} done, {len(pending)} to run "
@@ -553,11 +582,12 @@ def main(argv: list[str] | None = None) -> int:
                             flush=True,
                         )
                         break
-                    except BaseException as exc:  # noqa: BLE001 - one bad task must not kill the run
+                    except Exception as exc:  # noqa: BLE001 - one bad task must not kill the run
                         # A single task's exception (engine build, capture_snapshot,
                         # build_policy, worker init, ...) is recorded and skipped;
                         # the remaining queued games still run and the report is
-                        # still written.
+                        # still written. ``Exception`` (not ``BaseException``) so a
+                        # main-thread Ctrl-C/SystemExit still propagates.
                         failures.append(_failure_row(task, exc))
                         print(
                             f"[ladder] {task.opponent:<24} seed={task.seed:<3} {task.mode:<6} "
@@ -609,8 +639,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[ladder] change={report['change']}", flush=True)
     if failures:
         print(
-            f"[ladder] {len(failures)} task(s) failed (see report['failures']); "
-            f"re-run the same command to retry them",
+            f"[ladder] {len(failures)} task(s) failed before streaming (see report['failures']); "
+            f"re-run the same command to retry them (streamed rows stay resumable)",
             flush=True,
         )
     print(f"[ladder] wrote {report_path}", flush=True)

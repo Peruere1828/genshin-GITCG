@@ -58,6 +58,21 @@ def test_apply_aura_reaction_is_recorded():
     assert reactions[0].source_definition_id == 0
 
 
+def test_apply_aura_attributes_to_nearest_preceding_skill():
+    """Cross-player batches (end-phase summon ticks interleave sides) must not be
+    misattributed to the batch's *last* skill (review follow-up #3)."""
+    sink = _collect(
+        [
+            _skill_used(1),
+            _apply_aura(SUPERCONDUCT),
+            _skill_used(0),
+            _apply_aura(VAPORIZE),
+        ]
+    )
+    reactions = [event for event in sink if event.kind == "reaction"]
+    assert [event.player for event in reactions] == [1, 0]
+
+
 def test_apply_aura_without_reaction_is_ignored():
     mutation = mutation_pb2.ExposedMutation()
     mutation.apply_aura.reaction_type = 0

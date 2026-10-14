@@ -320,17 +320,17 @@ class PolicyPlayer(Player):
         # The engine also counts reactions triggered by a *pure elemental
         # application* (``applyAura`` with ``!opt.fromDamage``; mutator.ts
         # ``recordReaction``) — not just by damage. Those mutations carry no
-        # source id, but the engine emits them in the same notification batch as
-        # the ``skill_used`` that applied the element, so attribute the reaction
-        # to that skill's player (``None`` if the batch has no ``skill_used``).
-        batch_skill_who: int | None = None
-        for mutation in mutations:
-            if mutation.WhichOneof("mutation") == "skill_used":
-                batch_skill_who = int(mutation.skill_used.who)
+        # source id, but the engine emits them after the ``skill_used`` that
+        # applied the element, so attribute each to the **nearest preceding**
+        # ``skill_used`` in the batch (``None`` if none precedes it). Using the
+        # batch's *last* skill would misattribute a cross-player batch (end-phase
+        # summon ticks interleave sides).
+        last_skill_who: int | None = None
         for mutation in mutations:
             which = mutation.WhichOneof("mutation")
             if which == "skill_used":
                 skill = mutation.skill_used
+                last_skill_who = int(skill.who)
                 sink.append(
                     MatchEvent(
                         kind="skill",
@@ -361,7 +361,7 @@ class PolicyPlayer(Player):
                 sink.append(
                     MatchEvent(
                         kind="reaction",
-                        player=batch_skill_who,
+                        player=last_skill_who,
                         round_number=round_number,
                         reaction_type=_reaction_name(int(aura.reaction_type)),
                         # ``applyAura`` carries no source entity; the target is
