@@ -51,13 +51,15 @@ export function createAiHttpIo(options: AiHttpIoOptions): CancellablePlayerIO {
       if (!forwardNotifications) {
         return;
       }
+      // 注意：不要加 `keepalive: true`——按 Fetch 规范，带 keepalive 的请求体
+      // 上限被压到 64 KiB，大 notification（完整 GameState）会静默失败。
       void fetch(`${base}/notify`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ who, notification }),
-        keepalive: true,
-      }).catch(() => {
-        /* 通知是尽力而为，不阻塞对局 */
+      }).catch((e) => {
+        // 通知是尽力而为、不阻塞对局，但错误不能静默吞掉：交给上层日志/提示。
+        onLog?.("!", "notify", e);
       });
     },
 

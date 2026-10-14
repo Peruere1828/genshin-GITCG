@@ -30,9 +30,24 @@ import random
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.parse import urlparse
 
 # 引擎枚举：ActionValidity.VALID === 0（见 packages/typings/src/gen/rpc.ts）
 VALID = 0
+
+# 默认只允许来自本机的网页驱动本桥（见 Handler._cors）。
+# 这是**有意识**的收敛：桥能替 AI 座位做决策，若允许任意 Origin，
+# 用户浏览器里任意一个网页都能 POST /rpc 驱动本地桥。
+_LOCAL_ORIGIN_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]"}
+
+
+def _is_local_origin(origin: str) -> bool:
+    """Origin 形如 scheme://host[:port]，判断其 host 是否为本机。"""
+    try:
+        host = urlparse(origin).hostname
+    except ValueError:
+        return False
+    return host in _LOCAL_ORIGIN_HOSTS
 
 
 class Policy:
@@ -88,13 +103,24 @@ class State:
         self.latest_mutation: Any = None
 
 
-def make_handler(state: State, quiet: bool):
+def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
     class Handler(BaseHTTPRequestHandler):
         server_version = "giTcgAiBridge/0.1"
 
         # ---- helpers ---------------------------------------------------
+        def _path(self) -> str:
+            """去掉 query string 的路径，用于精确路由匹配。"""
+            return urlparse(self.path).path
+
         def _cors(self) -> None:
-            self.send_header("Access-Control-Allow-Origin", "*")
+            # 默认仅回显本机 Origin（localhost/127.0.0.1/::1）；--cors-origin 可显式覆盖。
+            origin = self.headers.get("Origin")
+            if cors_origin is not None:
+                self.send_header("Access-Control-Allow-Origin", cors_origin)
+                self.send_header("Vary", "Origin")
+            elif origin and _is_local_origin(origin):
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "content-type")
 
@@ -146,7 +172,8 @@ def make_handler(state: State, quiet: bool):
             self.end_headers()
 
         def do_GET(self) -> None:  # noqa: N802
-            if self.path.startswith("/health"):
+            path = self._path()
+            if path == "/health":
                 with state.lock:
                     self._json(
                         {
@@ -155,8 +182,9 @@ def make_handler(state: State, quiet: bool):
                             "notify": state.notify_count,
                         }
                     )
-            elif self.path.startswith("/state"):
-                self._json({"state": state.latest_state})
+            elif path == "/state":
+                with state.lock:
+                    self._json({"state": state.latest_state})
             else:
                 self._json({"service": "gi-tcg-ai-bridge", "endpoints": ["/rpc", "/notify", "/health", "/state"]})
 
@@ -166,20 +194,32 @@ def make_handler(state: State, quiet: bool):
             except Exception as e:  # noqa: BLE001
                 self._json({"error": f"bad json: {e}"}, status=400)
                 return
-            if self.path.startswith("/rpc"):
+            path = self._path()
+            if path == "/rpc":
                 try:
+                    if not isinstance(body, dict):
+                        raise ValueError("body must be a JSON object")
                     out = self._dispatch_rpc(int(body.get("who", 0)), body.get("request") or {})
                 except Exception as e:  # noqa: BLE001
                     self._json({"error": str(e)}, status=500)
                     return
                 self._json(out)
-            elif self.path.startswith("/notify"):
-                note = body.get("notification") or {}
-                with state.lock:
-                    state.notify_count += 1
-                    if isinstance(note, dict):
+            elif path == "/notify":
+                # 与 /rpc 一致：任何解析/形状错误都返回错误响应，不让连接静默断开。
+                try:
+                    if not isinstance(body, dict):
+                        raise ValueError("body must be a JSON object")
+                    note = body.get("notification")
+                    if note is not None and not isinstance(note, dict):
+                        raise ValueError("notification must be a JSON object")
+                    note = note or {}
+                    with state.lock:
+                        state.notify_count += 1
                         state.latest_state = note.get("state")
                         state.latest_mutation = note.get("mutation")
+                except Exception as e:  # noqa: BLE001
+                    self._json({"error": str(e)}, status=400)
+                    return
                 self._json({})
             else:
                 self._json({"error": "not found"}, status=404)
@@ -194,14 +234,22 @@ def main() -> None:
     ap.add_argument("--strategy", choices=["greedy", "random"], default="random")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument(
+        "--cors-origin",
+        default=None,
+        help="显式设置 Access-Control-Allow-Origin（如 '*'）；默认仅放行本机 Origin",
+    )
     args = ap.parse_args()
 
     policy = Policy(strategy=args.strategy, seed=args.seed)
     state = State(policy)
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(state, args.quiet))
+    server = ThreadingHTTPServer(
+        (args.host, args.port), make_handler(state, args.quiet, args.cors_origin)
+    )
     print(
         f"[ai-bridge] listening on http://{args.host}:{args.port} "
-        f"(strategy={args.strategy}, seed={args.seed})",
+        f"(strategy={args.strategy}, seed={args.seed}, "
+        f"cors={'local-only' if args.cors_origin is None else args.cors_origin})",
         flush=True,
     )
     try:

@@ -20,6 +20,7 @@ import {
   Game,
   GameState,
   GameStateLogEntry,
+  GiTcgIoError,
   Version,
   exposeState,
   serializeGameStateLog,
@@ -192,6 +193,53 @@ export function StandaloneParent(props: StandaloneParentProps) {
     }
   };
 
+  // 引擎在 rpc 被取消/中止时（例如「从此处继续」会调 cancelRpc）同样抛
+  // GiTcgIoError，那不是桥故障，不该弹窗。
+  const isCancellation = (err: unknown): boolean => {
+    let cur: unknown = err;
+    for (let i = 0; i < 5 && cur instanceof Error; i++) {
+      if (cur.name === "AbortError" || /abort|cancel/i.test(cur.message)) {
+        return true;
+      }
+      cur = (cur as { cause?: unknown }).cause;
+    }
+    return false;
+  };
+
+  // WS8/D18 overlay：AI 桥（HTTP）出错时引擎会把该座位判负并结束对局
+  // （GiTcgIoError -> gotWinner(flip(who))）。默认完全静默，会让人误以为
+  // 是真赢了。这里显式提示，让人知道是桥挂了而不是真赢了。
+  const onIoError = (e: GiTcgIoError) => {
+    const merged = mergeErrorCause(e);
+    if (isCancellation(e)) {
+      console.warn("[ai-http] io error (cancelled, ignored)", merged);
+      return;
+    }
+    console.error("[ai-http] io error", merged);
+    const isAiSeat =
+      !!props.aiOpponent && (e.who === 0 || !!props.aiSelfPlay);
+    const seat = `${e.who === 0 ? "先手" : "后手"}方`;
+    const hint = isAiSeat
+      ? "\n若这是 AI 桥：请确认 web/ai_rpc_server.py 正在运行、地址可访问。"
+      : "";
+    alert(
+      `${seat}${isAiSeat ? "（AI 桥）" : ""} IO 出错，本局将判该方落败并结束（并不代表真的分出了胜负）。` +
+        `${hint}\n${merged.message}`,
+    );
+  };
+
+  // AI 桥调试日志：目前只把错误方向（"!"）打到 console；两个座位都接上，
+  // 之前 seat 1 的 io 完全没有日志。
+  const aiIoLog = (
+    dir: "→" | "←" | "!",
+    method: string,
+    payload?: unknown,
+  ) => {
+    if (dir === "!") {
+      console.warn(`[ai-http] ${method}`, payload);
+    }
+  };
+
   const createGame = async (state?: GameState) => {
     if (!state) {
       const deck0 = DEFAULT_ASSETS_MANAGER.decode(props.deck0);
@@ -206,17 +254,14 @@ export function StandaloneParent(props: StandaloneParentProps) {
     const game = new Game(state);
     (window as any).theGame = game;
     game.onPause = pause;
+    game.onIoError = onIoError;
     // WS8/D18 overlay：AI 模式下先手方走 HTTP 桥，否则走弹窗真人 io
     if (props.aiOpponent) {
       game.players[0].io = createAiHttpIo({
         baseUrl: props.aiOpponent,
         who: 0,
         forwardNotifications: true,
-        onLog: (dir, method, payload) => {
-          if (dir === "!") {
-            console.warn(`[ai-http] ${method}`, payload);
-          }
-        },
+        onLog: aiIoLog,
       });
     } else {
       game.players[0].io = childIo;
@@ -226,6 +271,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
         baseUrl: props.aiOpponent,
         who: 1,
         forwardNotifications: true,
+        onLog: aiIoLog,
       });
     } else {
       game.players[1].io = uiIo;

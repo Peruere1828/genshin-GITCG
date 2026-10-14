@@ -41,7 +41,11 @@ export default defineConfig({
     "globalThis.__GI_TCG_ASSETS_BASE_URL__": JSON.stringify(ASSETS_BASE_URL),
   },
   server: {
-    host: true,
+    // WS8/D18 overlay：默认绑 0.0.0.0，便于在 WSL 里跑、Windows 侧浏览器访问；
+    // 如需仅本机可 `HOST=127.0.0.1 pnpm dev`。注意：真正的敏感面是
+    // web/ai_rpc_server.py 的 HTTP 桥（能替 AI 座位决策），其 CORS 默认已
+    // 收敛为 localhost/127.0.0.1，故这里暴露 dev server 不额外放大风险。
+    host: process.env.HOST ?? true,
     port: Number(process.env.PORT ?? 5173),
   },
   plugins: [

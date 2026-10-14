@@ -21,9 +21,12 @@
 ```sh
 conda run -n gitcg python web/ai_rpc_server.py --port 8770 --strategy random --seed 1
 # 另开一个终端：
-bash engine-overlay/scripts/standalone.sh dev
+bash engine-overlay/scripts/standalone.sh dev   # 会先 apply overlay 再起 dev server
 # 浏览器 http://localhost:5173/ 勾「AI 对手（HTTP 桥）」+「双方 AI 自对弈」
 ```
+
+CORS 默认只放行本机 Origin（`localhost`/`127.0.0.1`/`::1`）；如需其他来源
+（例如经局域网 IP 访问 dev server）用 `--cors-origin <origin|*>` 显式放行。
 
 无第三方依赖、无 node_modules；缓存只有 `__pycache__/`（根 `.gitignore` 已忽略）。
 
