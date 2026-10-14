@@ -351,11 +351,22 @@ class CollectSpec:
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def _scan_samples(path: Path) -> tuple[set[int], int, int, int]:
+def _scan_samples(
+    path: Path, *, count_errors_as_done: bool = True
+) -> tuple[set[int], int, int, int]:
     """Stream a samples file, returning (done indices, games, samples, errors).
 
     Streaming matters at scale: the file holds every game's samples and can be
     far larger than memory. A torn trailing line is skipped (its game is redone).
+
+    ``count_errors_as_done`` controls how a game that *errored* (the worker's
+    ``run_collect_task`` caught an engine/IO exception and emitted an error
+    record) is treated on resume (M6). The default keeps the historical
+    behaviour — an error record marks the index done so a resume does not redo
+    it. Passing ``False`` excludes error indices from ``done`` so a resume
+    retries them, which is what ``collect(..., retry_errors=True)`` uses to
+    recover from a transient fault that would otherwise silently shrink the
+    dataset. A later *successful* record for the same index still marks it done.
     """
     done: set[int] = set()
     games = samples = errors = 0
@@ -372,8 +383,9 @@ def _scan_samples(path: Path) -> tuple[set[int], int, int, int]:
                 continue
             games += 1
             samples += len(record.get("samples", ()))
-            errors += 1 if record.get("error") else 0
-            if "index" in record:
+            errored = bool(record.get("error"))
+            errors += 1 if errored else 0
+            if "index" in record and not (errored and not count_errors_as_done):
                 done.add(int(record["index"]))
     return done, games, samples, errors
 
@@ -391,8 +403,15 @@ def collect(
     workers: int | None = None,
     max_tasks: int | None = None,
     progress: bool = True,
+    retry_errors: bool = False,
 ) -> dict[str, Any]:
-    """Run (or resume) a collection into ``data/replays/<tag>/`` and return a summary."""
+    """Run (or resume) a collection into ``data/replays/<tag>/`` and return a summary.
+
+    ``retry_errors`` (M6) excludes games whose record carries an ``error`` from
+    the resume ``done`` set, so this call re-runs them. The default leaves them
+    done (historical behaviour) and merely warns when any errors are present, so
+    a transient fault is at least visible instead of only showing up as a count.
+    """
     replay_dir = ensure_dir(data_dir("replays", tag))
     samples_path = replay_dir / SAMPLES_NAME
     manifest_path = replay_dir / MANIFEST_NAME
@@ -423,7 +442,9 @@ def collect(
         }
         _write_manifest(manifest_path, manifest)
 
-    existing_done, *_ = _scan_samples(samples_path)
+    existing_done, *_ = _scan_samples(
+        samples_path, count_errors_as_done=not retry_errors
+    )
     # Isolate a torn trailing line (from a hard kill) so the first append of this
     # run starts a fresh record instead of merging into the partial bytes.
     ensure_trailing_newline(samples_path)
@@ -486,6 +507,17 @@ def collect(
             f"[collect] total {summary['games']} games / {summary['samples']} samples "
             f"(errors={total_errors}); ran {written['games']} this call -> {replay_dir}"
         )
+        if total_errors:
+            hint = (
+                "they were retried this call"
+                if retry_errors
+                else "re-run with --retry-errors to redo them"
+            )
+            print(
+                f"[collect] WARNING: {total_errors} game(s) errored and are treated as done "
+                f"on resume; {hint}.",
+                flush=True,
+            )
     return summary
 
 
@@ -509,6 +541,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--teacher-spec", default=None)
     parser.add_argument("--opponent-spec", default=None)
     parser.add_argument("--max-tasks", type=int, default=None)
+    parser.add_argument(
+        "--retry-errors",
+        action="store_true",
+        help="on resume, re-run games whose record errored (default: treat as done, M6)",
+    )
     parser.add_argument("--tag", default="collect")
     # S-C search teacher: with ``--search`` the collector runs MCCFR and stores
     # solver targets instead of scripted-expert behaviour cloning.
@@ -578,7 +615,13 @@ def main(argv: list[str] | None = None) -> int:
         compact_dtype=args.compact_dtype,
         include_privileged_state=not args.no_privileged_state,
     )
-    summary = collect(spec, tag=args.tag, workers=args.workers, max_tasks=args.max_tasks)
+    summary = collect(
+        spec,
+        tag=args.tag,
+        workers=args.workers,
+        max_tasks=args.max_tasks,
+        retry_errors=args.retry_errors,
+    )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 

@@ -14,10 +14,21 @@ variable length, so no global ``K=256`` padding blow-up).  Memory is therefore
 ~16 KB/sample instead of ~200 KB/sample, which is what makes a few 1e5-sample run
 fit on a 30 GB box.
 
-Selection is deterministic and order-independent: games are split train/val by a
-rule on ``(seed - seed_start)`` so the result does not depend on the
-(completion-order) file layout.  Samples are then sorted by ``(opponent, seed,
-step_index)`` before shuffling, so a rerun reproduces the same batches.
+Selection is deterministic and order-independent: games are de-duplicated by the
+full game identity ``(deck, opponent, seed)`` (A7 merges multi-deck corpora that
+each restart ``--seed-start 0``, so the deck must be part of the key), split
+train/val by a rule on ``(seed - seed_start)`` and sorted by ``(deck, opponent,
+seed, step_index)`` before shuffling, so a rerun reproduces the same batches
+regardless of the (completion-order) file layout.
+
+``--max-train-samples`` / ``--max-val-samples`` are honoured deterministically
+too (H2): the cap is applied after ordering the games by identity, never in file
+order, so the same replay dir yields the same dataset twice. When a cap is set
+the loader streams the dirs **twice** — a first pass enumerates each game's
+identity and sample count, then a second pass loads only the accepted games up to
+their per-game budget — which keeps both determinism and the bounded
+(~16 KB/sample) memory footprint. Without a cap a single pass suffices, since the
+post-load sort already makes the result order-independent.
 
 Pure-policy BC: hard ``teacher_index`` CE + episode-outcome value regression +
 optional belief head, i.e. the cold-start arm of ``train.distill``.
@@ -38,7 +49,7 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterator, Sequence
 
 import torch
 from torch import nn
@@ -65,7 +76,7 @@ class Store:
     b_hsize: list[float]
     b_burst: list[float]
     b_mask: list[bool]
-    keys: list[tuple[str, int, int]]  # (opponent, seed, step_index) for sorting
+    keys: list[tuple[str, str, int, int]]  # (deck, opponent, seed, step_index) for sorting
 
     def __len__(self) -> int:
         return len(self.tokens)
@@ -93,22 +104,18 @@ def _is_val(seed: int, seed_start: int, val_every: int) -> bool:
     return ((int(seed) - int(seed_start)) % int(val_every)) == 0
 
 
-def load_store(
-    replay_dirs: Sequence[str],
-    *,
-    seed_start: int,
-    val_every: int,
-    max_train_samples: int | None,
-    max_val_samples: int | None,
-    device: str = "cpu",
-    progress_every: int = 500,
-) -> tuple[Store, Store, dict[str, Any]]:
-    """Stream replay dirs into compact (train, val) stores."""
-    train = Store([], [], [], [], [], [], [], [], [], [], [])
-    val = Store([], [], [], [], [], [], [], [], [], [], [])
-    n_games = n_skipped = n_dup = 0
-    seen: set[tuple[str, int]] = set()
-    t0 = time.perf_counter()
+def _game_key(record: dict[str, Any]) -> tuple[str, str, int]:
+    """Full game identity ``(deck, opponent, seed)``.
+
+    ``deck`` is part of the key (A7): a multi-deck corpus collected with each deck
+    restarting ``--seed-start 0`` has overlapping ``(opponent, seed)`` pairs, so
+    dropping the deck would silently dedup distinct games away (H1).
+    """
+    return (str(record.get("deck", "")), str(record["opponent"]), int(record["seed"]))
+
+
+def _iter_replay_records(replay_dirs: Sequence[str]) -> Iterator[dict[str, Any]]:
+    """Yield parsed per-game records, skipping blanks and torn trailing lines."""
     for replay_dir in replay_dirs:
         samples_path = Path(replay_dir)
         if samples_path.is_dir():
@@ -121,63 +128,156 @@ def load_store(
                 if not line:
                     continue
                 try:
-                    record = json.loads(line)
+                    yield json.loads(line)
                 except json.JSONDecodeError:
                     continue  # torn trailing line
-                if record.get("error"):
-                    n_skipped += 1
-                    continue
-                game_key = (str(record["opponent"]), int(record["seed"]))
-                if game_key in seen:
-                    n_dup += 1
-                    continue
-                seen.add(game_key)
-                is_val = _is_val(int(record["seed"]), seed_start, val_every)
-                dest = val if is_val else train
-                cap = max_val_samples if is_val else max_train_samples
-                if cap is not None and len(dest) >= cap:
-                    continue
-                opponent = str(record["opponent"])
-                seed = int(record["seed"])
-                for payload in record.get("samples", ()):
-                    if cap is not None and len(dest) >= cap:
-                        break
-                    obs = payload["observation"]
-                    dest.tokens.append(
-                        torch.tensor(obs["token_features"], dtype=torch.float32, device=device)
-                    )
-                    dest.options.append(
-                        torch.tensor(obs["option_features"], dtype=torch.float32, device=device)
-                    )
-                    dest.teacher.append(int(payload["teacher_index"]))
-                    dest.value.append(float(payload["value_target"]))
-                    bt = obs.get("belief_target") or {}
-                    dest.b_hand.append(
-                        torch.tensor(bt.get("group_hand_presence", ()), dtype=torch.float32, device=device)
-                    )
-                    dest.b_deck.append(
-                        torch.tensor(bt.get("group_remaining_deck_presence", ()), dtype=torch.float32, device=device)
-                    )
-                    dest.b_hist.append(
-                        torch.tensor(bt.get("hand_histogram", ()), dtype=torch.float32, device=device)
-                    )
-                    dest.b_hsize.append(float(bt.get("hand_size", 0.0)))
-                    dest.b_burst.append(float(bt.get("burst_ready_count", 0.0)))
-                    sig = (
-                        float(bt.get("hand_size", 0.0)) > 0.0
-                        or any(float(v) > 0.0 for v in bt.get("group_hand_presence", ()))
-                        or any(float(v) > 0.0 for v in bt.get("group_remaining_deck_presence", ()))
-                        or any(float(v) > 0.0 for v in bt.get("hand_histogram", ()))
-                    )
-                    dest.b_mask.append(bool(sig))
-                    dest.keys.append((opponent, seed, int(payload.get("step_index", 0))))
-                n_games += 1
-                if n_games % progress_every == 0:
-                    print(
-                        f"[store] games={n_games} train={len(train)} val={len(val)} "
-                        f"({time.perf_counter() - t0:.0f}s)",
-                        flush=True,
-                    )
+
+
+def _plan_budgets(
+    replay_dirs: Sequence[str],
+    *,
+    seed_start: int,
+    val_every: int,
+    max_train_samples: int | None,
+    max_val_samples: int | None,
+) -> tuple[dict[tuple[str, str, int], int], int, int]:
+    """Pass 1: enumerate games and pick a deterministic per-game sample budget.
+
+    Returns ``(budgets, skipped, duplicates)`` where ``budgets`` maps a game's
+    full identity to the number of samples to load for it. Games are visited in
+    sorted-identity order, so *which* games survive the cap never depends on the
+    (completion-order) file layout. Only identities + counts are held (never the
+    samples), so the pass stays memory-bounded even on a huge corpus.
+    """
+    manifest: dict[tuple[str, str, int], int] = {}
+    seen: set[tuple[str, str, int]] = set()
+    skipped = duplicates = 0
+    for record in _iter_replay_records(replay_dirs):
+        if record.get("error"):
+            skipped += 1
+            continue
+        key = _game_key(record)
+        if key in seen:
+            duplicates += 1
+            continue
+        seen.add(key)
+        manifest[key] = len(record.get("samples", ()))
+    budgets: dict[tuple[str, str, int], int] = {}
+    used_train = used_val = 0
+    for key in sorted(manifest):
+        is_val = _is_val(key[2], seed_start, val_every)
+        cap = max_val_samples if is_val else max_train_samples
+        count = manifest[key]
+        if cap is None:
+            take = count
+        else:
+            remaining = cap - (used_val if is_val else used_train)
+            if remaining <= 0:
+                continue
+            take = min(count, remaining)
+        budgets[key] = take
+        if is_val:
+            used_val += take
+        else:
+            used_train += take
+    return budgets, skipped, duplicates
+
+
+def load_store(
+    replay_dirs: Sequence[str],
+    *,
+    seed_start: int,
+    val_every: int,
+    max_train_samples: int | None,
+    max_val_samples: int | None,
+    device: str = "cpu",
+    progress_every: int = 500,
+) -> tuple[Store, Store, dict[str, Any]]:
+    """Stream replay dirs into compact (train, val) stores.
+
+    Deterministic and order-independent (H2). When a sample cap is set the dirs
+    are streamed twice: :func:`_plan_budgets` picks the accepted games (and each
+    one's budget) in sorted-identity order, then the load pass reads only those
+    games. Without a cap a single pass is enough because the final sort removes
+    any dependence on file order.
+    """
+    train = Store([], [], [], [], [], [], [], [], [], [], [])
+    val = Store([], [], [], [], [], [], [], [], [], [], [])
+    caps_set = max_train_samples is not None or max_val_samples is not None
+    n_skipped = n_dup = 0
+    remaining: dict[tuple[str, str, int], int] | None = None
+    if caps_set:
+        remaining, n_skipped, n_dup = _plan_budgets(
+            replay_dirs,
+            seed_start=seed_start,
+            val_every=val_every,
+            max_train_samples=max_train_samples,
+            max_val_samples=max_val_samples,
+        )
+    n_games = 0
+    seen: set[tuple[str, str, int]] = set()
+    t0 = time.perf_counter()
+    for record in _iter_replay_records(replay_dirs):
+        if record.get("error"):
+            if not caps_set:
+                n_skipped += 1
+            continue
+        game_key = _game_key(record)
+        if remaining is not None:
+            # Pass-1 already deduped and budgeted; anything absent is either a
+            # repeat of an accepted game or a game the cap rejected.
+            if game_key not in remaining:
+                continue
+            budget: int | None = remaining.pop(game_key)
+        else:
+            if game_key in seen:
+                n_dup += 1
+                continue
+            seen.add(game_key)
+            budget = None
+        deck, opponent, seed = game_key
+        is_val = _is_val(seed, seed_start, val_every)
+        dest = val if is_val else train
+        payloads = record.get("samples", ())
+        if budget is not None:
+            payloads = payloads[:budget]
+        for payload in payloads:
+            obs = payload["observation"]
+            dest.tokens.append(
+                torch.tensor(obs["token_features"], dtype=torch.float32, device=device)
+            )
+            dest.options.append(
+                torch.tensor(obs["option_features"], dtype=torch.float32, device=device)
+            )
+            dest.teacher.append(int(payload["teacher_index"]))
+            dest.value.append(float(payload["value_target"]))
+            bt = obs.get("belief_target") or {}
+            dest.b_hand.append(
+                torch.tensor(bt.get("group_hand_presence", ()), dtype=torch.float32, device=device)
+            )
+            dest.b_deck.append(
+                torch.tensor(bt.get("group_remaining_deck_presence", ()), dtype=torch.float32, device=device)
+            )
+            dest.b_hist.append(
+                torch.tensor(bt.get("hand_histogram", ()), dtype=torch.float32, device=device)
+            )
+            dest.b_hsize.append(float(bt.get("hand_size", 0.0)))
+            dest.b_burst.append(float(bt.get("burst_ready_count", 0.0)))
+            sig = (
+                float(bt.get("hand_size", 0.0)) > 0.0
+                or any(float(v) > 0.0 for v in bt.get("group_hand_presence", ()))
+                or any(float(v) > 0.0 for v in bt.get("group_remaining_deck_presence", ()))
+                or any(float(v) > 0.0 for v in bt.get("hand_histogram", ()))
+            )
+            dest.b_mask.append(bool(sig))
+            dest.keys.append((deck, opponent, seed, int(payload.get("step_index", 0))))
+        n_games += 1
+        if progress_every and n_games % progress_every == 0:
+            print(
+                f"[store] games={n_games} train={len(train)} val={len(val)} "
+                f"({time.perf_counter() - t0:.0f}s)",
+                flush=True,
+            )
     # deterministic ordering independent of completion order
     for store in (train, val):
         order = sorted(range(len(store)), key=lambda i: store.keys[i])

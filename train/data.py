@@ -608,7 +608,12 @@ def iter_samples_jsonl(path: str | Path) -> Iterator[Sample]:
                 continue
             try:
                 yield sample_from_payload(json.loads(line))
-            except (json.JSONDecodeError, KeyError, TypeError):
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                # ``ValueError`` covers a corrupt compact payload: a bad base64
+                # buffer raises ``binascii.Error`` (a ``ValueError`` subclass) and
+                # a bad ``shape`` makes ``_unpack_dense``'s ``reshape`` raise
+                # ``ValueError``. A single torn/corrupt line must be skipped, not
+                # abort the whole load.
                 continue
 
 

@@ -16,10 +16,12 @@ is byte-for-byte compatible with A5's trainer / learning-curve paths:
     python -m scripts.train_bc_scale --store-cache data/store/dfbc_a.pt \\
         --d-model 256 --epochs 25 --out data/checkpoints/a_d256.pt
 
-Selection is deterministic and order-independent: games are de-duplicated by
-``(opponent, seed)`` (so overlapping replay dirs — e.g. the reused SA probes — do
-not double-count), split train/val by a rule on ``(seed - seed_start)`` and sorted
-by ``(opponent, seed, step_index)``.
+Selection is deterministic and order-independent: games are de-duplicated by the
+full game identity ``(deck, opponent, seed)`` (so overlapping replay dirs — e.g.
+the reused SA probes — do not double-count, while the distinct decks of a
+multi-deck A7 corpus that each restart ``--seed-start 0`` stay distinct), split
+train/val by a rule on ``(seed - seed_start)`` and sorted by ``(deck, opponent,
+seed, step_index)``.
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ import torch
 from common.lock import load_engine_lock, runtime_metadata
 from common.paths import ensure_dir
 from train.data import _unpack_dense, is_dense_payload
-from scripts.train_bc_scale import Store
+from scripts.train_bc_scale import Store, _game_key, _iter_replay_records
 
 
 def _tensor(value, dtype=torch.float32) -> torch.Tensor:
@@ -80,68 +82,54 @@ def load_store_any(
     empty = lambda: Store([], [], [], [], [], [], [], [], [], [], [])
     train, val = empty(), empty()
     n_games = n_skipped = n_dup = n_events = 0
-    seen: set[tuple[str, int]] = set()
+    seen: set[tuple[str, str, int]] = set()
     t0 = time.perf_counter()
-    for replay_dir in replay_dirs:
-        path = Path(replay_dir)
-        if path.is_dir():
-            path = path / "samples.jsonl"
-        if not path.exists():
-            raise SystemExit(f"no samples.jsonl under {replay_dir}")
-        with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue  # torn trailing line
-                if record.get("error"):
-                    n_skipped += 1
-                    continue
-                key = (str(record["opponent"]), int(record["seed"]))
-                if key in seen:
-                    n_dup += 1
-                    continue
-                seen.add(key)
-                is_val = _is_val(int(record["seed"]), seed_start, val_every)
-                dest = val if is_val else train
-                opponent, seed = key
-                for payload in record.get("samples", ()):
-                    obs = payload["observation"]
-                    dest.tokens.append(_tensor(obs["token_features"]).to(device))
-                    dest.options.append(_tensor(obs["option_features"]).to(device))
-                    dest.teacher.append(int(payload["teacher_index"]))
-                    dest.value.append(float(payload["value_target"]))
-                    bt = obs.get("belief_target") or {}
-                    hand = _tensor(bt.get("group_hand_presence", ()))
-                    deck = _tensor(bt.get("group_remaining_deck_presence", ()))
-                    hist = _tensor(bt.get("hand_histogram", ()))
-                    hsize = float(bt.get("hand_size", 0.0))
-                    burst = float(bt.get("burst_ready_count", 0.0))
-                    dest.b_hand.append(hand.to(device))
-                    dest.b_deck.append(deck.to(device))
-                    dest.b_hist.append(hist.to(device))
-                    dest.b_hsize.append(hsize)
-                    dest.b_burst.append(burst)
-                    # Label is "present" when any god's-eye marginal is non-zero.
-                    sig = (
-                        hsize > 0.0
-                        or bool((hand > 0.0).any())
-                        or bool((deck > 0.0).any())
-                        or bool((hist > 0.0).any())
-                    )
-                    dest.b_mask.append(bool(sig))
-                    dest.keys.append((opponent, seed, int(payload.get("step_index", 0))))
-                    n_events += 1
-                n_games += 1
-                if progress_every and n_games % progress_every == 0:
-                    print(
-                        f"[store] games={n_games} train={len(train)} val={len(val)} "
-                        f"({time.perf_counter() - t0:.0f}s)",
-                        flush=True,
-                    )
+    for record in _iter_replay_records(replay_dirs):
+        if record.get("error"):
+            n_skipped += 1
+            continue
+        key = _game_key(record)
+        if key in seen:
+            n_dup += 1
+            continue
+        seen.add(key)
+        is_val = _is_val(key[2], seed_start, val_every)
+        dest = val if is_val else train
+        deck, opponent, seed = key
+        for payload in record.get("samples", ()):
+            obs = payload["observation"]
+            dest.tokens.append(_tensor(obs["token_features"]).to(device))
+            dest.options.append(_tensor(obs["option_features"]).to(device))
+            dest.teacher.append(int(payload["teacher_index"]))
+            dest.value.append(float(payload["value_target"]))
+            bt = obs.get("belief_target") or {}
+            hand = _tensor(bt.get("group_hand_presence", ()))
+            deck_t = _tensor(bt.get("group_remaining_deck_presence", ()))
+            hist = _tensor(bt.get("hand_histogram", ()))
+            hsize = float(bt.get("hand_size", 0.0))
+            burst = float(bt.get("burst_ready_count", 0.0))
+            dest.b_hand.append(hand.to(device))
+            dest.b_deck.append(deck_t.to(device))
+            dest.b_hist.append(hist.to(device))
+            dest.b_hsize.append(hsize)
+            dest.b_burst.append(burst)
+            # Label is "present" when any god's-eye marginal is non-zero.
+            sig = (
+                hsize > 0.0
+                or bool((hand > 0.0).any())
+                or bool((deck_t > 0.0).any())
+                or bool((hist > 0.0).any())
+            )
+            dest.b_mask.append(bool(sig))
+            dest.keys.append((deck, opponent, seed, int(payload.get("step_index", 0))))
+            n_events += 1
+        n_games += 1
+        if progress_every and n_games % progress_every == 0:
+            print(
+                f"[store] games={n_games} train={len(train)} val={len(val)} "
+                f"({time.perf_counter() - t0:.0f}s)",
+                flush=True,
+            )
     for store in (train, val):
         order = sorted(range(len(store)), key=lambda i: store.keys[i])
         _reorder(store, order)
