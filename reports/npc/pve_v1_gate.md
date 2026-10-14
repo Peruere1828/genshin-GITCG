@@ -8,7 +8,7 @@
 - 胜率 99.7%（Wilson95 [98.5%, 100.0%]）
 - 样本：384 局 = 16 关 × 24 种子；error 0 / truncated 0；平均星 2.61
 
-## 逐关（primary gate 臂）
+## 逐关（primary gate 组）
 
 | 关卡 | 局数 | 胜 | 胜率 | 三星 | 三星率 | 平均星 | 平均回合 |
 |---|---|---|---|---|---|---|---|
@@ -29,7 +29,7 @@
 | uncletian | 24 | 24 | 100.0% | 21 | 87.5% | 2.88 | 4.6 |
 | wagner | 24 | 24 | 100.0% | 11 | 45.8% | 2.46 | 2.5 |
 
-## 逐目标（primary gate 臂）
+## 逐目标（primary gate 组）
 
 | 目标 | 出现局数 | 达成 | 达成率 |
 |---|---|---|---|
@@ -43,7 +43,7 @@
 
 ## 组牌质量 vs 打牌质量（消融）
 
-| 臂 | 牌组 | 策略 | 局数 | 胜率 | 三星率 | Wilson95 | cluster95 |
+| 组 | 牌组 | 策略 | 局数 | 胜率 | 三星率 | Wilson95 | cluster95 |
 |---|---|---|---|---|---|---|---|
 | gate | poolc_superconduct | contestant | 384 | 99.7% | 74.7% | [70.2%, 78.8%] | [63.0%, 85.7%] |
 | play_plain | poolc_superconduct | contestant_plain | 384 | 99.7% | 61.5% | [56.5%, 66.2%] | [45.3%, 76.8%] |
@@ -58,7 +58,7 @@ decklab 当前**没有**学习/Agent 式自动组牌（`decklab/README.md` 待�
 
 ## 与 B2/B3 冒烟的差异
 
-B2/B3 冒烟（`reports/npc/npc_pve_smoke_v1.json (PvE-B2/B3)`）：48 局 = 16 关 × 3 种子，contestant = 脚本专家 superconduct_aggro（自带 deck 专属规则，不打装备牌），win 0.979 / 三星 0.625。本门禁把同一配置在 24 种子下复跑（`smoke_ref` 臂）：win 0.979 / 三星 0.620。primary 门禁臂换成池 C 组牌 + contestant 策略；两臂差异来自① 种子数（3→24）② deck（`superconduct_aggro` → 池 C 组牌）③ 策略（脚本专家 → contestant：装备/事件目标由 0% 提升，见逐目标表）。
+B2/B3 冒烟（`reports/npc/npc_pve_smoke_v1.json (PvE-B2/B3)`）：48 局 = 16 关 × 3 种子，contestant = 脚本专家 superconduct_aggro（自带 deck 专属规则，不打装备牌），win 0.979 / 三星 0.625。本门禁把同一配置在 24 种子下复跑（`smoke_ref` 组）：win 0.979 / 三星 0.620。primary 门禁组换成池 C 组牌 + contestant 策略；两组差异来自① 种子数（3→24）② deck（`superconduct_aggro` → 池 C 组牌）③ 策略（脚本专家 → contestant：装备/事件目标由 0% 提升，见逐目标表）。
 
 ## 未决问题
 
@@ -73,7 +73,7 @@ B2/B3 冒烟（`reports/npc/npc_pve_smoke_v1.json (PvE-B2/B3)`）：48 局 = 16 
 
 - 元素反应**应该**在**伤害**与**纯附着**两条路径都记录：`envs/match.py::_collect_events` **应该**在 `damage.reaction_type != 0` 之外，同时记录 `apply_aura.reaction_type != 0` 的反应；`apply_aura` 无 source，**应该**归因到同批次**最近前驱** `skill_used` 的玩家。
 - 角色附着的 status/装备实体**应该**登记进 owner map，使它们发起的伤害反应**应该**归到正确玩家。
-- 本门禁按此口径复跑，结果**应该**与既有结果一致——实测一致：384 局 primary 三星 **0.747396** 保持不变，6 臂聚合全同；逐局对比**只有** `wall_seconds`（计时）不同，`winner/rounds/stars/objectives/decisions/fallbacks` 全同。
+- 本门禁按此口径复跑，结果**应该**与既有结果一致——实测一致：384 局 primary 三星 **0.747396** 保持不变，6 组聚合全同；逐局对比**只有** `wall_seconds`（计时）不同，`winner/rounds/stars/objectives/decisions/fallbacks` 全同。
 - 本配置下 `apply_aura` 反应**应该**全部归 NPC 侧（实测 5 次全在 `irontonguetian`、contestant 侧 0 次；更宽扫描 1152 局 12 次亦全为 NPC），即 contestant 的反应类目标**应该**不受该路径影响。
 - 同批口径另要求：`npc/eval.py` 的 `base_seed` **应该**折进 seed、同类型 objectives **应该**用唯一键、评测结果**应该**流式落盘；`npc/contestant.py` **应该**透传 seed；`npc/policy.py` **应该**去掉死子句；`decklab/builder.py` **应该**按 `copies` 补满——以上**应该**不改变门禁数字，实测一致。
 

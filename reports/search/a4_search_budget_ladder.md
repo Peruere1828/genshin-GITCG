@@ -2,7 +2,7 @@
 
 > 日期：2026-10-12｜作者：A4 子代理｜口径：**纯策略**（不接 LLM，PLAN §6.3）
 > 问题（PLAN D22 / §4.3 下一步）：**「MCCFR 搜索本身能否显著强于 expert/BC？」**——决定"继续搜索蒸馏"还是"改排产（先补 BC/自博弈数据）"。
-> 判定口径：`run_cfr_search_agent` 式**配对同种子**评测（cfr 臂 = 同 deck expert 基座 + 搜索；专家臂 = 同一 expert、搜索关闭），看 **配对 Δ 的 95% CI 下界是否 > 0**。
+> 判定口径：`run_cfr_search_agent` 式**配对同种子**评测（cfr 组 = 同 deck expert 基座 + 搜索；专家组 = 同一 expert、搜索关闭），看 **配对 Δ 的 95% CI 下界是否 > 0**。
 > 机器：本机 12 核 CPU、无 GPU；`--workers 6` 并发 6 局（每局 1 个 fork 子进程，CPU 绑定）。
 > 原始逐局 JSONL 在 `data/search/`（gitignore）；聚合 JSON 在 `reports/search/`；本报告为唯一入库摘要。
 
@@ -41,7 +41,7 @@ PY=/home/ubuntuaaa/miniconda3/envs/gitcg/bin/python
 FULL="natlan_battleship klee_mavuika_mualani superconduct_mika_attack dual_mualani_stacks superconduct_aggro mualani_double_pyro yelan_clorinde_ororon electrocharged_moon aywolfskirk dvalin_bonk shenhe_double_swirl electro_manifestation_nuke double_geo_navia unyielding_geo beidou_skirk_ayaka skirk_chasca_freeze skirk_ayaka_navia ice_water_battleship nahida_kokomi_raiden trial_skirk_ayaka_navia"
 SUB="unyielding_geo double_geo_navia electrocharged_moon dvalin_bonk nahida_kokomi_raiden natlan_battleship"
 
-# 专家控制臂画像（20 池 × 3 种子；max_searches=0 时 cfr 臂退化=expert）
+# 专家控制组画像（20 池 × 3 种子；max_searches=0 时 cfr 组退化=expert）
 $PY -m scripts.run_cfr_ladder --opponents $FULL --seeds 3 --max-searches 0 \
   --workers 10 --bridge-workers 1 --tag profile_expert
 
@@ -70,9 +70,9 @@ $PY -m scripts.run_cfr_ladder --opponents $SUB --seeds 6 --iterations 8 --depth 
 
 设计要点：
 
-- **配对同种子**：cfr 臂与 expert 臂共用同一 deck、同一基座 expert、同一 seed；基座 RNG 在两臂推进一致，故分叉前轨迹逐位相同，`Δ` 只反映搜索。
+- **配对同种子**：cfr 组与 expert 组共用同一 deck、同一基座 expert、同一 seed；基座 RNG 在两组推进一致，故分叉前轨迹逐位相同，`Δ` 只反映搜索。
 - **`candidate_limit` 无 prior 时按选项序**：`EngineParticleGame.legal_actions` 在根按 `(-prior, index)` 取前 C 个，无 prior 时 prior≡0 → 取**引擎选项序的前 C 个**（再并入 expert 当前动作）。即 A–E 档的候选裁剪是**任意序**而非"专家更看好的几个"——这正是网络 prior 敏感性（第 4 节）要检验的点。
-- **成本口径**：`s/搜索 = (wall_cfr − wall_expert_同配对) / searched_decisions`（中位数与均值基本一致，见 JSON）；`s/局` 为 cfr 臂墙钟均值。
+- **成本口径**：`s/搜索 = (wall_cfr − wall_expert_同配对) / searched_decisions`（中位数与均值基本一致，见 JSON）；`s/局` 为 cfr 组墙钟均值。
 - 计算总量 ≈ 4.5e3 s 墙钟（~75 min，含所有档与验证）。
 
 ---
@@ -86,7 +86,7 @@ $PY -m scripts.run_cfr_ladder --opponents $SUB --seeds 6 --iterations 8 --depth 
 | B `i8/d1/c4/ms8` | 0.495 [0.446,0.544] | 0.561 [0.512,0.609] | **−0.066 [−0.125,−0.008]** | [−0.143,+0.010] | **FAIL（显著为负）** | cfr 8 套 / expert 8 套 |
 | D `i8/d2/c4/ms4` | 0.448 [0.400,0.496] | 0.561 [0.512,0.609] | **−0.114 [−0.169,−0.058]** | [−0.191,−0.036] | **FAIL（显著为负）** | cfr 11 套 / expert 8 套 |
 
-（注：M4 floor 对**专家控制臂本身也 FAIL**——20 池有高方差长尾，expert 在 `aywolfskirk`/`double_geo_navia`/`dual_mualani_stacks`/`dvalin_bonk`/`electrocharged_moon`/`klee_mavuika_mualani`/`mualani_double_pyro`/`unyielding_geo` 8 套上 <0.45。搜索只是**在同一条长尾上重新分配胜负**：在 expert 弱项（`aywolfskirk`、`klee_mavuika_mualani`）赢回来，在 expert 强项上大量输掉。）
+（注：M4 floor 对**专家控制组本身也 FAIL**——20 池有高方差长尾，expert 在 `aywolfskirk`/`double_geo_navia`/`dual_mualani_stacks`/`dvalin_bonk`/`electrocharged_moon`/`klee_mavuika_mualani`/`mualani_double_pyro`/`unyielding_geo` 8 套上 <0.45。搜索只是**在同一条长尾上重新分配胜负**：在 expert 弱项（`aywolfskirk`、`klee_mavuika_mualani`）赢回来，在 expert 强项上大量输掉。）
 
 **D22 判定的答案：否。不存在（在 0.37–6.6 s/搜索 区间内）可承受预算使搜索显著强于 expert；相反，全池 n=400 上搜索显著更弱。**
 
@@ -140,7 +140,7 @@ $PY -m scripts.run_cfr_ladder --opponents $SUB --seeds 6 --iterations 8 --depth 
 
 ## 4. 网络 prior + 学习价值前沿的敏感性（S-C 设计本意）
 
-无 prior 时候选裁剪是任意选项序（§1）；用 CVPN checkpoint 作 **base+prior+value**（控制臂=纯网络）复测：
+无 prior 时候选裁剪是任意选项序（§1）；用 CVPN checkpoint 作 **base+prior+value**（控制组=纯网络）复测：
 
 | 档 | 配置 | pairs | 控制(纯网络) | cfr | 配对 Δ | 95% CI | 改变率 | s/搜索 |
 |---|---|---:|---:|---:|---:|---|---:|--:|
@@ -149,13 +149,13 @@ $PY -m scripts.run_cfr_ladder --opponents $SUB --seeds 6 --iterations 8 --depth 
 
 - 加网络 prior 只把改变率从 89% 降到 80%，**仍是单调覆盖专家动作**，配对 Δ 依旧 ≤0（H：−0.042，ns）。**先验没有把搜索从"噪声覆盖"救回来。**
 - 加网络 value 前沿（I）把 d1 的 Δ 从 −0.042 抬到 +0.014（仍跨 0，n=36，不可信为正）——方向上比启发式前沿略好，但远不足以推出"可承受预算下显著为正"。
-- 同一网络作为"控制臂"（纯策略）在子集上 pooled 0.403 vs 专家 0.431，**低于专家**，与 A3「distill≈BC≈0.50」一致：当前 CPU 档网络本身就不是靠谱的搜索先验/价值源。
+- 同一网络作为"控制组"（纯策略）在子集上 pooled 0.403 vs 专家 0.431，**低于专家**，与 A3「distill≈BC≈0.50」一致：当前 CPU 档网络本身就不是靠谱的搜索先验/价值源。
 
 ---
 
 ## 5. 成本表（供 A800/本机排产）
 
-| 档 | s/搜索（均值） | s/局(cfr) | s/局(expert) | 12 核吞吐（含两臂） | 400 配对串行核时 | 备注 |
+| 档 | s/搜索（均值） | s/局(cfr) | s/局(expert) | 12 核吞吐（含两组） | 400 配对串行核时 | 备注 |
 |---|---:|---:|---:|---:|---:|---|
 | expert 基线（无搜索） | — | — | ~5.1 | ~4.3e3 局/h | （800 局 ≈ 0.57 核时） | `profile_expert`，10 worker |
 | **B** `i8/d1/c4/ms8` | **0.44** | **8.6** | 5.1 | **~3.1e3 局/h** | 1.53 | 全池实测 921.6 s / 800 局 |
@@ -165,7 +165,7 @@ $PY -m scripts.run_cfr_ladder --opponents $SUB --seeds 6 --iterations 8 --depth 
 | A（A3 teacher 同档 i4/d1/c2/ms8） | 0.37 | 10.1 | 7.1 | ~2.5e3 局/h | — | 6 子集 |
 
 - 搜索成本**由 depth 主导**（d2 ≈ 13–17× d1：根候选 C 个 → 每个深一层的子节点对**全部合法动作**开叉，无 `candidate_limit` 保护），iterations 几乎免费（缓存命中），`ms` 线性。
-- 与 A3 汇报一致：搜索是 **CPU 密度**任务，**A800 窗口（仅 ~10 CPU 配额）不适合做搜索采集**；若走搜索路线，1000 局/臂按 B 档 ≈ 0.7 核时、D 档 ≈ 2.5 核时——但**本实验证明这钱不该花**。
+- 与 A3 汇报一致：搜索是 **CPU 密度**任务，**A800 窗口（仅 ~10 CPU 配额）不适合做搜索采集**；若走搜索路线，1000 局/组按 B 档 ≈ 0.7 核时、D 档 ≈ 2.5 核时——但**本实验证明这钱不该花**。
 
 ---
 

@@ -161,7 +161,7 @@ python -m train.pipeline --replays data/replays/bc_c100 --epochs 30 --tag cluste
   policy 有 teacher 策略时走 soft CE（KL 至常数），否则回退硬 `teacher_index` CE；value 优先回归 `search_value`，否则
   episode `value_target`；belief 走 proper scoring。`use_policy_target/use_search_value=False` 即退化为冷启动 BC。
   `train/pipeline.run_distill_round`（`python -m train.pipeline --distill`）串起 collect→distill(带 belief 头)→eval→落盘。
-- **冒烟 + 门禁**：`scripts/run_distill_smoke.py` 跑一轮「采集→蒸馏→配对 A/B→落盘」，蒸馏臂对同数据冷启动 BC 臂
+- **冒烟 + 门禁**：`scripts/run_distill_smoke.py` 跑一轮「采集→蒸馏→配对 A/B→落盘」，蒸馏组对同数据冷启动 BC 组
   用 `scripts.eval_protocol` 的配对种子非劣门禁（`CI_low(Δ) ≥ −0.02`，`eval.scoreboard.merge_gate`）自动判定，
   报告＋曲线落 `reports/train/distill_smoke_<ts>.json`。
 

@@ -312,7 +312,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
         f"error {gate['errors']} / truncated {gate['truncated']}；平均星 {gate['mean_stars']:.2f}"
     )
     lines.append("")
-    lines.append("## 逐关（primary gate 臂）")
+    lines.append("## 逐关（primary gate 组）")
     lines.append("")
     lines.append("| 关卡 | 局数 | 胜 | 胜率 | 三星 | 三星率 | 平均星 | 平均回合 |")
     lines.append("|---|---|---|---|---|---|---|---|")
@@ -323,7 +323,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
             f"| {stats['mean_stars']:.2f} | {stats['mean_rounds']:.1f} |"
         )
     lines.append("")
-    lines.append("## 逐目标（primary gate 臂）")
+    lines.append("## 逐目标（primary gate 组）")
     lines.append("")
     lines.append("| 目标 | 出现局数 | 达成 | 达成率 |")
     lines.append("|---|---|---|---|")
@@ -334,7 +334,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## 组牌质量 vs 打牌质量（消融）")
     lines.append("")
-    lines.append("| 臂 | 牌组 | 策略 | 局数 | 胜率 | 三星率 | Wilson95 | cluster95 |")
+    lines.append("| 组 | 牌组 | 策略 | 局数 | 胜率 | 三星率 | Wilson95 | cluster95 |")
     lines.append("|---|---|---|---|---|---|---|---|")
     for arm_name, arm in payload["arms"].items():
         overall = arm["overall"]
@@ -411,9 +411,9 @@ def _smoke_note(payload: dict[str, Any]) -> str:
     return (
         f"B2/B3 冒烟（`{ref['source']}`）：{ref['games']} 局 = 16 关 × 3 种子，"
         f"{ref['note']}，win {ref['win_rate']:.3f} / 三星 {ref['three_star_rate']:.3f}。"
-        f"本门禁把同一配置在 {payload['n_seeds']} 种子下复跑（`smoke_ref` 臂）："
+        f"本门禁把同一配置在 {payload['n_seeds']} 种子下复跑（`smoke_ref` 组）："
         f"win {rerun.get('win_rate', 0.0):.3f} / 三星 {rerun.get('three_star_rate', 0.0):.3f}。"
-        f"primary 门禁臂换成池 C 组牌 + contestant 策略；两臂差异来自① 种子数（3→"
+        f"primary 门禁组换成池 C 组牌 + contestant 策略；两组差异来自① 种子数（3→"
         f"{payload['n_seeds']}）② deck（`superconduct_aggro` → 池 C 组牌）③ 策略"
         f"（脚本专家 → contestant：装备/事件目标由 0% 提升，见逐目标表）。"
     )

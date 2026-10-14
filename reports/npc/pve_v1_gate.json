@@ -7050,5 +7050,5 @@
     "PvE 机制近似（D17）：NPC 无手牌/无骰子/不打出行动牌；引擎只有全局手牌/骰子配置，NPC 仍持有被 `NpcPolicy` 闲置的手牌与骰子。",
     "`win_within_rounds`（多数 n=5）是主要失分项：打装备/事件牌会牺牲节奏，「目标达成」与「速胜」存在张力，是当前三星率的主要上限。"
   ],
-  "smoke_note": "B2/B3 冒烟（`reports/npc/npc_pve_smoke_v1.json (PvE-B2/B3)`）：48 局 = 16 关 × 3 种子，contestant = 脚本专家 superconduct_aggro（自带 deck 专属规则，不打装备牌），win 0.979 / 三星 0.625。本门禁把同一配置在 24 种子下复跑（`smoke_ref` 臂）：win 0.979 / 三星 0.620。primary 门禁臂换成池 C 组牌 + contestant 策略；两臂差异来自① 种子数（3→24）② deck（`superconduct_aggro` → 池 C 组牌）③ 策略（脚本专家 → contestant：装备/事件目标由 0% 提升，见逐目标表）。"
+  "smoke_note": "B2/B3 冒烟（`reports/npc/npc_pve_smoke_v1.json (PvE-B2/B3)`）：48 局 = 16 关 × 3 种子，contestant = 脚本专家 superconduct_aggro（自带 deck 专属规则，不打装备牌），win 0.979 / 三星 0.625。本门禁把同一配置在 24 种子下复跑（`smoke_ref` 组）：win 0.979 / 三星 0.620。primary 门禁组换成池 C 组牌 + contestant 策略；两组差异来自① 种子数（3→24）② deck（`superconduct_aggro` → 池 C 组牌）③ 策略（脚本专家 → contestant：装备/事件目标由 0% 提升，见逐目标表）。"
 }

@@ -26,9 +26,9 @@
 **判定**：
 - **BC 从未「显著超过」同 deck 脚本专家**：`double_geo_navia` 统计**打平**（Δ=+0.007，CI 含 0）；
   `superconduct_aggro`(15 ep) 本会话 10-seed Δ=−0.029（CI 含 0），但**并发会话 20-seed 复跑为 −0.061 显著负**（见 §4 末）
-  → SA 实际仍落后专家 ~6 pp。其余臂显著低 3.4–11.4 pp。
+  → SA 实际仍落后专家 ~6 pp。其余组显著低 3.4–11.4 pp。
   → 与 A3/A4「网络尚未追上专家」一致；**数据先行的价值在“把 BC 顶到专家附近”而非“超过专家”**。
-- **3/7 臂首次通过 M3-CPU 的 pooled 门禁（≥0.50，strict cluster CI）**：`dvalin/ unyielding/ double_geo`
+- **3/7 组首次通过 M3-CPU 的 pooled 门禁（≥0.50，strict cluster CI）**：`dvalin/ unyielding/ double_geo`
   均落在 **0.689–0.709** —— 远高于 A3 全池 ~0.50 与 A4 专家 `superconduct_aggro` 0.561。
   **差距来自 deck 选择**：这些 deck 的**专家本身**就强（0.68–0.80），BC 能跟到 −0.3~ −9 pp。
 - **epoch 预算是被低估的变量**：`superconduct_aggro` 6 ep→15 ep 从 **0.405→0.480**（配对 gap 从 −0.104*
@@ -109,11 +109,11 @@ python -m train.collect --deck <deck> --all-opponents \
 
 ## 4. 全池认证（`scripts/eval_protocol`，配对种子，`--strict-ci`）
 
-- **dvalin_bonk**：20 seeds × 20 池 × 2 边 = **800 局/臂**（Wilson 半宽 ≈ ±0.035），配对 vs `expert:dvalin_bonk`。
-- 其余 4 臂：**10 seeds = 400 局/臂**（Wilson ≈ ±0.049 ≤ 0.05）。**因跨会话共享 CPU，20 seeds×5 臂不可行**，
+- **dvalin_bonk**：20 seeds × 20 池 × 2 边 = **800 局/组**（Wilson 半宽 ≈ ±0.035），配对 vs `expert:dvalin_bonk`。
+- 其余 4 组：**10 seeds = 400 局/组**（Wilson ≈ ±0.049 ≤ 0.05）。**因跨会话共享 CPU，20 seeds×5 组不可行**，
   故除 dvalin 外降到 10 seeds（仍满足「Wilson ≤0.05」；`--seeds 20` 一行命令即可复跑加严）。
-- 设计：同时跑候选臂与 `expert:<同 deck>` 基线臂，`paired_difference` 按 `(opponent, seed, side)` 配对。
-- 质量：**全部臂 fallback=0 / error=0**（硬门禁 PASS）。
+- 设计：同时跑候选组与 `expert:<同 deck>` 基线组，`paired_difference` 按 `(opponent, seed, side)` 配对。
+- 质量：**全部组 fallback=0 / error=0**（硬门禁 PASS）。
 
 | deck | BC pooled | Wilson95 | cluster95 | expert pooled | 配对 Δ | n_pairs | best / worst 对手 |
 |---|---:|---|---|---:|---:|---:|---|
@@ -127,7 +127,7 @@ python -m train.collect --deck <deck> --all-opponents \
 
 **读法**：
 1. **BC 强度基本跟随 deck 的专家强度**：专家 0.225(natlan) → BC 0.140；专家 0.799(unyielding) → BC 0.709。
-   deck 难度是 BC 上限的**主导变量**，不是模型规模或数据量。SA 15-ep 臂说明 **epoch 预算同样关键**（0.405→0.480）。
+   deck 难度是 BC 上限的**主导变量**，不是模型规模或数据量。SA 15-ep 组说明 **epoch 预算同样关键**（0.405→0.480）。
 2. **`natlan_battleship` 是一套对池极弱的 deck**（专家仅 0.225，20 个对手中 20 个 <45%）——
    它与 6-ep 的 `superconduct_aggro` 都**不是“数据能救”**的 run；但多 deck 语料正好暴露了这一点。
 3. **长尾一致**：所有 deck 的天花板都被 `unyielding_geo / electrocharged_moon / double_geo_navia / nahida_kokomi_raiden`
@@ -169,7 +169,7 @@ python -m train.collect --deck <deck> --all-opponents \
 | quality fallback/error=0 | 硬门禁 | ✅ 全 0 |
 | BC ≥ 专家（同 deck 配对） | 进度标尺 | ✗ 未「显著超过」；`double_geo` 打平（+0.007 ns）；SA-15ep 20-seed 复跑 −0.061 显著负 |
 
-**结论**：**M3-CPU 仍未整体通过**——pooled 门禁在 3/7 臂上首次达标，但 **M4 floor 全面崩盘**，
+**结论**：**M3-CPU 仍未整体通过**——pooled 门禁在 3/7 组上首次达标，但 **M4 floor 全面崩盘**，
 且 **BC 未「显著」追平专家**（仅 `double_geo` 打平；SA 认证级 20 seeds 仍 −6 pp）。数据先行把「每 deck 的可达强度」显著抬高了
 （0.69–0.71 vs A3 的 ~0.50；SA 15-ep 0.48 vs 6-ep 0.40），但**长尾 matchup 的欠拟合是结构性瓶颈**，
 规模放大不会自动消除。
@@ -224,7 +224,7 @@ python -m train.collect --deck <deck> --all-opponents \
    仍需在 **15+ epoch** 下重扫数据轴（10k/20k/50k）以**分离**「数据量」与「epoch」两个变量；
    其余 deck 的 6–12 ep 结果同样是**下界**。
 2. **floor 归因**：岩/雷/草系崩盘是**观测表示**、**动作抽象**还是**数据覆盖**？需 replay 复盘（`coach/replay.py`）。
-3. **20 seeds 加严**：非 dvalin 的 4 臂需复跑到 20 seeds（响应面 Wilson ±0.035）出认证级结论。
+3. **20 seeds 加严**：非 dvalin 的 4 组需复跑到 20 seeds（响应面 Wilson ±0.035）出认证级结论。
 4. **per-deck vs 多 deck 单模型**：本会话用 per-deck 专家；观测含自身角色 token（隐含 deck 身份），
    多 deck 单模型可行性未验证。
 5. **多 deck 语料的混合训练价值**：本会话每 deck 独立训练；跨 deck 共享是否提升长尾未知。

@@ -111,7 +111,7 @@ BC 采集（teacher = `expert:<deck>`，搜索关闭）由 `train.collect` 驱�
 - 学习曲线：`scripts/bc_learning_curve.py`（同一 store 上扫嵌套子集 × 网络宽度）。
 
 训练目标 = 冷启动 BC：硬 `teacher_index` 交叉熵 + episode outcome 值回归 + belief 头
-（与 A3 的 BC 臂一致；搜索 teacher 已由 A4 证否，本线不接搜索）。
+（与 A3 的 BC 组一致；搜索 teacher 已由 A4 证否，本线不接搜索）。
 
 ---
 
@@ -135,7 +135,7 @@ BC 采集（teacher = `expert:<deck>`，搜索关闭）由 `train.collect` 驱�
 
 ---
 
-## 4. 认证级评测（全 20 池 × 20 种子 × 双先手 = 800 局/臂）
+## 4. 认证级评测（全 20 池 × 20 种子 × 双先手 = 800 局/组）
 
 命令（纯策略）：
 
@@ -235,7 +235,7 @@ $PY -m scripts.eval_protocol \
 缺口从 −0.134 收窄到 −0.061。**在"模仿 expert"目标下，把优化做足可显著逼近专家上限，
 但仍差约 6 点、且不会超过。**
 
-（8k/48k-5ep/d256 无 own baseline 臂，配对复用 48k run 的专家基线行
+（8k/48k-5ep/d256 无 own baseline 组，配对复用 48k run 的专家基线行
 `dfbcsa_d128_48k__baseline.jsonl`；同种子交集 400 对。）
 
 **容量轴（d256）**：d256@48k 只跑了 3 epoch（争用限制），pooled **0.225**，配对 Δ vs expert

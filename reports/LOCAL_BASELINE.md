@@ -89,7 +89,7 @@ python -m pytest -q -m "not slow"   # 快速；去掉 -m 跑全量（含慢测�
 ## L5.2 LLM 矩阵 runner + 冒烟（2026-10-09）
 
 把「纯策略 vs LLM 辅助」从单局小样本放大为**全对手池矩阵**，两模式分开报分（§6.3），结果逐局流式落盘 +
-按 `task_index` 断点续跑 + spec 指纹护栏（D7）；聚合报告落 `reports/llm/matrix_*.json`，逐干预明细只在原始流。
+按 `task_index` 断点续跑 + spec 指纹护栏（D14）；聚合报告落 `reports/llm/matrix_*.json`，逐干预明细只在原始流。
 
 `scripts/run_llm_matrix.py` 冒烟（3 对手 × 3 种子 × 2 模式 = 18 局，budget 6，`deepseek-chat`）：
 

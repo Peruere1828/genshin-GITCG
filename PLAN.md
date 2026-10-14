@@ -1,6 +1,6 @@
 # 七圣召唤 AI + Agent 工程 — 需求与实现路径（PLAN.md）
 
-> 状态：v1.5（2026-10-12：**三线并行立项**——模型主线（D15）＋ NPC PvE 调试系统（D17，§3 WS7/§4.4）＋ Web 人机调试接口（D18，§3 WS8）；V8 采用 **Docker 内构建**策略（D20）；上一版 v1.4 的算力口径见 D14、无 GPU 主线见 D15、工程约定见 §0.1、本地先行 L0–L5.6 已完成见 §4.2）
+> 状态（现行）：三线并行——模型主线（D15）＋ NPC PvE 调试系统（D17，§3 WS7/§4.4）＋ Web 人机调试接口（D18，§3 WS8）；引擎 V8 在 Docker 内构建（D20）。算力见 D14、工程约定见 §0.1、本地先行 L0–L5.6 见 §4.2。
 > 决策记录见 §0；里程碑按阶段推进、不绑定日期。
 
 ---
@@ -15,22 +15,21 @@
 | D4 | 卡池/版本 | **跟随最新卡池**。接受追版本成本，用"每次训练冻结引擎 commit + 卡池版本"控制不可复现性 |
 | D5 | LLM 使用 | **局内局外都用**。局内做局面解读/候选生成/校验（评测需区分"纯策略"与"LLM 辅助"两种模式）；局外做复盘、调度、卡组思考、代码改进 |
 | D6 | LLM 资源 | **混合**：本地开源模型为主（部署位置见 D14），关键步骤（深度复盘、卡组思考）可选商业 API |
-| D7 | 算力（已被 D14 修订） | **南大超算为主**（公共共享 CPU 队列跑自博弈/搜索，GPU 队列跑训练/推理），**A800 80G 为间隙弹性资源**（科研任务空窗期用，主要承载本地大 LLM）；工程按"无常驻服务、随时可断点迁移"设计。2026-10-10 起以 D14 为准 |
 | D8 | 时间粒度 | 按里程碑（M0–M6），不排日期 |
 | D9 | 工程目录 | `~/projects/genshin-GITCG`（本机），代码 git 同步；数据/作业落本地盘或机会算力存储（D14） |
 | D10 | 本地先行 | 在批量算力（D14 机会资源）到位前，先在**本地 12 核 CPU + LLM API**上推进"本地先行轨道"（§4.1 L0–L4）：环境/评测/表示层 + LLM Agent 层 + SoG 管线玩具验证；大规模训练留给机会算力 |
-| D11 | 验收对手口径（修订 D1/§4 的"22 套"表述） | 验收表述改为"**评测池全部已注册脚本对手**"（池版本化，当前 20 套，见 §0.1 C2）；M0/M2/M4 的数值门槛（≥50%/≥70%/无单套 <45%）不变；新增卡组属**评测池扩容**，不阻塞验收；补齐至 22 套为可选工作项（缺 deck share code） |
-| D12 | 搜索分叉路线 | **薄 fork 桥**：引擎 `canResume:true` 边界暂停点的快照即精确分叉，经子进程 fork 桥（JSON-lines、无常驻服务，D7/D14）暴露给搜索（契约见 D13）；验收含"**分支续跑确定性**"测试（同种子分叉续跑 vs 不中断跑终局一致）。批量离线标注用 replay-branch MC（同种子重放+注入动作）当 teacher，**主线不因此切 DMC** |
+| D11 | 验收对手口径 | 验收表述改为"**评测池全部已注册脚本对手**"（池版本化，当前 20 套，见 §0.1 C2）；M0/M2/M4 的数值门槛（≥50%/≥70%/无单套 <45%）不变；新增卡组属**评测池扩容**，不阻塞验收；补齐至 22 套为可选工作项（缺 deck share code） |
+| D12 | 搜索分叉路线 | **薄 fork 桥**：引擎 `canResume:true` 边界暂停点的快照即精确分叉，经子进程 fork 桥（JSON-lines、无常驻服务，D14）暴露给搜索（契约见 D13）；验收含"**分支续跑确定性**"测试（同种子分叉续跑 vs 不中断跑终局一致）。批量离线标注用 replay-branch MC（同种子重放+注入动作）当 teacher，**主线不因此切 DMC** |
 | D13 | 搜索分叉契约（现行） | 分叉三条纪律：① 只在 `Game.is_resumable()` 边界点取快照（`canResume:true` 13/13 精确复现活体终局，证据 `scripts/probe_boundary_fork.py` / `reports/engine/probe_boundary_fork_*.json`）；② fork 显式补齐游戏级 attrs（`ATTR_PLAYER_ALWAYS_OMNI_*` 等不在 state 序列化内，用 `envs/snapshot.fork_game(game_attrs=...)`）；③ fork 一律在子进程运行（`envs/fork_bridge.py`，`run_search_match` 拒 `workers==0`）。由此搜索直接用 pybinding 分叉（毫秒级 fork + 注入候选 + rollout），无需引擎改造；replay-branch MC（`train/replay_branch.py`）保留为批量离线 teacher 与对照。已知边界：`canResume:false` 的 phase 内部暂停点不分叉（搜索不需要在那里分叉）；`Promise.all` 并发 RPC 交错按引擎版本冻结保证（D4） |
-| D14 | 算力口径修订（修订 D7/§5，2026-10-10） | **默认算力 = 本机 12 核 + WSL（4 核 / 8G / MX550 2G）**：本机跑 rollout/采集/评测/CPU 档训练；WSL 当并行采集/评测节点，顺带做小网络（d_model ≤ 64、fp32 小 batch）训练试验。**A800 80G + 128 核为申请制机会资源**（时间受限、需申请）：任何里程碑不依赖它，机会窗口按"训练 > 评测 > 采集 > LLM 分析"排优先级、一键零看管跑完。**南大集群暂缓**（glibc/环境适配成本高），`scripts/cluster/` 保留为将来机会算力的适配起点。工程形态不变：无常驻服务、一切长任务断点续跑、CPU 采集与 GPU 训练解耦（§5） |
-| D15 | 无 GPU 期间主线（修订 M3 排期） | **严格按 `train/CONTINUAL_RESOLVING.md` 差距清单推进**：信念根化（G1+G3）→ 外采 MCCFR 脚手架（G2+G4）→ search-as-teacher + belief 头（G6+G7）→ query solver / 批推理 / BR 探针（G8–G10）；先在 CPU 档（d_model 64–128、1e3–1e4 样本）跑通语义，规模随算力放大。M3/M4 数值门槛不变，新增 CPU 中间验收 **M3-CPU**（§4.3）作为 GPU 放大前的 go/no-go |
+| D14 | 算力口径（现行） | **默认算力 = 本机 12 核 + WSL（4 核 / 8G / MX550 2G）**：本机跑 rollout/采集/评测/CPU 档训练；WSL 当并行采集/评测节点，顺带做小网络（d_model ≤ 64、fp32 小 batch）训练试验。**A800 80G + 128 核为申请制机会资源**（时间受限、需申请）：任何里程碑不依赖它，机会窗口按"训练 > 评测 > 采集 > LLM 分析"排优先级、一键零看管跑完。**南大集群暂缓**（glibc/环境适配成本高），`scripts/cluster/` 保留为将来机会算力的适配起点。工程形态不变：无常驻服务、一切长任务断点续跑、CPU 采集与 GPU 训练解耦（§5） |
+| D15 | 无 GPU 期间主线 | **严格按 `train/CONTINUAL_RESOLVING.md` 差距清单推进**：信念根化（G1+G3）→ 外采 MCCFR 脚手架（G2+G4）→ search-as-teacher + belief 头（G6+G7）→ query solver / 批推理 / BR 探针（G8–G10）；先在 CPU 档（d_model 64–128、1e3–1e4 样本）跑通语义，规模随算力放大。M3/M4 数值门槛不变，新增 CPU 中间验收 **M3-CPU**（§4.3）作为 GPU 放大前的 go/no-go |
 | D16 | 三方向并行立项（2026-10-12） | 在模型主线外新增两条并行线：**NPC PvE 调试系统**（D17）与 **Web 人机调试接口**（D18）；三线并行推进（模型先出）、模块解耦、各自独立验收。模型主线维持 D15、算力维持 D14 不变；两条新线复用 WS0 引擎与 WS2 评测，不改变 WS1/WS3/WS4 主线 |
 | D17 | NPC PvE 调试系统 | 定位＝**调试/训练辅助**（确定性假想敌池、课程加权、回归基线），不追求复刻游戏内体验；实现＝**引擎 overlay 移植**（敌人 `.gts` + 重建 `libgitcg.so`，refs 只读）；范围＝**蒙德/璃月全量**（约 13 类敌人 + 16 关规格）；验收＝**独立 PvE 门禁点**（§4.4）：decklab 自动组牌 × 16 关 × 多种子，**三星达成率 ≥ 60%**（挑战目标 3 条全达成计三星）；报表拆分组牌质量 vs 打牌质量 |
 | D18 | Web 人机调试接口 | **直接上引擎 standalone overlay**（不自建轻量 web）；流程＝人选牌 → **AI 看对手牌后反选** → 随机先手；人可持 NPC 敌人卡组；定位＝**对 AI 的调试接口**（明示信息流程，**不进口径验收**）；模型端复用 `envs.policy.build_policy` 全 spec，观测走 `notification.state`（与训练同源）；素材照 refs 做法：运行时按 id 拉取、不入库、缓存 gitignore、不随发布物分发 |
 | D19 | 卡组口径 | NPC 评测用 **decklab 自动组牌**（池 C 内，闭环含组牌 Agent）；Web 对局＝人自选 + AI 反选（v1 用对位矩阵 + decklab 固定规则起步） |
-| D20 | 引擎构建策略（V8） | **Docker 内构建**：镜像基线 `ubuntu:22.04`（与上游 CI 同 glibc 口径）；**引擎源码 pin 到与 PyPI wheel 一致的 tag `v0.21.0`**（`c94826b`；refs HEAD 更新但 ABI/构建方式不同，不采用）；V8 **一次性首建**、改敌人数据只做**增量**（rolldown 生成 `js_code.cpp` + 重链，分钟级，V8 不重编）；**只在一台构建**（linux x64 `.so` 本机/WSL 通用）；开发期用 `custom-data-loader` **免构建快循环**验证敌人数据；**node 24 直接用**（`engines` 仅警告，无 `engine-strict`）；构建 provenance 记入 `engine.lock.example` 变体；**V8 构建失败 fallback**＝Node 子进程 + TS core + `custom-data-loader` 驱动 NPC 环境（web 线不受影响）。**（2026-10-12 事实修正）**：pin 的 `v0.21.0` 用 `piovium/v8-cmake@14d0f727`——**vendor V8 11.6.189.4 源码、纯 CMake+Ninja 直编，无 depot_tools/`V8_WORKSPACE`/`V8_OFFLINE`、无数 GB 下载**；实测首建 **~20 min**（1232 TU）、增量 **~30 s** 且产物 sha256 确定。先前按 refs HEAD（`v8-cmake-barbara`/V8 14.8/volume 缓存）写的措辞作废；证据与流程见 `engine-overlay/README.md` |
-| D21 | 机会算力 CPU 配额事实（修订 D14/§5，2026-10-12 实测） | A800 窗口**只有 GPU 可用**、**CPU 配额仅 ~10 核**（与本机 12 核同级）：**CPU 密集的采集/评测不放窗口**，只在本机/WSL 分片累积；A800 专做 **GPU 训练/推理**（CVPN 放大、蒸馏、batched inference、可选本地 LLM）。数据流：本地 `train.collect` → 传入 A800 → `train.pipeline --replays/--distill` GPU 训练 → checkpoint 回流本地 → `scripts/eval_protocol.py` 认证。§5.1 窗口优先级据此收敛为「训练 > LLM 分析」（采集/评测移出窗口）|
-| D22 | M3-CPU 首次认证结果与下一步（2026-10-12，A3，`reports/train/a3_m3_cpu_screening.md`） | **M3-CPU 未通过认证**：pooled 0.460–0.500（400 局恰好压线），**strict-CI（cluster 下界 0.371）/ Wilson 下界 0.451 / M4 floor（9/20 <45%，最弱 `unyielding_geo` 0.05）全 FAIL**。**关键负面发现：搜索蒸馏 ≈ 冷启动 BC**（同数据配对 Δ=−0.0175，CI[−0.084,+0.049]，无正增益；当前 teacher 预算 iter4/depth1/cand2 太弱）。**结论：不满足"放大规模"前置**——直接丢 A800 只放大算力、不改 ~0.50 的结构瓶颈。**下一步**：先做 **teacher 预算阶梯 + 搜索智能体直接强度评测**（`scripts/run_cfr_search_agent.py`），判定"搜索本身能否显著强于 expert/BC"：能则按该预算放量蒸馏；不能则重估排产（先补 BC/自博弈数据、后搜索蒸馏）。认证级评测需 **≥50 seeds/对手（1000+ 局/臂，Wilson ±0.03）** + `--strict-ci` |
+| D20 | 引擎构建策略（V8） | **Docker 内构建**：镜像基线 `ubuntu:22.04`（与上游 CI 同 glibc 口径）；**引擎源码 pin 到与 PyPI wheel 一致的 tag `v0.21.0`**（`c94826b`；refs HEAD 更新但 ABI/构建方式不同，不采用）；V8 **一次性首建**、改敌人数据只做**增量**（rolldown 生成 `js_code.cpp` + 重链，分钟级，V8 不重编）；**只在一台构建**（linux x64 `.so` 本机/WSL 通用）；开发期用 `custom-data-loader` **免构建快循环**验证敌人数据；**node 24 直接用**（`engines` 仅警告，无 `engine-strict`）；构建 provenance 记入 `engine.lock.example` 变体；**V8 构建失败 fallback**＝Node 子进程 + TS core + `custom-data-loader` 驱动 NPC 环境（web 线不受影响）。**（V8 直编事实）**：pin 的 `v0.21.0` 用 `piovium/v8-cmake@14d0f727`——**vendor V8 11.6.189.4 源码、纯 CMake+Ninja 直编，无 depot_tools/`V8_WORKSPACE`/`V8_OFFLINE`、无数 GB 下载**；实测首建 **~20 min**（1232 TU）、增量 **~30 s** 且产物 sha256 确定；证据与流程见 `engine-overlay/README.md` |
+| D21 | 机会算力 CPU 配额（实测） | A800 窗口**只有 GPU 可用**、**CPU 配额仅 ~10 核**（与本机 12 核同级）：**CPU 密集的采集/评测不放窗口**，只在本机/WSL 分片累积；A800 专做 **GPU 训练/推理**（CVPN 放大、蒸馏、batched inference、可选本地 LLM）。数据流：本地 `train.collect` → 传入 A800 → `train.pipeline --replays/--distill` GPU 训练 → checkpoint 回流本地 → `scripts/eval_protocol.py` 认证。§5.1 窗口优先级据此收敛为「训练 > LLM 分析」（采集/评测移出窗口）|
+| D22 | M3-CPU 首次认证结果与下一步（2026-10-12，A3，`reports/train/a3_m3_cpu_screening.md`） | **M3-CPU 未通过认证**：pooled 0.460–0.500（400 局恰好压线），**strict-CI（cluster 下界 0.371）/ Wilson 下界 0.451 / M4 floor（9/20 <45%，最弱 `unyielding_geo` 0.05）全 FAIL**。**关键负面发现：搜索蒸馏 ≈ 冷启动 BC**（同数据配对 Δ=−0.0175，CI[−0.084,+0.049]，无正增益；当前 teacher 预算 iter4/depth1/cand2 太弱）。**结论：不满足"放大规模"前置**——直接丢 A800 只放大算力、不改 ~0.50 的结构瓶颈。**下一步**：先做 **teacher 预算阶梯 + 搜索智能体直接强度评测**（`scripts/run_cfr_search_agent.py`），判定"搜索本身能否显著强于 expert/BC"：能则按该预算放量蒸馏；不能则重估排产（先补 BC/自博弈数据、后搜索蒸馏）。认证级评测需 **≥50 seeds/对手（1000+ 局/组，Wilson ±0.03）** + `--strict-ci` |
 | D23 | 搜索路线判定与改排产（2026-10-12，A4，`reports/search/a4_search_budget_ladder.md`） | **搜索 teacher 无可测增益，且在可行预算下显著有害**：全池 n=400 配对 Δ：B 档(8/1/4/8)=**−0.066 [−0.125,−0.008]**、D 档(8/2/4/4)=**−0.114 [−0.169,−0.058]**（CI 全在 0 以下）；搜索覆盖 ~87–89% 专家动作，**win→loss 是 loss→win 的 1.5–2.0×**；d1 档 it8≡it16（逐局逐位相同）→ iterations 非瓶颈；根价值区分度 ≈0。**基线校准：脚本专家 `superconduct_aggro` 对全池 0.561 ＞ 我们的 BC/蒸馏网 ~0.50**（网络尚未追上专家）。**决策**：① **改排产＝数据先行**——先规模化采集 BC/自博弈数据 + 更大网络（GPU 窗口）把强度顶过专家基线；② **不把搜索蒸馏放量到 A800**（软目标劣于硬标签，放量只放大有害信号）；③ 重开搜索的前置＝**校准的公共信念价值头 + 非任意候选裁剪 + 门控式覆盖**（仅当根价值优势 > τ 才覆盖专家），三者达标后再跑阶梯 |
 | D24 | 数据先行结论与下一杠杆（2026-10-12，A5/A7，`reports/train/bc_scale_datafirst.md`、`reports/datafirst_bc.md`） | **BC 撞到 teacher 天花板**：规模化 BC（SA 8,061 局/372k 样本 + 4 套 deck×20 池×80 种子 compact）**从未显著超过同 deck 专家**（最优 `double_geo_navia` 打平 +0.007；SA −0.061 显著负）；**真正的杠杆是训练时长/优化**（5→15ep Δ=+0.076 显著），**不是数据量**（8k→48k Δ=+0.023 不显著）。**deck 混淆极大**：同一策略在强 deck（dvalin/unyielding/double_geo）pooled **0.689–0.709（≥0.50 strict-CI PASS）**、弱 deck（SA 0.480 / natlan 0.140）→ **验收门禁必须固定 deck 集、逐 deck 报**。**M4 floor 结构性 FAIL**（长尾岩/雷/草系）。**下一杠杆＝策略改进（自博弈/RL 或修好的搜索），不是更多 BC 数据**。工程：`train.collect` 父进程内存 bug（攒全量样本→swap 死，A8 修）；compact 载荷 **0.65 MB/局**（A800 传输 48k 局 ≈ 31 GB 可装）。|
 | D25 | 工程准则与产物清理口径（2026-10-14，代码评审） | 代码**应该**遵守以下规则（本轮据此修复并核验）：① 数据平面的去重与排序键**应该**用完整局身份 `(deck, opponent, seed[, step])`，多 deck 合并语料**应该**完整保留；② 采样上限**应该**在确定性排序后施加（两遍法：先枚举身份→按序分配预算→只加载被接纳的局），**应该**同时保证确定性与内存有界；③ 引擎桥的读线程**应该**捕获异常、快返并加超时兜底，**应该**让父进程可诊断地失败而非永久挂起；④ 元素反应**应该**在**伤害**与**纯附着**两条路径都记录，`apply_aura` 的反应**应该**归因到同批次**最近前驱** `skill_used`；⑤ 阶梯评测**应该**逐 future 隔离异常、`BrokenProcessPool` 时取消队列并写部分报告，指纹 sidecar 缺失**应该**拒绝 resume，流式 error 行**应该**可 `--retry-errors` 重试；⑥ 采集出错局**应该**可 `--retry-errors` 重试（默认给告警）；⑦ web/overlay **应该**让 AI 桥错误可见、dev/preview 先应用 overlay、路由与 CORS 加固。**产物清理口径**：派生 JSON **应该**在其生成代码变更后重新生成；本轮核验后**应该**只重生成 `payload_bench.json`（其余产物语义不变：store 全单 deck、无 run 用 cap、A4 ladder 无重复行、replay `manifest.json` 齐全、门禁复跑逐局语义一致）。 |
@@ -65,7 +64,7 @@
 
 ### 非目标（v1 明确不做）
 - 不做天梯/真人平台自动对战接入（play.piovium.org 仅取公开复盘数据做 BC，遵守平台条款）；
-- 不做卡面/素材渲染与**产品化** UI、不对外提供服务（D16 修订：改为做"**对 AI 调试接口**"的自用 web 人机界面，D18——引擎 standalone overlay，素材运行时按 id 拉取、不入库、不随发布物分发）；
+- 不做卡面/素材渲染与**产品化** UI、不对外提供服务（现行：做"**对 AI 调试接口**"的自用 web 人机界面，D18——引擎 standalone overlay，素材运行时按 id 拉取、不入库、不随发布物分发）；
 - 不做跨游戏泛化、不追求论文发表（但工程按可发表标准留好实验记录）；
 - 不做实时 15 秒限时的极致优化（引擎对局不设人类时限，后期再压延迟）。
 
@@ -309,7 +308,7 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 | A800 80G（机会资源，申请制、时间受限；**CPU 配额仅 ~10 核，见 D21**） | ① CVPN/蒸馏 **GPU 放大训练** + batched inference；② 大 LLM（32B/72B bf16 或 LoRA）做局内辅助/深度复盘 | **只做 GPU 训练/推理**：CPU 密集的采集/评测留本机/WSL（10 核与 12 核同级，不值得占窗口）；数据本地采集后**传入**；一键零看管跑完；LLM 不可用时走商业 API 兜底（D6） |
 | 南大集群（暂缓） | — | glibc/环境适配成本高（D14）；`scripts/cluster/` 保留为将来机会算力的适配起点（C13） |
 
-**工程形态约束（由 D7/D14 推出，所有模块必须遵守）**：
+**工程形态约束（由 D14 推出，所有模块必须遵守）**：
 - **无常驻服务**：`batched_inference` 等服务按作业拉起/销毁，不假设"某个端口一直开着"；机会算力上的 LLM 服务同理，客户端必须能降级到 API 或纯策略模式。
 - **一切长任务可断点**：训练、自博弈、评测全部支持 checkpoint + 重提（作业被排队/中断是常态）。
 - 存储：热数据（当前 run 的 replay 池/checkpoint）放本地盘；本机只放代码与小体积报告，大数据留采集机器/机会算力存储（`data/` 已 gitignore）。
@@ -319,7 +318,7 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 机会窗口的用法（里程碑验收不变，墙钟与窗口占比成反比；**窗口 CPU 太少，只做 GPU 训练/推理**）：
 - 窗口内只跑 **GPU 训练/蒸馏**（+ 可选本地 LLM）；**采集/评测不在窗口做**（D21）；
 - 交付节奏：**本地/WSL `train.collect` 分片累积 → 数据传入 A800 → `train.pipeline --replays/--distill` GPU 训练 → checkpoint 回流本地 → `scripts/eval_protocol.py` 认证**；窗口结束即产 checkpoint + 报告；
-- 训练输入可断点续跑、一键零看管（§5.1 D7/§5.1）；LLM 不可用时走商业 API 兜底（D6）。
+- 训练输入可断点续跑、一键零看管（§5.1）；LLM 不可用时走商业 API 兜底（D6）。
 
 > **A800 窗口实测（2026-10-12，详见 `reports/explore/a800_window_20261012.md`）**：容器 CPU 配额实测 **10 核**（cgroup `cpu.max=1000000/100000`）；10 核饱和采集 ~**2,491 局/h**（120 worker 过度订阅，10 核箱宜 ~10 worker）；**GPU 相对数据平面富余约 100×**（precollated 训练 276k samples/s ⇒ 5 万局 × 50 epoch ≈ **8 min**）；8000 样本上 d512 最优、val_acc 随数据单调上升 → **当前瓶颈是数据而非网络容量**，主线按「本地/WSL 分片采集 → 传入 A800 → GPU 一次性放大/蒸馏」排产。A800 本地存储上限 ~**37 GB**（实测 1.64 MB/局 ≈ 2.3 万局/窗，传入前先压缩）。
 

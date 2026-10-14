@@ -14,11 +14,11 @@
 | 1 | smoke `d64`（20 局/1 对手） | 200 | **0.460** | [0.392,0.529] | [0.321,0.599] | ✗ | **FAIL** |
 | 2 | distill `d128`（160 局/20 对手） | 200 | **0.485** | [0.417,0.554] | [0.357,0.613] | ✗ | **FAIL** |
 | 2b | 同上，加大样本 | 400 | **0.500** | [0.451,0.549] | [0.371,0.629] | ✓（恰好压线） | **FAIL**（floor） |
-| 3 | BC 对照 `d128`（消融臂） | 200 | **0.502** | [0.434,0.571] | [0.374,0.631] | ✓ | **FAIL**（floor） |
+| 3 | BC 对照 `d128`（消融组） | 200 | **0.502** | [0.434,0.571] | [0.374,0.631] | ✓ | **FAIL**（floor） |
 
 **判定**：M3-CPU 门禁（整体 ≥50%）**在 point-estimate 口径下恰好压线（400 局 pooled=0.500，pooled_pass=True），但不能通过认证级口径**——Wilson 95% 下界 [0.451] 低于 0.50，`--strict-ci`（cluster CI 下界 ≥0.50 = 0.371）明确 FAIL。M4「无单套 <45%」floor 门禁**明确 FAIL**（20 套里 9–10 套 <45%，最弱 `unyielding_geo` 仅 0.05）。**诚实结论：当前 CPU 档「搜索+小网」在池上约打平（~0.49–0.50），远未达到可信 ≥50%，更不说 0.70（M4）。**
 
-**关键诊断（搜索蒸馏是否有效）**：同等数据（7505 样本）与设置下，**搜索蒸馏臂 ≈ 冷启动 BC 臂**——配对差 distill−BC = **−0.0175**，95% CI [−0.084,+0.049]，不显著且不为正（`significant_positive=false`）。**在当前 teacher 预算（iterations=4 / depth=1 / candidate_limit=2）与数据量（1277 个搜索目标）下，MCCFR 搜索 teacher 没有给网络带来可测量的增益。** 这是本报告最重要的负面发现。
+**关键诊断（搜索蒸馏是否有效）**：同等数据（7505 样本）与设置下，**搜索蒸馏组 ≈ 冷启动 BC 组**——配对差 distill−BC = **−0.0175**，95% CI [−0.084,+0.049]，不显著且不为正（`significant_positive=false`）。**在当前 teacher 预算（iterations=4 / depth=1 / candidate_limit=2）与数据量（1277 个搜索目标）下，MCCFR 搜索 teacher 没有给网络带来可测量的增益。** 这是本报告最重要的负面发现。
 
 ---
 
@@ -39,7 +39,7 @@ $PY -m train.collect --deck superconduct_aggro --all-opponents \
   --belief-samples 2 --bridge-workers 2 --workers 4 --tag a3_corpus_v1
 
 # 步骤 2b：蒸馏训练（d_model 128，40 epochs；脚本 /tmp/opencode/a3_train.py）
-#   同脚本的 cold-start 版训练 BC 消融臂（/tmp/opencode/a3_train_bc.py）
+#   同脚本的 cold-start 版训练 BC 消融组（/tmp/opencode/a3_train_bc.py）
 
 # 步骤 3：对新 checkpoint screening（200 局 + 400 局）
 $PY -m scripts.eval_protocol \
@@ -49,7 +49,7 @@ $PY -m scripts.eval_protocol \
   --contestant neural:data/checkpoints/20261012T101435_a3_distill_v1_d128.pt \
   --seeds 10 --workers 10 --tag a3_screen_v1_s10
 
-# 消融：BC 臂 200 局（与 distill 200 局同种子 0–4）
+# 消融：BC 组 200 局（与 distill 200 局同种子 0–4）
 $PY -m scripts.eval_protocol \
   --contestant neural:data/checkpoints/20261012T103011_a3_bc_v1_d128.pt \
   --seeds 5 --workers 10 --tag a3_screen_bc_v1
@@ -72,7 +72,7 @@ $PY -m scripts.eval_protocol --sample-sizes
 
 采集汇总（manifest）：**160 局 / 7505 样本 / 0 错误**；搜索目标 **1277 条**（`has_search_target`），其中带软策略分布 `policy_target` 的 **1158 条**；`search_fraction=17.0%`；`win_fraction=0.447`（teacher 侧）。采集墙钟 10:03:29→10:09:43 ≈ **6.2 min**（4 collect worker × 2 bridge worker）。
 
-训练：distill 臂 175.6 s，BC 臂 153.6 s（6004 训练 / 1501 验证，40 epochs，CPU）。
+训练：distill 组 175.6 s，BC 组 153.6 s（6004 训练 / 1501 验证，40 epochs，CPU）。
 - distill 终值：train policy acc 0.746 / val acc 0.724，val value MSE 0.094，val belief loss 3.145。
 - BC 终值：val acc 0.730，val value MSE 0.116，val belief loss 3.197。
 （BC 的 policy acc 略高、value MSE 略差，符合"硬 one-hot CE vs 软搜索目标"的预期。）
@@ -153,7 +153,7 @@ $PY -m scripts.eval_protocol --sample-sizes
 | 网络 | d_model 128，belief head，fp32 | **d_model 256–512**（n_heads 8），fp32 或 bf16；batch 256–1024 |
 | epochs/lr | 40 / 1e-3 | **100–300 / 1e-3→3e-4（cosine）**；checkpoint 每 20 ep 落盘，按断点续跑 |
 | 训练硬件 | CPU（3 min/run） | A800（`train/*gpu*.lsf` / `train.pipeline --replays --device cuda`）；注意窗口内装 CUDA 版 torch |
-| 认证 seeds | 5（200 局）/10（400 局） | **≥50 seeds/对手 → 1000+ 局/臂**，Wilson 半宽 ≈0.03；跑 `--strict-ci` 出认证级判定 |
+| 认证 seeds | 5（200 局）/10（400 局） | **≥50 seeds/对手 → 1000+ 局/组**，Wilson 半宽 ≈0.03；跑 `--strict-ci` 出认证级判定 |
 | 消融 | distill vs BC 200 局 | 每轮 search-distill vs BC **配对**（同 seeds），`significant_positive` 才推进 |
 | 窗口排产（PLAN §5.1） | — | 训练 > 评测 > 采集 > LLM；采集可离线错峰，不占窗口 |
 
@@ -166,8 +166,8 @@ $PY -m scripts.eval_protocol --sample-sizes
 1. **teacher 预算消融未做**：iterations/depth/candidate_limit 的最优点未知；这是判断"搜索蒸馏路线是否成立"的前置实验。
 2. **规模-强度曲线仅两点**（d64/20 局 vs d128/160 局），且种子集不同；需要同 seeds 的受控扫描（`train/learning_curve.py` 式）确认是否单调。
 3. **长尾 matchup 归因**：岩/雷系（`unyielding_geo` 等）崩盘是观测表示、动作抽象还是数据不足？需 replay 复盘（`coach/replay.py`）。
-4. **BC 臂是否已足够**：若 teacher 消融后仍 ≈BC，则应重新评估"先补 BC/自博弈数据、后搜索蒸馏"的排产。
-5. **评测样本量**：400 局 Wilson 半宽 ±0.049，仍无法在 0.50 附近做认证；认证需 ≥1000 局/臂。
+4. **BC 组是否已足够**：若 teacher 消融后仍 ≈BC，则应重新评估"先补 BC/自博弈数据、后搜索蒸馏"的排产。
+5. **评测样本量**：400 局 Wilson 半宽 ±0.049，仍无法在 0.50 附近做认证；认证需 ≥1000 局/组。
 
 ---
 
