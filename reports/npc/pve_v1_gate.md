@@ -77,6 +77,8 @@ B2/B3 冒烟（`reports/npc/npc_pve_smoke_v1.json (PvE-B2/B3)`）：48 局 = 16 
 
 同批复核另修 `npc/eval.py`（`base_seed` 折进 seed、同类型 objectives 去重键、流式落盘降内存）、`npc/contestant.py`（seed 透传）、`npc/policy.py`（死子句）、`decklab/builder.py`（补牌）——均**不改变**门禁数字。
 
+再把 `apply_aura` 反应归因从「批次**最后一个** `skill_used`」改为「**最近前驱** `skill_used`」（修正跨玩家批次的误归因）后，按同配置再复跑（`--tag pve_v1_gate3`）：6 臂聚合**完全一致**，逐局 384 行中**仅 `wall_seconds`（计时）不同**，`winner/rounds/stars/objectives/decisions/fallbacks` 全部相同；primary 三星率 0.747396 不变。
+
 ## 复现
 
 ```bash
