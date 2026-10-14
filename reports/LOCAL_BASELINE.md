@@ -125,3 +125,11 @@ LLM：54 次调用、0 失败；干预改动作 45/54（83%）。样本极小、
 产物：`reports/train/learning_curve_<ts>.json/.csv`（含 `n_train_pool`/`n_val_holdout`）。复现：
 `python -m train.learning_curve --games 14 --sizes 128 256 512 1024 --d-models 64 128`。
 
+## L5.6 集群数据平面（2026-10-09，采集/训练解耦）
+
+`train/collect.py` + `train/collect_worker.py`：可续跑分片采集（一行一局、manifest 指纹护栏 + `engine.lock`、
+逐局流式落盘）；`train.pipeline --replays` 与 `train.learning_curve --replays` 从磁盘训练/扫曲线，使
+**CPU 队列采集与 GPU 队列训练解耦**（PLAN §5.1）。LSF 模板补齐 `collect.lsf`（单节点多 worker）、
+`collect_array.lsf`（海量数组作业，每元素独立分片目录）、`train_gpu.lsf`（`--replays` 训练），见
+`scripts/cluster/README.md`。测试 `tests/test_collect.py`（序列化无损、撕裂行容错、指纹稳定、并行采集 + 续跑不重复）。
+
