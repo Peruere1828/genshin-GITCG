@@ -11,7 +11,9 @@
 | `vite.config.ts` | 新增 `envPrefix` + `define`，注入 `DEFAULT_STATIC_DATA_API_BASE_URL` / `globalThis.__GI_TCG_ASSETS_BASE_URL__`；`server.host/port` | 让浏览器里的 assets-manager 指向可达镜像；命令行可覆盖 |
 | `src/ai-http-io.ts` | **新增**：HTTP 版 `CancellablePlayerIO` | 浏览器引擎 ↔ Python 服务的桥；带 `sessionId`（T1 会话隔离）+ 通知队列与 `seq`（T2 防陈旧状态） |
 | `src/App.tsx` | 配置页改成 D18 流程：「我的牌组 / AI 牌组」+「AI 反选」（C1）+「取 AI 牌组」（T3）+ NPC 阵容下拉（C3，16 关全可选）+ **先手三选**（人类 / AI / 随机）+ 桥地址 | 人选牌 → AI 看牌反选 → 定先手；开局时把牌组解成对象、生成 `sessionId` |
-| `src/StandaloneParent.tsx` | 按 `humanSeat` 派生座位（seat0 恒先手）：本窗口托管真人棋盘、对面座位交 HTTP 桥或弹窗；开局 `POST /session`（真实 `ai_seat`/牌组）、终局 `POST /game-log` + `POST /game-end` | 随机/手动先手都成立；C4 逐决策日志与战绩归档 |
+| `src/StandaloneParent.tsx` | 按 `humanSeat` 派生座位（seat0 恒先手）：本窗口托管真人棋盘、对面座位交 HTTP 桥或弹窗；开局 `POST /session`（真实 `ai_seat`/牌组）、终局 `POST /game-log` + `POST /game-end`；收到 `npcCustomData` 时给棋盘换一个 `new AssetsManager({customData})` | 随机/手动先手都成立；C4 日志归档；**NPC 角色的名字/技能描述/骰子费用/卡面占位图**都来自它 |
+| `../card-data-viewer/src/Description.tsx` | **护栏**：`descriptionToItems` 拒收非字符串 + `Description` 在描述缺失时给可诊断提示 | 静态数据缺 datum 时 `rawDescription` 为 undefined，会 `undefined.matchAll` **把对局打崩** |
+| `../card-data-viewer/src/PlayCost.tsx` | **护栏**：`playCost` 改为可选 + `?? []` | 同上，`[...undefined]` 会抛 `e.playCost is not iterable` |
 
 另有一处 **assets-manager** 的 overlay：
 `../assets-manager/src/constants.ts` 把 `DEFAULT_STATIC_DATA_API_BASE_URL` 的兜底默认值
@@ -66,7 +68,10 @@ package.json 只导出 `dist/`，Vite dev 无法直接解析其源码，因此�
 
    然后按 D18 流程配牌（配完点「开始对局」）：
    - **我的牌组**：贴分享码，或在「NPC 阵容」下拉里选一套 NPC 阵容（C3，16 关全可选，
-     人数不为 3 的阵容原样给；选中后输入框显示 `NPC·<关卡名>`，不走分享码）；
+     人数不为 3 的阵容原样给；选中后输入框显示 `NPC·<关卡名>`，不走分享码）。
+     **NPC 阵容不带行动牌（`cards=[]`）**，所以这一侧开局没有手牌、只能用角色技能和
+     骰子——这是刻意对齐游戏内「NPC 无手牌」，不是 bug；NPC 的**名字/技能描述/骰子费用**
+     由桥的 `/npc-decks` `assets` 字段带过来（解析自 `.gts`，`web/npc_assets.py`），
    - **AI 牌组**：点「AI 反选」（C1，按我的牌组用对位矩阵挑）或「取 AI 牌组」
      （T3，用桥 `--ai-deck`/`--policy expert:<slug>` 声明的那套）；**没手动改过 AI
      牌组时，点「开始对局」会自动再反选一次**；

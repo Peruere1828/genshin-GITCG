@@ -1109,6 +1109,10 @@ def test_npc_decks_endpoint():
         assert min(sizes) >= 1 and max(sizes) >= 4, "不能因为人数不为 3 就丢关卡"
         # NPC 方不该有手牌：牌组是空牌堆
         assert all(d["cards"] == [] for d in payload["decks"])
+        # NPC 的名字/技能描述/骰子费用要一并给出（前端据此构造 AssetsManager）
+        assets = payload["assets"]
+        assert len(assets["characters"]) >= 17
+        assert all(ch["name"] and ch["skills"] for ch in assets["characters"])
         # 返回的是牌组对象（NPC 角色编不出分享码，前端直传）
         timmie = next(d for d in payload["decks"] if d["slug"] == "timmie")
         assert timmie["n_on_field"] == 2 and timmie["n_support"] == 0

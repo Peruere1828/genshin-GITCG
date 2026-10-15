@@ -31,7 +31,7 @@ import { IS_BETA, SERVER_HOST, WEB_CLIENT_BASE_PATH } from "@gi-tcg/config";
 import { DeckBuilder } from "@gi-tcg/deck-builder";
 import "@gi-tcg/deck-builder/style.css";
 import "@gi-tcg/state-editor/style.css";
-import { DEFAULT_ASSETS_MANAGER } from "@gi-tcg/assets-manager";
+import { DEFAULT_ASSETS_MANAGER, type CustomData } from "@gi-tcg/assets-manager";
 import { GameStateEditor } from "@gi-tcg/state-editor";
 
 enum GameMode {
@@ -63,8 +63,10 @@ interface NpcDeck {
 
 interface NpcPayload {
   decks: NpcDeck[];
-  cards_source: string;
+  cards_source?: string;
   semantics: Record<string, string>;
+  /** C3：NPC 的 CustomData（名字/技能描述/骰子费用），喂给 AssetsManager */
+  assets?: CustomData;
 }
 
 /** C1：`POST /choose-deck` 的反选结果 */
@@ -753,6 +755,7 @@ export function App() {
               otherDeck={gameCfg()!.otherDeck}
               humanSeat={gameCfg()!.humanSeat}
               version={version()}
+              npcCustomData={npcList()?.assets}
               aiOpponent={aiOpponent() ? bridgeBase() : undefined}
               aiSelfPlay={aiSelfPlay()}
             />

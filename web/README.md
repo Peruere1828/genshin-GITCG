@@ -18,7 +18,7 @@
 | `GET /health` | – | `{"ok":true,"policy","rpc","notify","sessions","stale_notify","ai_deck","log_dir"}` |
 | `GET /state?session=&who=` | – | 该座位最近一次掩码 GameState（不带参数＝老行为，返回最近一条） |
 | `GET /ai-deck` | – | `{"slug","characters","cards"}`（T3 牌组对齐） |
-| `GET /npc-decks` | – | C3：全部 NPC 关卡阵容（人数不固定，见下） |
+| `GET /npc-decks` | – | C3：全部 NPC 关卡阵容（人数不固定）+ `assets`（CustomData，喂给 AssetsManager） |
 | `GET /results` | – | `{"log_dir","sessions":[…]}` |
 
 `session` 缺省落到 `"-"`（老客户端 / 直接 curl 调试）。
@@ -82,7 +82,7 @@ base_policy,policy_applied}`，并把结果记进会话（供开局校验）。
 
 ## C3 NPC 阵容（D18：人可持 NPC 敌人卡组）
 
-`GET /npc-decks` → `web/npc_decks.py`，**全部 16 关原样返回，不跳过、不凑 3 人**：
+`GET /npc-decks` → `web/npc_decks.py`（`assets` 字段由 `web/npc_assets.py` 提供），**全部 16 关原样返回，不跳过、不凑 3 人**：
 
 | 特征 | 游戏内机制 | 本接口（近似） | **差异** |
 |---|---|---|---|
@@ -90,6 +90,15 @@ base_policy,policy_applied}`，并把结果记进会话（供开局校验）。
 | **手牌** | NPC 没有手牌、不打行动牌 | 牌组 `cards=[]` → 空牌堆（`drawCardsPlain` 遇空堆跳过；`initialHandsCount` 是全局配置、没有 per-player 版本，只能靠空堆实现） | 人持 NPC 阵容时**同样拿不到行动牌**，只能用角色技能与骰子；骰子仍按全局规则发 |
 | **支援区（预备）角色** | 场外待命：**只有在场角色被击败后才依次上场**，不能被主动切换 | 没有支援区机制 → 把预备角色接在出战角色之后一起进牌组＝**后台角色**（开局可见、可被主动切换），靠「出战没死就不主动切」近似 | **上场时机与可见性不一致**：本接口里支援角色可以提前上场 |
 | **多轮挑战** | 打完当前战场（在场+支援）后**玩家角色血量与卡牌状态保持不变**，进入**新战场**打下一轮 NPC 阵容，直到全部轮次打完 | **一场一局**，打完即结束；关卡数据 schema 也没有 `waves` 字段 | **没有轮次接续、没有「新战场」**，也无法表达玩家状态跨轮保留 |
+
+> **NPC 静态数据已接通**：`/npc-decks` 的 `assets` 字段带上从 `.gts` 解析出的
+> `CustomData`（`web/npc_assets.py`），前端 `new AssetsManager({customData})` 传给
+> `createClient` —— `setupCustomData` 会把这些自定义角色/技能的 datum 灌进缓存，
+> `getData` 因此不再打镜像。**角色名、技能名/描述、骰子费用、卡面占位图都能正常显示**。
+> 两处 overlay 护栏（`card-data-viewer` 的 `Description` 与 `PlayCost`）保留作兜底：
+> 万一某个 id 没进缓存，面板显示「静态数据里没有该 id 的描述」而不是把对局打崩。
+> 技能名沿用官方敌人数据里的 Hilichurl 语名（`Du Plama`/`Upa`/`Oto Tiga`），中文的
+> 「普通攻击/元素战技/元素爆发」是技能**类型**标签。
 
 前两条近似之外的说明（行动牌来源、分享码限制）也在返回的 `semantics` 里，前端会
 原样展示。

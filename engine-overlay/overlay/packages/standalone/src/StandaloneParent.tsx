@@ -30,8 +30,13 @@ import {
 
 import { createClient, StandaloneChessboard } from "@gi-tcg/web-ui-core";
 import "@gi-tcg/web-ui-core/style.css";
-import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { DetailLogViewer } from "@gi-tcg/detail-log-viewer";
+import {
+  AssetsManager,
+  DEFAULT_ASSETS_MANAGER,
+  type CustomData,
+} from "@gi-tcg/assets-manager";
 import mergeErrorCause from "merge-error-cause";
 import { createAiHttpIo } from "./ai-http-io";
 
@@ -46,6 +51,13 @@ export interface StandaloneParentProps {
   /** 本窗口托管的座位：随机先手时可能是 0（=先手） */
   humanSeat: 0 | 1;
   version: Version;
+  /**
+   * C3：NPC 自定义数据（`GET /npc-decks` 的 `assets`）。传进来就给棋盘/详情面板换一个
+   * 带 `customData` 的 AssetsManager —— NPC 角色的名字、技能描述、骰子费用、卡面占位图
+   * 都在里面；否则 `getData(NPC id)` 会拿到镜像的 404 JSON（字段全 undefined，
+   * 前端会崩：`undefined.matchAll` / `e.playCost is not iterable`）。
+   */
+  npcCustomData?: CustomData;
   /** WS8/D18 overlay：非空时对面座位由该地址的 Python HTTP 服务托管 */
   aiOpponent?: string;
   /** WS8/D18 overlay：非空时本窗口座位也托管（双方 AI 自对弈，便于调试） */
@@ -63,10 +75,24 @@ export function StandaloneParent(props: StandaloneParentProps) {
       ? [props.myDeck, props.otherDeck]
       : [props.otherDeck, props.myDeck];
 
+  // C3：带 NPC 自定义数据的 AssetsManager。构造时 `setupCustomData` 会把角色/技能/
+  // 实体的 datum 灌进缓存，`getData` 因此不再打镜像 → 名字、技能描述、骰子费用、
+  // 卡面占位图都能正常显示。
+  const assetsManager = createMemo(() => {
+    if (!props.npcCustomData?.characters?.length) {
+      return DEFAULT_ASSETS_MANAGER;
+    }
+    return new AssetsManager({
+      language: "CHS",
+      customData: [props.npcCustomData],
+    });
+  });
+
   const [uiIo, Chessboard] = createClient(HUMAN_WHO, {
     onGiveUp: () => {
       game?.giveUp(HUMAN_WHO);
     },
+    assetsManager,
   });
 
   const [popupWindow, setPopupWindow] = createSignal<Window | null>(null);

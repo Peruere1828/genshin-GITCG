@@ -969,9 +969,15 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
                 )
             elif path == "/npc-decks":
                 try:
+                    from web.npc_assets import npc_custom_data
                     from web.npc_decks import npc_decks
 
-                    self._json(npc_decks())
+                    payload = npc_decks()
+                    # C3：NPC 的名字/技能描述/骰子费用来自 .gts，镜像里没有——
+                    # 前端用它构造 `new AssetsManager({customData})` 传给 createClient，
+                    # 详情面板与棋盘才会显示（否则 getData 会拿到镜像的 404 JSON）。
+                    payload["assets"] = npc_custom_data()
+                    self._json(payload)
                 except Exception as e:  # noqa: BLE001
                     self._json({"error": str(e)}, status=500)
             elif path == "/results":
