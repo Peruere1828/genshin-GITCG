@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from pathlib import Path
 
 import pytest
 
@@ -230,13 +231,31 @@ def test_npc_decks_cards_are_legal_pool_cards(npc_payload):
         assert max(Counter(deck["cards"]).values()) <= MAX_COPIES
 
 
+def payload_text(payload: dict, key: str) -> str:
+    return payload["semantics"][key]
+
+
 def test_npc_decks_documents_the_three_approximations(npc_payload):
-    """三件事的近似程度必须写清楚（人数/支援区/多轮），别让人以为是原版语义。"""
+    """三件事的说明必须**如实记录差异**（支援区/多轮与游戏内不一致，不能冒充原版）。"""
     assert set(SEMANTICS) == set(npc_payload["semantics"])
     assert set(SEMANTICS) >= {"lineup_size", "support", "waves", "cards", "share_code"}
-    assert "多轮" in SEMANTICS["waves"] and "单局" in SEMANTICS["waves"]
-    assert "后台" in SEMANTICS["support"]
-    assert "share_id" in SEMANTICS["share_code"]
+    for key in ("support", "waves"):
+        text = payload_text(npc_payload, key)
+        assert "【游戏内】" in text and "【本接口】" in text and "【差异】" in text, key
+    assert "后台" in payload_text(npc_payload, "support")
+    assert "被击败后" in payload_text(npc_payload, "support")
+    assert "多轮" in payload_text(npc_payload, "waves")
+    assert "血量和卡牌状态" in payload_text(npc_payload, "waves")
+    assert "share_id" in payload_text(npc_payload, "share_code")
+
+
+def test_npc_decks_todo_is_tracked_in_module():
+    """TODO：探索替代方式描述支援区/多轮——不能只写在文档里，代码里也要能找到。"""
+    import web.npc_decks as npc_module
+
+    source = Path(npc_module.__file__).read_text(encoding="utf-8")
+    assert "TODO" in source and "探索" in source
+    assert "支援区" in source and "waves" in source
 
 
 def test_npc_deck_ids_are_absent_from_share_id_table(npc_payload):
