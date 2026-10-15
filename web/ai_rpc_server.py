@@ -7,9 +7,9 @@
 # 本服务的 HTTP POST（见 engine-overlay/overlay/packages/standalone/src/ai-http-io.ts）：
 #   POST /rpc       {"session","who","seq?","request"}  -> RpcResponse
 #   POST /notify    {"session","who","seq","notification"} -> {"applied":bool}
-#   POST /session   {"session","meta"}                  -> {"ok",...}（开局元数据）
+#   POST /session   {"session","meta","resume?"}        -> {"ok","seq_base",...}
 #   POST /choose-deck {"session","deck"}                -> C1 反选：按人的牌组挑应对牌组
-#   POST /game-end  {"session","winner"}                -> 终局关账
+#   POST /game-end  {"session","winner","rounds","aborted?","abort_reason?"} -> 终局关账
 #   POST /game-log  {"session","log"}                   -> 引擎日志归档（含人类决策）
 #   GET  /health    -> {"ok":true,...}
 #   GET  /state?session=&who= -> 该座位最近一次（掩码后）notification.state
@@ -25,6 +25,11 @@
 #     日志目录都按 session 隔离，多开标签页不串局。
 #   * **通知序号（T2）**：`/notify` 带座位内单调递增的 `seq`，过期通知直接丢弃；
 #     浏览器侧还会把 notify 串成队列、发 rpc 前先等队列排空，避免决策吃到陈旧状态。
+#     **续局**（「从此处继续」）会在同一个 session 上开新的一局：浏览器侧 seq 从 1
+#     重新数，所以 `/session` 带 `resume:true` 时会把每个座位的 seq 顶到该会话
+#     上一局的末尾之后（`_RESUME_SEQ_GAP`）并把基线放进响应的 `seq_base`，浏览器
+#     从 `seq_base+1` 接着数——否则新局的通知会被一律判成过期、决策吃的是被终止
+#     那一局的残局状态。同一请求也清掉上一局的 `latest_state`。
 #
 # 决策逻辑有两种模式：
 #   * 默认（不给 --policy）：纯标准库占位策略，合法动作里随机/贪心挑一个：
@@ -44,8 +49,8 @@
 #
 # T3 牌组对齐：`--ai-deck <slug>`（或 `--policy expert:<slug>` 隐含）声明 AI 座位
 # 应该用的牌组，`/ai-deck` 把它给前端回填；开局 `/session` 里浏览器上报实际牌组，
-# 与声明不一致就 stderr 告警并记进会话（脚本专家规则是按自家牌组写的，牌组不符会
-# 静默变蠢）。
+# 与声明不一致就 stderr 告警并记进会话（`deck_mismatch` + `seat_specs`，脚本专家
+# 规则是按自家牌组写的，牌组不符会静默变蠢）。
 #
 # C1 反选（D19）：`POST /choose-deck` 拿人的牌组 → `web.counterpick` 用对位矩阵挑
 # 一套应对牌组，结果记进会话；开局 `/session` 时若 base 策略是 deck-specific 的
@@ -117,6 +122,10 @@ _NON_POOL_DECK_SPEC = "heuristic"
 # CORS 预检缓存时长（秒）：浏览器据此缓存 OPTIONS 结果，避免跨域访问时
 # 每个 /notify、/rpc 都先配一次预检请求。
 _CORS_MAX_AGE_SECONDS = 600
+
+# 续局（「从此处继续」）时把座位 seq 顶到上一局末尾之后多远：既让新局的序号不与
+# 旧局重叠（旧局在途通知会被判过期丢掉），又不至于大到难以阅读。
+_RESUME_SEQ_GAP = 1_000_000
 
 # 掩码 state 的 phase 枚举在 proto-JSON 里的各种写法（Python MessageToDict 与
 # protobuf-ts 的 toJson 都可能出现），用于识别终局。
@@ -533,6 +542,7 @@ class Seat:
         "state_seq",
         "applied_seq",
         "decisions",
+        "run",
     )
 
     def __init__(self, session: str, who: int, policy: Any) -> None:
@@ -541,9 +551,10 @@ class Seat:
         self.policy = policy
         self.latest_state: Any = None
         self.latest_mutation: Any = None
-        self.state_seq = 0        # 已应用的 /notify 条数
+        self.state_seq = 0        # 已应用的 /notify 条数（本局）
         self.applied_seq = -1     # 浏览器侧最后一个已应用的 seq（-1 = 未带 seq）
         self.decisions = 0        # 本座位决策条数（决策日志的 step）
+        self.run = 1              # 该 (会话, 座位) 上第几局（续局会 +1）
         # 过期通知/回退计数记在会话记录里（summary 与 /results 读它）。
 
 
@@ -615,6 +626,11 @@ class State:
             "close_source": None,
             "rounds": None,
             "dir": None,
+            "runs": 1,
+            "aborted": False,
+            "abort_reason": None,
+            "deck_mismatch": False,
+            "seat_specs": {},
             "notify_0": 0,
             "notify_1": 0,
             "decisions_0": 0,
@@ -626,8 +642,25 @@ class State:
             "meta": {},
         }
 
-    def open_session(self, session: str, meta: dict[str, Any] | None = None) -> dict[str, Any]:
-        """开局：建会话记录、开日志目录；重复调用只合并元数据、不重置计数。"""
+    def open_session(
+        self,
+        session: str,
+        meta: dict[str, Any] | None = None,
+        *,
+        restart: bool = False,
+    ) -> dict[str, Any]:
+        """开局：建会话记录、开日志目录；重复调用只合并元数据、不重置计数。
+
+        `restart=True` 是「从此处继续」——同一个 session 上开新的一局（浏览器会
+        新建 io，seq 从 1 重新数）。此时：
+
+        * 把该会话每个座位的 `applied_seq` 顶到上一局的末尾之后
+          （`_RESUME_SEQ_GAP`），并把它作为新局的 **seq 基线** 由响应 `seq_base`
+          交给浏览器（浏览器从基线 +1 接着数）——否则新局通知会全被判成过期，
+          决策吃的是被终止那一局的残局状态；
+        * 清掉上一局的 `latest_state`（那多半是被终止那一刻的分支状态）；
+        * `runs` 计数 +1 并落一条 `run_start` 记录，日志里能分辨两段。
+        """
         with self.lock:
             info = self._sessions.get(session)
             if info is None:
@@ -635,7 +668,29 @@ class State:
                 self._sessions[session] = info
             if meta:
                 info["meta"].update(meta)
+            if restart:
+                info["runs"] = int(info.get("runs", 1)) + 1
+                for (sess, _who), seat in self._seats.items():
+                    if sess != session:
+                        continue
+                    seat.run = info["runs"]
+                    seat.applied_seq += _RESUME_SEQ_GAP
+                    seat.latest_state = None
+                    seat.latest_mutation = None
+                    seat.state_seq = 0
             snapshot = json.loads(json.dumps(info))  # 锁内深拷贝，返回给外部随便改
+            runs = snapshot["runs"]
+        if restart and self.log is not None:
+            self.log.append(
+                session,
+                {
+                    "t": time.time(),
+                    "iso": _now_iso(),
+                    "type": "run_start",
+                    "session": session,
+                    "run": runs,
+                },
+            )
         if self.log is not None:
             path = self.log.open(session, {"meta": snapshot["meta"]})
             if path is not None:
@@ -643,6 +698,28 @@ class State:
                     self._sessions[session]["dir"] = str(path)
                 snapshot["dir"] = str(path)
         return snapshot
+
+    def seq_baseline(self, session: str) -> dict[str, int]:
+        """续局的 seq 基线：每个座位「上一局最后一个已应用的 seq」。
+
+        返回的座位从 `基线 + 1` 继续数。没有座位（全新会话）就不在里面，
+        浏览器对缺失座位按 0 起算。
+        """
+        with self.lock:
+            return {
+                str(who): seat.applied_seq
+                for (sess, who), seat in self._seats.items()
+                if sess == session
+            }
+
+    def update_session_info(self, session: str, **fields: Any) -> dict[str, Any] | None:
+        """把字段写进**真实**会话记录（不是 `open_session` 返回的深拷贝快照）。"""
+        with self.lock:
+            info = self._sessions.get(session)
+            if info is None:
+                return None
+            info.update(fields)
+            return json.loads(json.dumps(info))
 
     def session_info(self, session: str) -> dict[str, Any] | None:
         with self.lock:
@@ -659,20 +736,40 @@ class State:
         winner: Any = None,
         source: str = "notify",
         rounds: Any = None,
+        *,
+        aborted: bool = False,
+        abort_reason: str | None = None,
     ) -> dict[str, Any] | None:
-        """终局关账：写 game_end + summary.json；已关账则返回 None（幂等）。"""
+        """终局关账：写 game_end + summary.json；已关账则返回 None（幂等）。
+
+        `aborted=True` 表示这局不是真的分出胜负（典型：AI 桥 IO 故障，引擎按
+        `gotWinner(flip(who))` 置了 winner 并结束）。此时 winner 一律记 None、
+        `close_source` 记 `io_error`、会话标 `aborted`。已经因为 `/notify` 里看到
+        winner 而自动关过账的会话允许**改判**成故障归档（`amended` 记录一条），
+        否则一次桥故障就会被当成一场真实胜负。
+        """
+        if aborted:
+            winner = None
+            source = "io_error"
         with self.lock:
             info = self._sessions.get(session)
             if info is None:
                 # 没开过会话就直接收到终局（老客户端）：补一条极简记录。
                 info = self._new_session_info(session)
                 self._sessions[session] = info
+            amended = False
             if info["closed_at"] is not None:
-                return None
+                if not aborted or info.get("aborted"):
+                    return None
+                # 已经（多半是 /notify 自动）关过账：把「胜负」改判成故障归档。
+                amended = True
             info["closed_at"] = _now_iso()
             info["winner"] = winner
             info["close_source"] = source
             info["rounds"] = rounds
+            if aborted:
+                info["aborted"] = True
+                info["abort_reason"] = abort_reason
             snapshot = json.loads(json.dumps(info))
         record = {
             "t": time.time(),
@@ -682,6 +779,9 @@ class State:
             "winner": winner,
             "source": source,
             "rounds": rounds,
+            "aborted": bool(snapshot.get("aborted")),
+            "abort_reason": snapshot.get("abort_reason"),
+            "amended": amended,
             "decisions": [snapshot["decisions_0"], snapshot["decisions_1"]],
             "notify": [snapshot["notify_0"], snapshot["notify_1"]],
             "fallbacks": [snapshot["fallbacks_0"], snapshot["fallbacks_1"]],
@@ -846,11 +946,13 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
                 seat.decisions += 1
                 notify_seq = seat.applied_seq
                 state_seq = seat.state_seq
+                run = seat.run
             self._log_decision(
                 session=session,
                 who=who,
                 method=method,
                 step=step,
+                run=run,
                 state_seq=state_seq,
                 notify_seq=None if notify_seq < 0 else notify_seq,
                 latency_ms=round(elapsed_ms, 3),
@@ -873,15 +975,34 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
             meta = body.get("meta")
             if not isinstance(meta, dict):
                 meta = {}
-            info = state.open_session(session, meta)
+            # 续局（「从此处继续」）：同一个 session 开新的一局，seq 要从基线接着数。
+            restart = bool(body.get("resume"))
+            info = state.open_session(session, meta, restart=restart)
             mismatch = self._check_deck(session, meta)
             specs = state.assign_seat_specs(session, meta)
+            seat_specs = {str(who): spec for who, spec in sorted(specs.items())}
+            # 记进**真实**会话记录（不能只改 open_session 返回的快照，
+            # 否则 summary.json / /results / session.json 里看不到）。
+            stored = state.update_session_info(
+                session, deck_mismatch=mismatch, seat_specs=seat_specs
+            )
             info["deck_mismatch"] = mismatch
-            info["seat_specs"] = {str(who): spec for who, spec in sorted(specs.items())}
+            info["seat_specs"] = seat_specs
+            info["runs"] = (stored or info).get("runs", 1)
+            info["seq_base"] = state.seq_baseline(session)
+            if state.log is not None and stored is not None:
+                state.log.write_json(session, "session.json", stored)
             if specs:
                 print(
                     f"[ai-bridge] 会话 {session} 按实际牌组派生座位策略："
                     + ", ".join(f"seat{who}={spec}" for who, spec in sorted(specs.items())),
+                    file=sys.stderr,
+                    flush=True,
+                )
+            if restart:
+                print(
+                    f"[ai-bridge] 会话 {session} 续局（run {info['runs']}）："
+                    f"seq_base={info['seq_base']}，已清掉上一局掩码状态",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -1095,16 +1216,29 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
                     session = self._session_of(body)
                     state.open_session(session)  # 会话可能没开过
                     rounds = body.get("rounds")
+                    # aborted：这局不是真的分出胜负（典型：AI 桥 IO 故障，
+                    # 引擎按 gotWinner(flip(who)) 置了 winner）。
+                    aborted = bool(body.get("aborted"))
+                    reason = body.get("abort_reason")
                     info = state.close_session(
                         session,
                         winner=body.get("winner"),
-                        source="game-end",
+                        source="io_error" if aborted else "game-end",
                         rounds=rounds if isinstance(rounds, int) else None,
+                        aborted=aborted,
+                        abort_reason=reason if isinstance(reason, str) else None,
                     )
                 except Exception as e:  # noqa: BLE001
                     self._json({"error": str(e)}, status=400)
                     return
-                self._json({"ok": True, "closed": info is not None, "session": session})
+                self._json(
+                    {
+                        "ok": True,
+                        "closed": info is not None,
+                        "aborted": bool(info.get("aborted")) if info else aborted,
+                        "session": session,
+                    }
+                )
             elif path == "/game-log":
                 try:
                     if not isinstance(body, dict):

@@ -64,6 +64,23 @@ export interface StandaloneParentProps {
   aiSelfPlay?: boolean;
 }
 
+/** 续局的 seq 基线：座位 -> 该座位上一局最后一个已应用的 seq */
+type SeqBaseline = Partial<Record<0 | 1, number>>;
+
+/** `/session` 返回的 `seq_base`（字符串键的 JSON 对象）→ 座位表 */
+function parseSeqBase(raw: unknown): SeqBaseline {
+  const out: SeqBaseline = {};
+  if (raw && typeof raw === "object") {
+    for (const who of [0, 1] as const) {
+      const value = (raw as Record<string, unknown>)[String(who)];
+      if (typeof value === "number" && value >= 0) {
+        out[who] = value;
+      }
+    }
+  }
+  return out;
+}
+
 export function StandaloneParent(props: StandaloneParentProps) {
   // 席位派生：seat0 恒为先手（引擎 currentTurn 从 0 开始）。「随机先手」= 随机决定
   // 真人坐哪个座位，对面那个座位交给桥/弹窗。
@@ -101,8 +118,12 @@ export function StandaloneParent(props: StandaloneParentProps) {
     if (popupWindow() !== null) {
       return;
     }
+    // 弹窗托管的是对面座位（真人随机先手时可能在 seat0 或 seat1），座位号经
+    // URL hash 传给弹窗——写死 seat0 会让「真人先手」那半数的对局里弹窗视角错位
+    // （自己的手牌显示成对手的暗牌）。
+    const url = `${window.location.href.split("#")[0]}#opponent=${OTHER_WHO}`;
     const newWindow = window.open(
-      window.location.href,
+      url,
       "_blank",
       "popup=yes, depended=yes, height=750, width=750",
     );
@@ -212,6 +233,19 @@ export function StandaloneParent(props: StandaloneParentProps) {
   };
 
   let game: Game | null = null;
+  // 本局（含续局新开的）AI 座位 io 实例：续局/退出前要 cancelRpc，避免上一局在途的
+  // /rpc 落到桥上被记成决策、或把新局的掩码状态覆盖掉。
+  let aiIos: CancellablePlayerIO[] = [];
+  const cancelAiIos = () => {
+    for (const io of aiIos) {
+      try {
+        io.cancelRpc?.();
+      } catch (e) {
+        console.warn("[ai-http] cancelRpc 失败", e);
+      }
+    }
+    aiIos = [];
+  };
   const pause = async (
     state: GameState,
     mutations: unknown,
@@ -248,12 +282,15 @@ export function StandaloneParent(props: StandaloneParentProps) {
   // WS8/D18 overlay：AI 桥（HTTP）出错时引擎会把该座位判负并结束对局
   // （GiTcgIoError -> gotWinner(flip(who))）。默认完全静默，会让人误以为
   // 是真赢了。这里显式提示，让人知道是桥挂了而不是真赢了。
+  // 同时记下「这局是故障结束」：终局归档要把它标成 aborted（不是真实胜负）。
+  let ioErrorSeat: 0 | 1 | null = null;
   const onIoError = (e: GiTcgIoError) => {
     const merged = mergeErrorCause(e);
     if (isCancellation(e)) {
       console.warn("[ai-http] io error (cancelled, ignored)", merged);
       return;
     }
+    ioErrorSeat = e.who;
     console.error("[ai-http] io error", merged);
     const isAiSeat =
       !!props.aiOpponent && (e.who === OTHER_WHO || !!props.aiSelfPlay);
@@ -282,9 +319,11 @@ export function StandaloneParent(props: StandaloneParentProps) {
   // T3：把本局两个座位的牌组（definition id）报给桥。桥用它校验
   // AI 座位的牌组是否等于 `--ai-deck`/反选声明的那套（脚本专家规则按自家牌组写，
   // 牌组不符会静默变蠢），并按实际牌组派生座位策略，写进决策日志。
-  const reportSession = async () => {
+  // `resume=true` 是「从此处继续」：桥会把座位 seq 顶到上一局之后并回一个
+  // `seq_base`（本局 io 必须从它接着数，见 ai-http-io.ts 的 seqBase）。
+  const reportSession = async (resume = false): Promise<SeqBaseline> => {
     if (!props.aiOpponent) {
-      return;
+      return {};
     }
     const meta = {
       version: props.version,
@@ -300,28 +339,34 @@ export function StandaloneParent(props: StandaloneParentProps) {
       const resp = await fetch(`${props.aiOpponent}/session`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ session: props.sessionId, meta }),
+        body: JSON.stringify({ session: props.sessionId, meta, resume }),
       });
       if (!resp.ok) {
         console.warn(`[ai-http] /session HTTP ${resp.status}`);
-        return;
+        return {};
       }
-      const out = (await resp.json()) as { deck_mismatch?: boolean };
+      const out = (await resp.json()) as {
+        deck_mismatch?: boolean;
+        seq_base?: Record<string, number>;
+      };
       if (out?.deck_mismatch) {
         console.warn(
           "[ai-http] AI 座位牌组与桥声明的牌组不一致（详见桥的 stderr）",
         );
       }
+      return parseSeqBase(out?.seq_base);
     } catch (e) {
       console.warn("[ai-http] /session 上报失败", e);
+      return {};
     }
   };
 
   // 终局归档（C4）：把引擎日志（含人类这边的决策）和胜负报给桥，与桥侧的
   // 逐决策 JSONL 落到同一目录。没接桥（纯人机对打）时什么都不做。
   const finishGame = async (finished: Game) => {
-    const winner = finished.state.winner;
-    if (winner === null || winner === undefined) {
+    const aborted = ioErrorSeat !== null;
+    const winner = aborted ? null : finished.state.winner;
+    if (!aborted && (winner === null || winner === undefined)) {
       // 被「从此处继续」terminate 掉的那局没有胜负，不是真正的终局。
       console.warn("[ai-http] 对局结束但无 winner，跳过归档");
       return;
@@ -346,6 +391,8 @@ export function StandaloneParent(props: StandaloneParentProps) {
       }
     }
     try {
+      // 桥故障（AI 座位 IO 出错）时引擎按 gotWinner(flip(who)) 置了 winner——
+      // 那不是真的胜负，报 `aborted` 让桥归档成 io_error（不进胜率）。
       await fetch(`${props.aiOpponent}/game-end`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -353,6 +400,9 @@ export function StandaloneParent(props: StandaloneParentProps) {
           session: props.sessionId,
           winner,
           rounds: finished.state.roundNumber,
+          aborted,
+          abort_reason: aborted ? "io_error" : undefined,
+          io_seat: ioErrorSeat ?? undefined,
         }),
       });
     } catch (e) {
@@ -367,7 +417,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
       .catch((e) => onGameError(e, started));
   };
 
-  const createGame = async (state?: GameState) => {
+  const createGame = async (state?: GameState, seqBase: SeqBaseline = {}) => {
     if (!state) {
       state = Game.createInitialState({
         decks: SEAT_DECKS,
@@ -376,28 +426,33 @@ export function StandaloneParent(props: StandaloneParentProps) {
       });
     }
     await setAsyncContext(true);
+    // 上一局遗留的在途请求（含「从此处继续」cancel 不到的 AI 桥 rpc）先掐掉，
+    // 否则它们还会在桥上记成决策、甚至覆盖新局的掩码状态。
+    cancelAiIos();
+    ioErrorSeat = null;
     const game = new Game(state);
     (window as any).theGame = game;
     game.onPause = pause;
     game.onIoError = onIoError;
     // WS8/D18 overlay：本窗口座位托管真人棋盘；对面座位按模式交给 HTTP 桥或弹窗。
-    // 两个 AI 座位共用同一 sessionId（T1：桥内部再按 who 分开）。
+    // 两个 AI 座位共用同一 sessionId（T1：桥内部再按 who 分开）；续局时每个座位
+    // 从桥给的 seq 基线继续数（T2）。
     if (props.aiOpponent) {
-      game.players[OTHER_WHO].io = createAiHttpIo({
-        baseUrl: props.aiOpponent,
-        who: OTHER_WHO,
-        sessionId: props.sessionId,
-        forwardNotifications: true,
-        onLog: aiIoLog,
-      });
-      if (props.aiSelfPlay) {
-        game.players[HUMAN_WHO].io = createAiHttpIo({
-          baseUrl: props.aiOpponent,
-          who: HUMAN_WHO,
+      const seatIo = (who: 0 | 1) => {
+        const io = createAiHttpIo({
+          baseUrl: props.aiOpponent!,
+          who,
           sessionId: props.sessionId,
+          seqBase: seqBase[who],
           forwardNotifications: true,
           onLog: aiIoLog,
         });
+        aiIos.push(io);
+        return io;
+      };
+      game.players[OTHER_WHO].io = seatIo(OTHER_WHO);
+      if (props.aiSelfPlay) {
+        game.players[HUMAN_WHO].io = seatIo(HUMAN_WHO);
       } else {
         game.players[HUMAN_WHO].io = uiIo;
       }
@@ -413,7 +468,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
       if (!props.aiOpponent) {
         await showPopup();
       }
-      await reportSession();
+      await reportSession(false);
       const initialGame = await createGame();
       game = initialGame;
       startEndedGame(initialGame);
@@ -427,13 +482,16 @@ export function StandaloneParent(props: StandaloneParentProps) {
       if (!props.aiOpponent) {
         await showPopup();
       }
-      await reportSession();
       const logs = stateLog().slice(0, viewingLogIndex() + 1);
       childIo.cancelRpc?.();
       uiIo.cancelRpc?.();
+      cancelAiIos();
       game?.terminate();
+      // T2 续局：同一个 session 上开新的一局，浏览器侧 seq 从 1 重新数——必须从
+      // 桥给的基线接着数，否则新局的通知会全被判过期、决策读的是旧局残局状态。
+      const seqBase = await reportSession(true);
       const latestState = logs[logs.length - 1];
-      const newGame = await createGame(latestState.state);
+      const newGame = await createGame(latestState.state, seqBase);
       game = newGame;
       startEndedGame(newGame);
       setStateLog(logs);
@@ -487,6 +545,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
   });
   onCleanup(() => {
     window.removeEventListener("message", childGiveUpHandler);
+    cancelAiIos();
   });
 
   return (
@@ -548,6 +607,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
               who={viewingWho()}
               state={exposeState(viewingWho(), state().state)}
               mutations={[]}
+              assetsManager={assetsManager()}
             />
           </>
         )}

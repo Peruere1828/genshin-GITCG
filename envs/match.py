@@ -242,6 +242,16 @@ def _fallback_code(built: BuiltDecisionContext) -> int:
     return int(codes[0])
 
 
+def _is_policy_quit(exc: BaseException) -> bool:
+    """``agents.human.HumanQuit``？（延迟导入：envs 不在导入期依赖 agents）"""
+    if type(exc).__name__ != "HumanQuit":
+        # 名字预筛：普通策略异常不该为它去 import 一次
+        return False
+    from agents.human import HumanQuit
+
+    return isinstance(exc, HumanQuit)
+
+
 class PolicyPlayer(Player):
     """A ``gitcg.Player`` that delegates every request to a ``Policy``."""
 
@@ -268,6 +278,7 @@ class PolicyPlayer(Player):
         self.io_errors: list[str] = []
         self.decisions = 0
         self.fallbacks = 0
+        self.quit_requested = False
         self._step_index = 0
 
     # -- gitcg.Player interface -------------------------------------------------
@@ -453,6 +464,10 @@ class PolicyPlayer(Player):
             code = int(self.policy.choose(built))
         except Exception as exc:  # callback exceptions are swallowed by cffi; capture here
             policy_error = f"{type(exc).__name__}: {exc}"
+            if _is_policy_quit(exc):
+                # 人机对局里人按 q/Ctrl-C：不是错误，是「退出本局」的请求。
+                # run_match 在这一步结束后跳出循环，该局不进胜率/评分。
+                self.quit_requested = True
         legal = set(int(c) for c in built.context.legal_low_level_codes)
         fallback = False
         if code not in legal:
@@ -622,6 +637,7 @@ def run_match(
 
     start = time.perf_counter()
     steps = 0
+    quit_by: int | None = None
     try:
         game.start()
         while game.is_running():
@@ -630,6 +646,10 @@ def run_match(
                 break
             game.step()
             steps += 1
+            # 策略请求退出（人机对局里人输入 q / Ctrl-C）：立刻跳出，不往下走。
+            quit_by = next((p.who for p in players if p.quit_requested), None)
+            if quit_by is not None:
+                break
     except Exception as exc:  # engine/IO failures are otherwise swallowed by cffi
         error = f"{type(exc).__name__}: {exc}"
 
@@ -649,6 +669,11 @@ def run_match(
             error = f"aborted: {game.error()}"
         except Exception:
             error = "aborted"
+    if quit_by is not None:
+        # 中途退出没有胜负：单独记 error（评分口径过滤 error/truncated），
+        # 否则引擎留下的半个状态会被当成「对方胜」写进胜率。
+        error = f"human quit: P{quit_by}"
+        winner = None
 
     return MatchRecord(
         deck0=deck0.name,

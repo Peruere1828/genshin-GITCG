@@ -739,6 +739,8 @@ def test_session_reports_deck_mismatch(capsys):
                                       "cards": actual["cards"]}}}},
         )
         assert status == 200 and out["deck_mismatch"] is True
+        # 不只是 HTTP 响应体：要真的记进会话（/results、summary.json 才查得到）
+        assert server.state.session_info("g")["deck_mismatch"] is True
         assert "不一致" in capsys.readouterr().err
 
         status, out = server.request(
@@ -749,6 +751,7 @@ def test_session_reports_deck_mismatch(capsys):
                                       "cards": expected["cards"]}}}},
         )
         assert status == 200 and out["deck_mismatch"] is False
+        assert server.state.session_info("g2")["deck_mismatch"] is False
         assert "不一致" not in capsys.readouterr().err
     finally:
         server.close()
@@ -1013,6 +1016,8 @@ def test_session_assigns_per_seat_expert_specs(capsys):
         }
         assert state.seat_specs[("gs", 0)] == "expert:natlan_battleship"
         assert state.seat_specs[("gs", 1)] == "heuristic"
+        # 派生结果也要记进会话记录（summary.json / /results 查得到）
+        assert state.session_info("gs")["seat_specs"] == out["seat_specs"]
         # 非池内牌组要告警（否则用户不知道为什么换了策略）
         err = capsys.readouterr().err
         assert "不在评测池" in err and "heuristic" in err
@@ -1116,5 +1121,216 @@ def test_npc_decks_endpoint():
         # 返回的是牌组对象（NPC 角色编不出分享码，前端直传）
         timmie = next(d for d in payload["decks"] if d["slug"] == "timmie")
         assert timmie["n_on_field"] == 2 and timmie["n_support"] == 0
+    finally:
+        server.close()
+
+
+# --------------------------------------------------------------------------- #
+# T2 续局：「从此处继续」= 同一个 session 上开新的一局，seq 从桥给的基线接着数
+# （否则新局通知会被全判过期，决策吃的是被终止那一局的残局状态）
+# --------------------------------------------------------------------------- #
+def test_session_resume_gives_seq_baseline(captured):
+    state_a, state_b = _states_pair(captured)
+    server = _Server(srv.Policy(strategy="greedy", seed=1))
+    try:
+        server.request("POST", "/session", {"session": "gr", "meta": {}})
+        server.request(
+            "POST", "/notify",
+            {"session": "gr", "who": 0, "seq": 5, "notification": {"state": state_a}},
+        )
+        server.request(
+            "POST", "/notify",
+            {"session": "gr", "who": 1, "seq": 3, "notification": {"state": state_a}},
+        )
+
+        _, out = server.request(
+            "POST", "/session", {"session": "gr", "meta": {}, "resume": True}
+        )
+        assert out["runs"] == 2
+        base = out["seq_base"]
+        assert int(base["0"]) > 5 and int(base["1"]) > 3, "基线要落在上一局序号之后"
+
+        # 上一局在途的通知（seq 还在旧序号空间）→ 仍旧判过期，不污染新局状态
+        _, stale = server.request(
+            "POST", "/notify",
+            {"session": "gr", "who": 0, "seq": 5, "notification": {"state": state_b}},
+        )
+        assert stale["applied"] is False
+
+        # 新局从基线 + 1 接着数 → 生效
+        _, ok = server.request(
+            "POST", "/notify",
+            {"session": "gr", "who": 0, "seq": int(base["0"]) + 1,
+             "notification": {"state": state_b}},
+        )
+        assert ok["applied"] is True
+        _, st = server.request("GET", "/state?session=gr&who=0")
+        assert st["state"] == state_b
+    finally:
+        server.close()
+
+
+def test_session_resume_clears_previous_state(captured):
+    """续局要丢掉上一局留下的掩码状态：否则续局最初的决策读的是旧局状态。"""
+    state_a, _ = _states_pair(captured)
+    server = _Server(srv.Policy(strategy="greedy", seed=1))
+    try:
+        server.request(
+            "POST", "/notify",
+            {"session": "gc", "who": 0, "seq": 1, "notification": {"state": state_a}},
+        )
+        server.state.close_session("gc", winner=0, source="notify", rounds=3)
+        server.request("POST", "/session", {"session": "gc", "meta": {}, "resume": True})
+        _, st = server.request("GET", "/state?session=gc&who=0")
+        assert st["state"] is None, "续局后不该还能读到上一局的状态"
+        assert st["state_seq"] == 0
+    finally:
+        server.close()
+
+
+def test_session_without_resume_is_idempotent(captured):
+    """普通的重复 /session（重渲染/重连）不重置计数、不动 seq 基线。"""
+    state_a, _ = _states_pair(captured)
+    server = _Server(srv.Policy(strategy="greedy", seed=1))
+    try:
+        server.request("POST", "/session", {"session": "gi", "meta": {}})
+        server.request(
+            "POST", "/notify",
+            {"session": "gi", "who": 0, "seq": 4, "notification": {"state": state_a}},
+        )
+        _, out = server.request("POST", "/session", {"session": "gi", "meta": {}})
+        assert out["runs"] == 1
+        assert int(out["seq_base"]["0"]) == 4
+        # 基线没跳，seq 4 依旧算过期（护栏行为不变）
+        _, stale = server.request(
+            "POST", "/notify",
+            {"session": "gi", "who": 0, "seq": 4, "notification": {"state": state_a}},
+        )
+        assert stale["applied"] is False
+    finally:
+        server.close()
+
+
+def test_decision_log_records_run_after_resume(captured, tmp_path):
+    """续局后的决策行要带 run，state_seq/notify_seq 才是可解释的（按局分段）。"""
+    state_a, _ = _states_pair(captured)
+    log = srv.DecisionLog(tmp_path)
+    server = _Server(state=srv.State(srv.Policy(strategy="greedy", seed=1), log=log))
+    try:
+        server.request("POST", "/session", {"session": "gn", "meta": {}})
+        _, out = server.request(
+            "POST", "/notify",
+            {"session": "gn", "who": 0, "seq": 1, "notification": {"state": state_a}},
+        )
+        assert out["applied"] is True
+        server.request("POST", "/session", {"session": "gn", "meta": {}, "resume": True})
+        base = server.state.seq_baseline("gn")
+        server.request("POST", "/notify",
+                       {"session": "gn", "who": 0, "seq": int(base["0"]) + 1,
+                        "notification": {"state": state_a}})
+        server.request(
+            "POST", "/rpc",
+            {"session": "gn", "who": 0,
+             "request": {"request": {"$case": "rerollDice", "value": {}}}},
+        )
+        session_dir = Path(server.state.session_info("gn")["dir"])
+        lines = [json.loads(x) for x in (session_dir / "decisions.jsonl").read_text().splitlines()]
+        kinds = [line["type"] for line in lines]
+        assert "run_start" in kinds, "续局要落一条 run_start"
+        decision = [line for line in lines if line["type"] == "decision"][-1]
+        assert decision["run"] == 2
+        assert decision["state_seq"] == 1
+        assert decision["notify_seq"] == int(base["0"]) + 1
+    finally:
+        server.close()
+
+
+# --------------------------------------------------------------------------- #
+# C4 故障归档：AI 桥 IO 出错被引擎判负的局不能算真实胜负
+# --------------------------------------------------------------------------- #
+def test_game_end_aborted_marks_io_error(captured, tmp_path):
+    state_a, _ = _states_pair(captured)
+    state_end = copy.deepcopy(state_a)
+    state_end["winner"] = 1  # 引擎按 gotWinner(flip(who)) 置的「胜负」
+    log = srv.DecisionLog(tmp_path)
+    server = _Server(state=srv.State(srv.Policy(strategy="greedy", seed=1), log=log))
+    try:
+        # /notify 里看到 winner → 桥先自动关账（source=notify，winner=1）
+        server.request(
+            "POST", "/notify",
+            {"session": "ga", "who": 0, "seq": 1, "notification": {"state": state_end}},
+        )
+        info = server.state.session_info("ga")
+        assert info["closed_at"] is not None and info["winner"] == 1
+
+        # 浏览器随后上报「这是桥故障」→ 改判成故障归档
+        _, out = server.request(
+            "POST", "/game-end",
+            {"session": "ga", "winner": 1, "rounds": 2,
+             "aborted": True, "abort_reason": "io_error"},
+        )
+        assert out["closed"] is True and out["aborted"] is True
+
+        info = server.state.session_info("ga")
+        assert info["aborted"] is True
+        assert info["winner"] is None, "故障局不该留下胜负"
+        assert info["close_source"] == "io_error"
+        records = [
+            json.loads(line)
+            for line in (Path(info["dir"]) / "decisions.jsonl").read_text().splitlines()
+        ]
+        end = [r for r in records if r["type"] == "game_end"][-1]
+        assert end["aborted"] is True and end["amended"] is True
+        assert end["winner"] is None
+        summary = json.loads((Path(info["dir"]) / "summary.json").read_text())
+        assert summary["aborted"] is True and summary["winner"] is None
+    finally:
+        server.close()
+
+
+def test_game_end_normal_still_records_winner():
+    """正常终局不受影响（winner 照记，aborted=False）。"""
+    server = _Server(srv.Policy(strategy="greedy", seed=1))
+    try:
+        _, out = server.request(
+            "POST", "/game-end", {"session": "gn2", "winner": 0, "rounds": 5}
+        )
+        assert out["closed"] is True and out["aborted"] is False
+        info = server.state.session_info("gn2")
+        assert info["winner"] == 0 and info["aborted"] is False
+        assert info["close_source"] == "game-end"
+    finally:
+        server.close()
+
+
+def test_session_check_fields_land_in_files(tmp_path):
+    """deck_mismatch/seat_specs 要落进 session.json 与 summary.json，不只是响应体。"""
+    expected = srv.resolve_ai_deck(
+        argparse.Namespace(ai_deck="superconduct_aggro", policy=None)
+    )
+    actual = srv.resolve_ai_deck(
+        argparse.Namespace(ai_deck="natlan_battleship", policy=None)
+    )
+    log = srv.DecisionLog(tmp_path)
+    server = _Server(
+        state=srv.State(srv.Policy(strategy="greedy", seed=1), log=log, ai_deck=expected)
+    )
+    try:
+        server.request(
+            "POST", "/session",
+            {"session": "gf",
+             "meta": {"ai_seat": 0,
+                      "decks": {"0": {"characters": actual["characters"],
+                                      "cards": actual["cards"]}}}},
+        )
+        session_dir = Path(server.state.session_info("gf")["dir"])
+        session_json = json.loads((session_dir / "session.json").read_text())
+        assert session_json["deck_mismatch"] is True
+        assert "seat_specs" in session_json
+
+        server.request("POST", "/game-end", {"session": "gf", "winner": 0, "rounds": 3})
+        summary = json.loads((session_dir / "summary.json").read_text())
+        assert summary["deck_mismatch"] is True
+        assert "seat_specs" in summary
     finally:
         server.close()

@@ -9,9 +9,10 @@
 | 文件 | 改动 | 目的 |
 |---|---|---|
 | `vite.config.ts` | 新增 `envPrefix` + `define`，注入 `DEFAULT_STATIC_DATA_API_BASE_URL` / `globalThis.__GI_TCG_ASSETS_BASE_URL__`；`server.host/port` | 让浏览器里的 assets-manager 指向可达镜像；命令行可覆盖 |
-| `src/ai-http-io.ts` | **新增**：HTTP 版 `CancellablePlayerIO` | 浏览器引擎 ↔ Python 服务的桥；带 `sessionId`（T1 会话隔离）+ 通知队列与 `seq`（T2 防陈旧状态） |
+| `src/ai-http-io.ts` | **新增**：HTTP 版 `CancellablePlayerIO` | 浏览器引擎 ↔ Python 服务的桥；带 `sessionId`（T1 会话隔离）+ 通知队列与 `seq`（T2 防陈旧状态）+ `seqBase`（续局基线） |
 | `src/App.tsx` | 配置页改成 D18 流程：「我的牌组 / AI 牌组」+「AI 反选」（C1）+「取 AI 牌组」（T3）+ NPC 阵容下拉（C3，16 关全可选）+ **先手三选**（人类 / AI / 随机）+ 桥地址 | 人选牌 → AI 看牌反选 → 定先手；开局时把牌组解成对象、生成 `sessionId` |
-| `src/StandaloneParent.tsx` | 按 `humanSeat` 派生座位（seat0 恒先手）：本窗口托管真人棋盘、对面座位交 HTTP 桥或弹窗；开局 `POST /session`（真实 `ai_seat`/牌组）、终局 `POST /game-log` + `POST /game-end`；收到 `npcCustomData` 时给棋盘换一个 `new AssetsManager({customData})` | 随机/手动先手都成立；C4 日志归档；**NPC 角色的名字/技能描述/骰子费用/卡面占位图**都来自它 |
+| `src/StandaloneParent.tsx` | 按 `humanSeat` 派生座位（seat0 恒先手）：本窗口托管真人棋盘、对面座位交 HTTP 桥或弹窗（座位号经 `#opponent=` 传给弹窗）；开局 `POST /session`（真实 `ai_seat`/牌组；续局带 `resume` 并从响应的 `seq_base` 接着数）、终局 `POST /game-log` + `POST /game-end`（桥 IO 故障时 `aborted`）；收到 `npcCustomData` 时给棋盘**与「查看历史」棋盘**都换一个 `new AssetsManager({customData})`；续局前 `cancelRpc` 所有 AI io | 随机/手动先手都成立；C4 日志归档（故障局标 `io_error` 不算胜负）；**NPC 角色的名字/技能描述/骰子费用/卡面占位图**在实时与历史视图里都显示 |
+| `src/StandaloneChild.tsx` | **座位不再写死 seat0**：从 `#opponent=<0\|1>` 读座位交给 `createClient`，标题跟着变 | 真人先手（seat0）时弹窗托管 seat1，写死 seat0 会让弹窗把对手的掩码态当自己渲染（看不到自己的手牌/骰子） |
 | `../card-data-viewer/src/Description.tsx` | **护栏**：`descriptionToItems` 拒收非字符串 + `Description` 在描述缺失时给可诊断提示 | 静态数据缺 datum 时 `rawDescription` 为 undefined，会 `undefined.matchAll` **把对局打崩** |
 | `../card-data-viewer/src/PlayCost.tsx` | **护栏**：`playCost` 改为可选 + `?? []` | 同上，`[...undefined]` 会抛 `e.playCost is not iterable` |
 
@@ -93,10 +94,19 @@ package.json 只导出 `dist/`，Vite dev 无法直接解析其源码，因此�
 `session` 是每局一个的 id（`StandaloneParent` 用 `crypto.randomUUID()` 生成），桥
 按 `(session, who)` 隔离掩码状态、策略实例与决策日志（T1）；`seq` 是座位内单调
 的序号，桥丢弃过期通知，且 `rpc` 会先等前面的 notify 全部落地才发出（T2）。
+**「从此处继续」**在同一个 session 上开新的一局：`/session` 带 `resume:true`，
+桥回 `seq_base`（每个座位上一局最后一个已应用的 seq），新的 io 从 `seq_base + 1`
+接着数——否则新局的通知会被桥全判成过期，AI 决策吃的是被终止那一局的残局状态。
 
 开局前 `StandaloneParent` 还会 `POST /session`（牌组/版本/座位），终局
-`POST /game-log`（引擎日志，含人类这边的决策）+ `POST /game-end`（胜负），落进
-桥的 `data/web/<时间戳>_<session>/`（C4，详见 `web/README.md`）。
+`POST /game-log`（引擎日志，含人类这边的决策）+ `POST /game-end`（胜负；
+若这一局是桥 IO 故障被引擎判负的，带 `aborted:true` → 桥标成 `io_error`，
+不记胜负），落进桥的 `data/web/<时间戳>_<session>/`（C4，详见 `web/README.md`）。
+
+双人模式（不勾 AI 桥）时弹窗由 `showPopup` 打开，URL 带 `#opponent=<0|1>`：
+弹窗托管的是**对面**座位（真人随机先手时可能在 seat0 或 seat1），`StandaloneChild`
+按这个座位 `createClient`；写死 seat0 会让「真人先手」那半数的对局在弹窗里看到
+错误的掩码视角（自己的手牌变暗牌、骰子全 UNSPECIFIED）。
 
 `RpcRequest/Response` 定义见 `packages/typings/src/gen/rpc.ts`；座位 `action` 请求里带
 合法动作列表（`validity===0` 为合法）、每个动作的 `autoSelectedDice`（引擎自动选骰），
@@ -117,8 +127,10 @@ package.json 只导出 `dist/`，Vite dev 无法直接解析其源码，因此�
 
 **已完成**：人选牌（分享码 + **NPC 阵容**，16 关全可选）、**AI 看对手牌反选**
 （`POST /choose-deck`，对位矩阵 + decklab 兜底，未手改时开局自动反选）、
-**先手三选**（人类 / AI / 随机，`humanSeat` 派生座位）、模型桥 `--policy` 全 spec、
-逐决策日志与战绩归档（C4）。协议与近似语义见 `web/README.md`。
+**先手三选**（人类 / AI / 随机，`humanSeat` 派生座位；弹窗按 `#opponent=` 拿座位，
+不再写死 seat0）、模型桥 `--policy` 全 spec、逐决策日志与战绩归档（C4：续局
+`seq` 基线、故障局 `io_error` 归档、`deck_mismatch`/`seat_specs` 落盘）。
+协议与近似语义见 `web/README.md`。
 
 **下一步**：
 

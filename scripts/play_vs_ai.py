@@ -3,7 +3,8 @@
 Pick the AI's deck and policy and your own deck, then play as the opponent: the
 AI answers its turns automatically and you choose your moves from a numbered
 menu. ``--games N`` plays N games (fresh seeds) and reports the AI's win rate
-with a Wilson 95% CI.
+with a Wilson 95% CI. Typing ``q`` (or Ctrl-C) quits the current game: it is
+recorded as an invalid game (not a loss) and the run ends without scoring it.
 
 This is the interactive counterpart to the automated scoreboards
 (``scripts/eval_protocol.py`` / ``eval.arena``).
@@ -19,7 +20,7 @@ from __future__ import annotations
 
 import argparse
 
-from agents.human import HumanPolicy
+from agents.human import HumanPolicy, HumanQuit
 from common.seeding import derive_seed
 from envs.decks import deck_spec
 from envs.match import run_match
@@ -80,12 +81,22 @@ def main(argv: list[str] | None = None) -> int:
                 policies[1],
                 seed=seed,
             )
+        except HumanQuit:  # 策略层退出信号（正常路径由 run_match 记进 record.error）
+            print("\n已退出。")
+            break
         except KeyboardInterrupt:
             print("\n已退出。")
             break
+        if record.error or record.truncated:
+            # 中途退出 / 引擎错误 / 超步数：都不是有效对局，不该进胜率
+            print(f"  结果: 无效对局（error={record.error}, truncated={record.truncated}）")
+            if record.error and record.error.startswith("human quit"):
+                print("已退出（本局不计入胜率）。")
+                break
+            continue
         winner = record.winner
         if winner is None:
-            print(f"  结果: 平/未分（error={record.error}, truncated={record.truncated}）")
+            print(f"  结果: 平/未分（truncated={record.truncated}）")
             score = 0.5
         else:
             won = winner == ai_player

@@ -11,9 +11,9 @@
 |---|---|---|
 | `POST /rpc` | `{"session","who":0\|1,"request":RpcRequest}` | `RpcResponse` |
 | `POST /notify` | `{"session","who","seq","notification":{mutation,state}}` | `{"applied":bool,"seq","state_seq"}` |
-| `POST /session` | `{"session","meta":{version,ai_seat,human_seat,ai_self_play,decks}}` | 会话记录 + `deck_mismatch` + `seat_specs` |
+| `POST /session` | `{"session","meta":{version,ai_seat,human_seat,ai_self_play,decks},"resume?":bool}` | 会话记录 + `deck_mismatch` + `seat_specs` + `runs` + `seq_base`（`resume:true`＝续局，给 seq 基线） |
 | `POST /choose-deck` | `{"session","deck":{characters,cards}}` | C1 反选结果（见下） |
-| `POST /game-end` | `{"session","winner","rounds"}` | `{"ok","closed"}` |
+| `POST /game-end` | `{"session","winner","rounds","aborted?":bool,"abort_reason?":str}` | `{"ok","closed","aborted"}`（`aborted:true`＝故障局，归档成 `io_error`、不记胜负） |
 | `POST /game-log` | `{"session","log"}` | `{"ok","dir"}`（引擎日志归档） |
 | `GET /health` | – | `{"ok":true,"policy","rpc","notify","sessions","stale_notify","ai_deck","log_dir"}` |
 | `GET /state?session=&who=` | – | 该座位最近一次掩码 GameState（不带参数＝老行为，返回最近一条） |
@@ -31,9 +31,17 @@
 - **会话**：一局一个 id（浏览器每局 `crypto.randomUUID()`），状态 / 策略 / 决策
   计数 / 日志目录都按 session 隔离，多开标签页不串局。策略 role = `web{who}`
   （非默认会话再叠 `@{sid}`），seed 从 `--seed` 派生 → 同一 session 内可复现。
+  一个 session 上「从此处继续」开新局时 `runs` +1（同一个日志目录里接着记，
+  落一条 `run_start`）。
 - **通知序号**：`/notify` 带座位内单调 `seq`，过期通知直接丢弃（计数进
   `/health.stale_notify`）；浏览器侧把 notify 串成队列、发 rpc 前先等队列排空，
   杜绝「决策吃到上一步状态」的竞态。不带 `seq` 的请求照常应用（向后兼容）。
+- **续局（「从此处继续」）**：同一个 session 上开新的一局，浏览器侧的计数从 1 重新
+  数，所以 `POST /session` 要带 `resume:true`：桥把每个座位的 seq 顶到上一局末尾之后
+  （`_RESUME_SEQ_GAP`）、清掉上一局的 `latest_state`，并把基线放进响应的 `seq_base`；
+  浏览器的 io 从 `基线 + 1` 接着数（`AiHttpIoOptions.seqBase`）。不做这一步的话，新局
+  的通知会全被判成过期，决策吃的是被终止那一局的残局状态（决策日志里
+  `state_seq`/`notify_seq` 也会失真——所以决策行带 `run` 标明是第几局）。
 
 ### 决策档位
 
@@ -118,16 +126,24 @@ NPC 角色 id 不在官方 `share_id.json` 里、**编不出分享码**，所以
 
 ```
 data/web/20261015T120000Z_<session前24字符>/
-  session.json     # 开局元数据（版本 / 牌组 / ai_seat …）
-  decisions.jsonl  # 每次决策一行 + 终局 game_end 一行
-  summary.json     # 关账汇总（胜负 / 回合数 / 各座位决策数 / 回退数 / 过期通知数）
+  session.json     # 开局元数据（版本 / 牌组 / ai_seat … + deck_mismatch / seat_specs）
+  decisions.jsonl  # 每次决策一行 + run_start（续局）+ 终局 game_end 一行
+  summary.json     # 关账汇总（胜负 / 回合数 / 各座位决策数 / 回退数 / 过期通知数 /
+                   #            runs / aborted / deck_mismatch / seat_specs）
   game_log.json    # 浏览器上传的引擎日志（含人类这边的决策）
 ```
 
-决策行字段：`t / iso / type / session / who / method / step / state_seq /
-notify_seq / latency_ms / policy / fallback / error / response`。
+决策行字段：`t / iso / type / session / who / method / step / run / state_seq /
+notify_seq / latency_ms / policy / fallback / error / response`（`state_seq` 与
+`notify_seq` 都是**本局**计数，跨续局看 `run`）。
 `--no-log` 关闭；写盘失败只告警、不影响对局。终局优先信浏览器的 `POST
 /game-end`，`/notify` 里看到 `winner`（或 phase=gameEnd）也会兜底关账。
+
+**故障局不算胜负**：AI 桥 IO 出错时引擎会按 `gotWinner(flip(who))` 把该方判负，那是
+故障不是结果——浏览器上报 `/game-end` 时带 `aborted:true`，桥把会话标成
+`close_source=io_error`、`winner=null`；如果 `/notify` 已经先按那个假 winner 自动关过
+账，会改判一次（`game_end` 记录里 `amended:true`）。胜率/战绩口径直接过滤
+`aborted`（以及 `winner is None`）。
 
 ## 用法
 
@@ -166,7 +182,8 @@ OPTIONS 结果，跨域访问时不再每个请求配一次预检。
 
 `tests/test_web_rpc_server.py`：占位路径、snake→camel 映射、proto-JSON→
 StateSnapshot、真实对局抓取的端到端决策、oneof 摊平、回退、子进程直跑、HTTP
-路由，以及 T1 座位/会话隔离、T2 过期通知护栏、T3 牌组校验、C4 日志生命周期。
+路由，以及 T1 座位/会话隔离、T2 过期通知护栏与**续局 seq 基线**、T3 牌组校验
+（`deck_mismatch`/`seat_specs` 落盘）、C4 日志生命周期与**故障局归档**。
 
 ## 待办
 
