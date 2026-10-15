@@ -10,9 +10,9 @@ D18 说「人可持 NPC 敌人卡组」。NPC「冒险挑战」的阵容有三�
    内并不一致**——压扁成「后台角色 + 单场」。差异逐条写在 `SEMANTICS`（前端会原样
    展示），TODO 见文件末尾「探索替代方式来描述这两种机制」。
 
-NPC 本身不打行动牌（PvE 近似），但**人**要正常出牌，所以行动牌统一用
-`decklab` 池 C 的固定 core/fill 填满 30 张（牌严格来自池内，角色数不限——
-用 `decklab.builder.fill_cards`，绕开 `build_deck` 的「恰好 3 个不同角色」校验）。
+**牌组不带行动牌**（`cards=[]`）：游戏内 NPC 没有手牌，而引擎 `initialHandsCount`
+是**全局**配置、没有 per-player 版本，只能靠**空牌堆**让这一侧开局没有手牌
+（`drawCardsPlain` 遇空堆直接跳过）。人持 NPC 阵容时也一样——只能用角色技能和骰子打。
 
 浏览器侧拿到 `{characters, cards}` 后**直接当牌组对象传给引擎**，不走分享码：
 NPC 角色 id 不在官方 `share_id.json` 里，`DEFAULT_ASSETS_MANAGER.encode` 会抛错。
@@ -48,8 +48,12 @@ SEMANTICS: dict[str, str] = {
         "【差异】没有轮次接续、没有「新战场」，也无法表达玩家状态跨轮保留。"
     ),
     "cards": (
-        "NPC 不打行动牌；这里统一用 decklab 池 C 固定规则填 30 张，"
-        "人才能以正常玩家身份出牌。"
+        "【游戏内】NPC 没有手牌、不打行动牌（PvE 近似：NPC 永不出行动牌）。"
+        "【本接口】牌组 `cards=[]`，靠空牌堆让这一侧开局没有手牌——引擎的"
+        " `initialHandsCount` 是全局配置、没有 per-player 版本，空堆时"
+        "`drawCardsPlain` 直接跳过。"
+        "【差异】人持 NPC 阵容时同样拿不到行动牌（只能用角色技能与骰子），"
+        "骰子仍按全局规则发放。"
     ),
     "share_code": (
         "NPC 角色 id 不在官方 share_id 表里，编不出分享码——前端按牌组对象直传。"
@@ -70,24 +74,21 @@ SEMANTICS: dict[str, str] = {
 def npc_decks(stages_path: str | None = None) -> dict[str, Any]:
     """返回**全部** NPC 关卡阵容（出战 + 预备）当玩家牌组用。
 
+    **牌组不带行动牌**（`cards=[]`）：游戏内 NPC 没有手牌，而引擎的
+    `initialHandsCount` 是**全局**配置、没有 per-player 版本（见
+    `reports/explore/npc_pve_doc.md` §4），只能靠**空牌堆**让这一侧开局没有手牌
+    ——`drawCardsPlain` 遇到空堆直接 `continue`，所以空牌组是合法的。
+
     形状：
     ``{"decks": [{slug, display, region, enemies, characters,
                   n_on_field, n_support, total, cards}],
-       "cards_source": <池名>, "semantics": {...}}``
+       "semantics": {...}}``
     ``characters`` = 出战（按 count 展开，保留重复）+ 预备（同样展开），顺序即上场
     优先级。
     """
-    from decklab.builder import (
-        POOL_C_FILL,
-        POOL_C_META_CORE,
-        load_pool,
-        fill_cards,
-    )
     from npc.spec import load_stages
 
     stages = load_stages(stages_path)
-    pool = load_pool()
-    cards = fill_cards(pool, core=POOL_C_META_CORE, fill=POOL_C_FILL)
 
     decks: list[dict[str, Any]] = []
     for slug in sorted(stages):
@@ -106,11 +107,10 @@ def npc_decks(stages_path: str | None = None) -> dict[str, Any]:
                 "n_on_field": len(on_field),
                 "n_support": len(support),
                 "total": len(characters),
-                "cards": list(cards),
+                "cards": [],  # NPC 无手牌 → 空牌堆（见 docstring）
             }
         )
     return {
         "decks": decks,
-        "cards_source": pool.name,
         "semantics": dict(SEMANTICS),
     }

@@ -194,7 +194,7 @@ def test_npc_decks_returns_every_stage(npc_payload):
     stages = load_stages()
     assert len(npc_payload["decks"]) == len(stages) == 16
     assert {d["slug"] for d in npc_payload["decks"]} == set(stages)
-    assert npc_payload["cards_source"]
+    assert set(npc_payload) >= {"decks", "semantics"}
 
 
 def test_npc_decks_keep_lineup_size_as_is(npc_payload):
@@ -220,15 +220,19 @@ def test_npc_decks_expand_counts_and_keep_duplicates(npc_payload):
     assert jifang["total"] == 6
 
 
-def test_npc_decks_cards_are_legal_pool_cards(npc_payload):
-    from decklab.builder import MAX_COPIES, DECK_SIZE, load_pool
+def test_npc_decks_have_no_hand_cards(npc_payload):
+    """游戏内 NPC 没有手牌 → 牌组必须是空牌堆（引擎 initialHandsCount 无 per-player）。"""
+    from decklab.builder import load_pool
 
-    pool = load_pool()
-    pool_cards = set(pool.cards)
+    pool_cards = set(load_pool().cards)
     for deck in npc_payload["decks"]:
-        assert len(deck["cards"]) == DECK_SIZE
-        assert set(deck["cards"]) <= pool_cards, "行动牌必须全来自池 C"
-        assert max(Counter(deck["cards"]).values()) <= MAX_COPIES
+        assert deck["cards"] == [], f"{deck['slug']} 不该带行动牌"
+    # 说明文案要把「为什么空牌堆能成立」写清楚
+    assert "空牌堆" in npc_payload["semantics"]["cards"]
+    assert "initialHandsCount" in npc_payload["semantics"]["cards"]
+    assert "per-player" in npc_payload["semantics"]["cards"]
+    # 顺带确认：曾经填的池 C 牌仍在池内（若哪天要恢复填充，池子没变）
+    assert pool_cards, "池 C 牌表不该为空"
 
 
 def payload_text(payload: dict, key: str) -> str:

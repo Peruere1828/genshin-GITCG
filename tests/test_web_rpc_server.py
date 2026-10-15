@@ -1104,11 +1104,11 @@ def test_npc_decks_endpoint():
         status, payload = server.request("GET", "/npc-decks")
         assert status == 200
         assert len(payload["decks"]) == 16
-        assert payload["cards_source"]
         assert set(payload["semantics"]) >= {"lineup_size", "support", "waves"}
         sizes = [d["total"] for d in payload["decks"]]
         assert min(sizes) >= 1 and max(sizes) >= 4, "不能因为人数不为 3 就丢关卡"
-        assert all(len(d["cards"]) == 30 for d in payload["decks"])
+        # NPC 方不该有手牌：牌组是空牌堆
+        assert all(d["cards"] == [] for d in payload["decks"])
         # 返回的是牌组对象（NPC 角色编不出分享码，前端直传）
         timmie = next(d for d in payload["decks"] if d["slug"] == "timmie")
         assert timmie["n_on_field"] == 2 and timmie["n_support"] == 0
