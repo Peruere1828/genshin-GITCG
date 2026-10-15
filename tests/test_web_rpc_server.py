@@ -915,3 +915,202 @@ def test_log_failure_does_not_break_rpc(captured, tmp_path, capsys):
         assert "决策日志目录创建失败" in capsys.readouterr().err
     finally:
         server.close()
+
+
+# --------------------------------------------------------------------------- #
+# C1：/choose-deck 反选 + 按座位派生策略（只在 base 是 expert:* 时改派）
+# --------------------------------------------------------------------------- #
+def _deck_payload(name: str) -> dict:
+    from envs.decks import deck_spec
+
+    spec = deck_spec(name)
+    return {"characters": list(spec.characters), "cards": list(spec.cards)}
+
+
+def test_choose_deck_returns_counter_pick():
+    state = srv.State(srv.Policy(strategy="greedy", seed=1), base_spec="expert:x")
+    server = _Server(state=state)
+    try:
+        status, pick = server.request(
+            "POST", "/choose-deck",
+            {"session": "g1", "deck": _deck_payload("natlan_battleship")},
+        )
+        assert status == 200
+        assert pick["session"] == "g1"
+        assert pick["method"] in {"matrix-proxy", "matrix-strength", "decklab-rule"}
+        assert pick["policy"] == f"expert:{pick['slug']}"
+        assert pick["policy_applied"] is True  # base 是 expert:* → 会按牌组改派
+        assert pick["reason"]
+        # 反选结果记进会话，供 /session 校验（优先于 --ai-deck）
+        assert state.picks["g1"]["slug"] == pick["slug"]
+    finally:
+        server.close()
+
+
+def test_choose_deck_rejects_bad_body():
+    server = _Server(srv.Policy(strategy="greedy", seed=1))
+    try:
+        status, out = server.request("POST", "/choose-deck", {"session": "g"})
+        assert status == 400 and "error" in out
+        status, out = server.request(
+            "POST", "/choose-deck", {"session": "g", "deck": {"characters": []}}
+        )
+        assert status == 400 and "error" in out
+    finally:
+        server.close()
+
+
+def test_choose_deck_reports_policy_not_applied_for_neural():
+    """neural:* 是用户显式选的模型 → 只换牌组、不换策略，要如实告知。"""
+    state = srv.State(
+        srv.Policy(strategy="greedy", seed=1), base_spec="neural:ckpt.pt"
+    )
+    server = _Server(state=state)
+    try:
+        _, pick = server.request(
+            "POST", "/choose-deck",
+            {"session": "g2", "deck": _deck_payload("superconduct_aggro")},
+        )
+        assert pick["policy_applied"] is False
+        assert pick["base_policy"] == "neural:ckpt.pt"
+    finally:
+        server.close()
+
+
+def test_session_assigns_per_seat_expert_specs(capsys):
+    """开局时按各座位**实际**牌组派生策略：池内 → 自己的脚本；非池内 → heuristic。"""
+    args = argparse.Namespace(
+        policy="expert:superconduct_aggro", strategy="random", seed=1, ai_deck=None
+    )
+    seat_specs: dict[tuple[str, int], str] = {}
+    seat0, factory = srv.build_policy_from_args(args, seat_specs=seat_specs)
+    state = srv.State(
+        seat0,
+        policy_factory=factory,
+        seat_specs=seat_specs,
+        base_spec="expert:superconduct_aggro",
+    )
+    server = _Server(state=state)
+    capsys.readouterr()
+    try:
+        body = {
+            "session": "gs",
+            "meta": {
+                "ai_seat": 1,
+                "decks": {
+                    # seat0 是池内另一套 → 改派成它自己的脚本
+                    "0": _deck_payload("natlan_battleship"),
+                    # seat1 是 NPC/未知牌组 → 改派 deck-agnostic 的 heuristic
+                    "1": {"characters": [3302, 3302, 3101], "cards": [1, 2, 3]},
+                },
+            },
+        }
+        status, out = server.request("POST", "/session", body)
+        assert status == 200
+        assert out["seat_specs"] == {
+            "0": "expert:natlan_battleship",
+            "1": "heuristic",
+        }
+        assert state.seat_specs[("gs", 0)] == "expert:natlan_battleship"
+        assert state.seat_specs[("gs", 1)] == "heuristic"
+        # 非池内牌组要告警（否则用户不知道为什么换了策略）
+        err = capsys.readouterr().err
+        assert "不在评测池" in err and "heuristic" in err
+        # 座位策略实例按改派后的 spec 建（懒加载，只看 spec 字段）
+        assert state.seat("gs", 0).policy.spec == "expert:natlan_battleship"
+        assert state.seat("gs", 1).policy.spec == "heuristic"
+        # 改派只在座位还没建起来时生效
+        assert state.assign_seat_specs("gs", body["meta"]) == {}
+    finally:
+        server.close()
+
+
+def test_session_does_not_touch_non_expert_policy():
+    """`neural:*` 等非 deck-specific 策略绝不能被按牌组改派。"""
+    args = argparse.Namespace(policy="neural:ckpt.pt", strategy="random", seed=1, ai_deck=None)
+    seat_specs: dict[tuple[str, int], str] = {}
+    seat0, factory = srv.build_policy_from_args(args, seat_specs=seat_specs)
+    state = srv.State(
+        seat0, policy_factory=factory, seat_specs=seat_specs, base_spec="neural:ckpt.pt"
+    )
+    server = _Server(state=state)
+    try:
+        _, out = server.request(
+            "POST", "/session",
+            {"session": "gn", "meta": {"ai_seat": 0, "decks": {"0": _deck_payload("natlan_battleship")}}},
+        )
+        assert out["seat_specs"] == {}
+        assert seat_specs == {}
+    finally:
+        server.close()
+
+
+def test_session_deck_check_prefers_counter_pick_over_ai_deck(capsys):
+    """反选之后，校验对象变成反选结果（否则会拿 --ai-deck 误报不一致）。"""
+    declared = _deck_payload("superconduct_aggro")   # --ai-deck 声明的
+    state = srv.State(
+        srv.Policy(strategy="greedy", seed=1), ai_deck=declared, base_spec=None
+    )
+    server = _Server(state=state)
+    capsys.readouterr()
+    try:
+        # 反选出另一套
+        _, pick = server.request(
+            "POST", "/choose-deck",
+            {"session": "gp", "deck": _deck_payload("natlan_battleship")},
+        )
+        pick_deck = {"characters": pick["characters"], "cards": pick["cards"]}
+
+        # 1) 用反选结果开局 → 不算不一致、不告警
+        _, out = server.request(
+            "POST", "/session",
+            {"session": "gp", "meta": {"ai_seat": 0, "decks": {"0": pick_deck}}},
+        )
+        assert out["deck_mismatch"] is False
+        assert "不一致" not in capsys.readouterr().err
+
+        # 2) 没反选过的会话用同一套 → 与 --ai-deck 声明不符 → 告警（label=--ai-deck）
+        _, out = server.request(
+            "POST", "/session",
+            {"session": "gq", "meta": {"ai_seat": 0, "decks": {"0": pick_deck}}},
+        )
+        assert out["deck_mismatch"] is True
+        err = capsys.readouterr().err
+        assert "不一致" in err and "--ai-deck" in err
+
+        # 3) 反选过、但实际开局用的牌组被改了 → 告警（label=反选结果）
+        server.request(
+            "POST", "/choose-deck",
+            {"session": "gr", "deck": _deck_payload("natlan_battleship")},
+        )
+        capsys.readouterr()
+        _, out = server.request(
+            "POST", "/session",
+            {"session": "gr", "meta": {"ai_seat": 0, "decks": {"0": declared}}},
+        )
+        assert out["deck_mismatch"] is True
+        err = capsys.readouterr().err
+        assert "不一致" in err and "反选结果" in err
+    finally:
+        server.close()
+
+
+# --------------------------------------------------------------------------- #
+# C3：/npc-decks（人数不固定，16 关全给）
+# --------------------------------------------------------------------------- #
+def test_npc_decks_endpoint():
+    server = _Server(srv.Policy(strategy="greedy", seed=1))
+    try:
+        status, payload = server.request("GET", "/npc-decks")
+        assert status == 200
+        assert len(payload["decks"]) == 16
+        assert payload["cards_source"]
+        assert set(payload["semantics"]) >= {"lineup_size", "support", "waves"}
+        sizes = [d["total"] for d in payload["decks"]]
+        assert min(sizes) >= 1 and max(sizes) >= 4, "不能因为人数不为 3 就丢关卡"
+        assert all(len(d["cards"]) == 30 for d in payload["decks"])
+        # 返回的是牌组对象（NPC 角色编不出分享码，前端直传）
+        timmie = next(d for d in payload["decks"] if d["slug"] == "timmie")
+        assert timmie["n_on_field"] == 2 and timmie["n_support"] == 0
+    finally:
+        server.close()

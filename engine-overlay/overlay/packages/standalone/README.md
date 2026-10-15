@@ -10,8 +10,8 @@
 |---|---|---|
 | `vite.config.ts` | 新增 `envPrefix` + `define`，注入 `DEFAULT_STATIC_DATA_API_BASE_URL` / `globalThis.__GI_TCG_ASSETS_BASE_URL__`；`server.host/port` | 让浏览器里的 assets-manager 指向可达镜像；命令行可覆盖 |
 | `src/ai-http-io.ts` | **新增**：HTTP 版 `CancellablePlayerIO` | 浏览器引擎 ↔ Python 服务的桥；带 `sessionId`（T1 会话隔离）+ 通知队列与 `seq`（T2 防陈旧状态） |
-| `src/App.tsx` | 配置页新增「AI 对手（HTTP 桥）」开关 + 地址 + 「取 AI 牌组」+「双方 AI 自对弈」 | 开局入口；勾上开关会自动取桥的 `/ai-deck` 回填先手牌组（T3 牌组对齐） |
-| `src/StandaloneParent.tsx` | `aiOpponent`/`aiSelfPlay` 接线；每局生成 `sessionId`；开局 `POST /session`（上报牌组）、终局 `POST /game-log` + `POST /game-end` | AI 模式不弹窗；C4 逐决策日志与战绩归档 |
+| `src/App.tsx` | 配置页改成 D18 流程：「我的牌组 / AI 牌组」+「AI 反选」（C1）+「取 AI 牌组」（T3）+ NPC 阵容下拉（C3，16 关全可选）+ **先手三选**（人类 / AI / 随机）+ 桥地址 | 人选牌 → AI 看牌反选 → 定先手；开局时把牌组解成对象、生成 `sessionId` |
+| `src/StandaloneParent.tsx` | 按 `humanSeat` 派生座位（seat0 恒先手）：本窗口托管真人棋盘、对面座位交 HTTP 桥或弹窗；开局 `POST /session`（真实 `ai_seat`/牌组）、终局 `POST /game-log` + `POST /game-end` | 随机/手动先手都成立；C4 逐决策日志与战绩归档 |
 
 另有一处 **assets-manager** 的 overlay：
 `../assets-manager/src/constants.ts` 把 `DEFAULT_STATIC_DATA_API_BASE_URL` 的兜底默认值
@@ -57,16 +57,21 @@ package.json 只导出 `dist/`，Vite dev 无法直接解析其源码，因此�
 2. **双人类（上游默认）**：直接点「开始对局」，先手方棋盘在弹窗、后手方在本页。
    （需要浏览器允许弹出窗口。）
 3. **AI 对手（HTTP 桥）**：勾选「AI 对手（HTTP 桥）」，地址填
-   `http://127.0.0.1:8770`（点了地址框右边的「取 AI 牌组」会把桥声明的
-   `--ai-deck` / `--policy expert:<slug>` 牌组回填到「先手牌组」，避免脚本专家
-   规则与实际牌组不符）；先起 Python 服务：
+   `http://127.0.0.1:8770`；先起 Python 服务：
 
    ```sh
    conda run -n gitcg python web/ai_rpc_server.py --port 8770 \
        --policy expert:superconduct_aggro
    ```
 
-   则**先手方（who=0）由 Python 托管、不弹窗**，本页为后手方真人。
+   然后按 D18 流程配牌（配完点「开始对局」）：
+   - **我的牌组**：贴分享码，或在「NPC 阵容」下拉里选一套 NPC 阵容（C3，16 关全可选，
+     人数不为 3 的阵容原样给；选中后输入框显示 `NPC·<关卡名>`，不走分享码）；
+   - **AI 牌组**：点「AI 反选」（C1，按我的牌组用对位矩阵挑）或「取 AI 牌组」
+     （T3，用桥 `--ai-deck`/`--policy expert:<slug>` 声明的那套）；**没手动改过 AI
+     牌组时，点「开始对局」会自动再反选一次**；
+   - **先手**：人类先手 / AI 先手 / 随机（引擎 seat0 恒先手，这里决定谁坐先手位）；
+   - 本页面永远是**我**的棋盘；AI 模式下对面座位交给桥（不弹窗）。
    再勾「双方 AI 自对弈」可让两边都交给 Python，便于零看管跑完整局。
 4. 「摆盘器」「导入日志」「查看历史/从此处继续」等上游功能保持可用。
 
@@ -103,13 +108,18 @@ package.json 只导出 `dist/`，Vite dev 无法直接解析其源码，因此�
   `contextStorage`），**不影响对局结果**，仅控制台噪声。
 - 宿主 node24 可用（上游 `engines` 写 node ^26，实测 node v24.15 正常）。
 
-## 下一步（WS8 路线）
+## 已完成 / 下一步（WS8 路线）
 
-1. **人选牌**：在主页面用 `@gi-tcg/deck-builder` 选我方牌组（上游已有组件，入口在
-   「启动组牌器」）。
-2. **AI 看对手牌反选**：把对手（AI）可见的公共态经 `/notify` 发给 Python，Python
-   根据我方牌组反选一套应对牌组，回填到 `deck1`（或开局前的一次性 `/choose-deck`）。
-3. **开局**：随机先手；把 `aiOpponent` 从「先手固定」推广到「随机座位」。
-4. **模型桥**：把 `web/ai_rpc_server.py` 的随机策略换成调用 `reps/`+`train/` 的
-   CVPN checkpoint（或 `common/llm.py`），即「HTTP 桥 → 本地模型」。
-5. **NPC 卡组**：允许我方持 NPC 敌人卡组（D18），复用 `configs/npc/`。
+**已完成**：人选牌（分享码 + **NPC 阵容**，16 关全可选）、**AI 看对手牌反选**
+（`POST /choose-deck`，对位矩阵 + decklab 兜底，未手改时开局自动反选）、
+**先手三选**（人类 / AI / 随机，`humanSeat` 派生座位）、模型桥 `--policy` 全 spec、
+逐决策日志与战绩归档（C4）。协议与近似语义见 `web/README.md`。
+
+**下一步**：
+
+1. **组牌器直通**：在 `@gi-tcg/deck-builder` 里选完直接回填「我的牌组」
+   （现在要手动贴分享码）。
+2. **LLM 辅助档**：把 `agents/llm_assist.build_llm_assist_policy` 接成
+   `--policy llm:<slug>`，干预记进决策日志（分开报分、不进口径验收）。
+3. **`/notify` 降流量**：每步一次全量状态（一局数千条）→ seq/节流/合并。
+4. **e2e 固化**：把无头 Chromium 冒烟（NPC 阵容 × 先手 × 反选）落成仓库脚本。

@@ -8,11 +8,13 @@
 #   POST /rpc       {"session","who","seq?","request"}  -> RpcResponse
 #   POST /notify    {"session","who","seq","notification"} -> {"applied":bool}
 #   POST /session   {"session","meta"}                  -> {"ok",...}（开局元数据）
+#   POST /choose-deck {"session","deck"}                -> C1 反选：按人的牌组挑应对牌组
 #   POST /game-end  {"session","winner"}                -> 终局关账
 #   POST /game-log  {"session","log"}                   -> 引擎日志归档（含人类决策）
 #   GET  /health    -> {"ok":true,...}
 #   GET  /state?session=&who= -> 该座位最近一次（掩码后）notification.state
 #   GET  /ai-deck   -> {"slug","characters","cards"}（T3：AI 座位牌组，供 UI 回填）
+#   GET  /npc-decks -> C3：可当玩家牌组用的 NPC 阵容（角色 + 池 C 牌）
 #   GET  /results   -> 已开局会话的汇总（C4 调试闭环）
 #
 # 三个隔离维度（T1/T2）：
@@ -44,6 +46,14 @@
 # 应该用的牌组，`/ai-deck` 把它给前端回填；开局 `/session` 里浏览器上报实际牌组，
 # 与声明不一致就 stderr 告警并记进会话（脚本专家规则是按自家牌组写的，牌组不符会
 # 静默变蠢）。
+#
+# C1 反选（D19）：`POST /choose-deck` 拿人的牌组 → `web.counterpick` 用对位矩阵挑
+# 一套应对牌组，结果记进会话；开局 `/session` 时若 base 策略是 deck-specific 的
+# `expert:*`，就按**各座位实际牌组**改派 `expert:<slug>`（人的牌组若也是池内 20 套
+# 之一，自对弈时同样派它自己的脚本）。`neural:` 等用户显式选的策略绝不被覆盖。
+#
+# C3 NPC 卡组（D18）：`GET /npc-decks` 给出可当玩家牌组用的 NPC 阵容
+# （角色取自 `configs/npc/`，牌由 decklab 池 C 填充）。
 #
 # 跑：
 #   conda run -n gitcg python web/ai_rpc_server.py --port 8770
@@ -99,6 +109,10 @@ DEFAULT_SESSION = "-"
 
 # 决策日志根目录（`data/**` 已 gitignore，只提交 schema/清单，见 AGENTS 约定）。
 DEFAULT_LOG_DIR = os.path.join(_REPO_ROOT, "data", "web")
+
+# base 是 deck-specific 的 `expert:*` 时，非池内牌组（NPC 阵容/自改牌组）改派到
+# deck-agnostic 的策略——硬套别人的脚本每步都会回退占位（见 assign_seat_specs）。
+_NON_POOL_DECK_SPEC = "heuristic"
 
 # CORS 预检缓存时长（秒）：浏览器据此缓存 OPTIONS 结果，避免跨域访问时
 # 每个 /notify、/rpc 都先配一次预检请求。
@@ -549,11 +563,19 @@ class State:
         policy_factory: Any = None,
         log: DecisionLog | None = None,
         ai_deck: dict[str, Any] | None = None,
+        seat_specs: dict[tuple[str, int], str] | None = None,
+        base_spec: str | None = None,
     ) -> None:
         self.policy = policy
         self.policy_factory = policy_factory
         self.log = log
         self.ai_deck = ai_deck
+        # 每 (会话, 座位) 的策略 spec 覆盖：由 /choose-deck + /session 派生，
+        # 只在 policy_factory 读它时生效（座位一旦建好就不再改）。
+        self.seat_specs = seat_specs if seat_specs is not None else {}
+        self.base_spec = base_spec
+        # C1 反选结果，按会话记（/session 校验 AI 座位牌组时优先于 --ai-deck）。
+        self.picks: dict[str, dict[str, Any]] = {}
         self.lock = threading.Lock()
         self.rpc_counts: dict[str, int] = {}
         self.notify_count = 0
@@ -678,6 +700,60 @@ class State:
         with self.lock:
             return sum(v["stale_drops"] for v in self._sessions.values())
 
+    # -- C1 反选 / 按座位派生策略 ------------------------------------------ #
+    def record_pick(self, session: str, pick: dict[str, Any]) -> None:
+        with self.lock:
+            self.picks[session] = dict(pick)
+
+    def expected_deck(self, session: str) -> dict[str, Any] | None:
+        """AI 座位「应该用哪套牌」：反选结果优先，其次 --ai-deck。"""
+        with self.lock:
+            pick = self.picks.get(session)
+        if pick:
+            return pick
+        return self.ai_deck
+
+    def assign_seat_specs(self, session: str, meta: dict[str, Any]) -> dict[int, str]:
+        """开局时按各座位**实际**牌组派生策略 spec（**只在 base 是 `expert:*` 时改派**）。
+
+        * 牌组是池内 20 套之一 → 派它自己的脚本 `expert:<slug>`（deck-specific 的
+          规则只认自家牌组，牌组对齐到脚本才是对的）；
+        * 牌组不在池内（NPC 阵容 / 自改牌组 / decklab 牌组）→ 改派 **deck-agnostic
+          的 `heuristic`**：硬套 `expert:<别的牌组>` 会让规则每步找不到自家卡而回退，
+          既慢又难看（决策日志里会刷一屏 fallback）；
+        * base 不是 `expert:*`（`neural:`/`heuristic`/占位等用户显式选的）一律不动。
+        座位已经建好（局中调用）就不改——策略实例是按 (会话, 座位) 一次性建的。
+        """
+        if not self.base_spec or not self.base_spec.startswith("expert:"):
+            return {}
+        decks = meta.get("decks")
+        if not isinstance(decks, dict):
+            return {}
+        from web.counterpick import pool_slug_for_deck
+
+        assigned: dict[int, str] = {}
+        for key, deck in decks.items():
+            try:
+                who = int(key)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(deck, dict) or self.peek_seat(session, who) is not None:
+                continue
+            slug = pool_slug_for_deck(deck)
+            spec = f"expert:{slug}" if slug else _NON_POOL_DECK_SPEC
+            if spec == self.base_spec:
+                continue  # 与 base 相同，没必要覆盖
+            with self.lock:
+                self.seat_specs[(session, who)] = spec
+            assigned[who] = spec
+            if slug is None:
+                _warn(
+                    f"会话 {session} 座位 {who} 的牌组不在评测池 20 套里，"
+                    f"已把策略从 {self.base_spec!r} 改派成 {_NON_POOL_DECK_SPEC!r}"
+                    "（deck-specific 脚本只认自家牌组）。"
+                )
+        return assigned
+
 
 def _notify_rounds(state_json: Any) -> Any:
     """从掩码 state 里读回合数（终局关账时用）。"""
@@ -799,13 +875,26 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
                 meta = {}
             info = state.open_session(session, meta)
             mismatch = self._check_deck(session, meta)
+            specs = state.assign_seat_specs(session, meta)
             info["deck_mismatch"] = mismatch
+            info["seat_specs"] = {str(who): spec for who, spec in sorted(specs.items())}
+            if specs:
+                print(
+                    f"[ai-bridge] 会话 {session} 按实际牌组派生座位策略："
+                    + ", ".join(f"seat{who}={spec}" for who, spec in sorted(specs.items())),
+                    file=sys.stderr,
+                    flush=True,
+                )
             return info
 
         def _check_deck(self, session: str, meta: dict[str, Any]) -> bool:
-            """T3：浏览器上报的实际牌组 vs --ai-deck 声明的牌组。"""
-            if not state.ai_deck:
+            """T3+C1：浏览器上报的实际牌组 vs 期望牌组（反选结果优先，否则 --ai-deck）。"""
+            with state.lock:
+                has_pick = session in state.picks
+            expected = state.expected_deck(session)
+            if not expected:
                 return False
+            label = "反选结果" if has_pick else "--ai-deck"
             decks = meta.get("decks")
             if not isinstance(decks, dict):
                 return False
@@ -813,15 +902,15 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
             actual = decks.get(str(seat_no)) or decks.get(seat_no)
             if isinstance(actual, str) or not isinstance(actual, dict):
                 return False
-            expected_chars = list(state.ai_deck.get("characters") or [])
-            expected_cards = sorted(int(c) for c in state.ai_deck.get("cards") or [])
+            expected_chars = list(expected.get("characters") or [])
+            expected_cards = sorted(int(c) for c in expected.get("cards") or [])
             actual_chars = [int(c) for c in actual.get("characters") or []]
             actual_cards = sorted(int(c) for c in actual.get("cards") or [])
             if actual_chars == expected_chars and actual_cards == expected_cards:
                 return False
+            declared = expected.get("slug") or "(未给 slug)"
             _warn(
-                f"会话 {session} 的 AI 座位牌组与 --ai-deck "
-                f"{state.ai_deck.get('slug')!r} 不一致：实际 "
+                f"会话 {session} 的 AI 座位牌组与 {label} {declared!r} 不一致：实际 "
                 f"characters={actual_chars} cards={len(actual_cards)}，期望 "
                 f"characters={expected_chars} cards={len(expected_cards)}。"
                 "脚本专家规则是按自家牌组写的，牌组不符会静默变蠢。"
@@ -878,6 +967,13 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
                         "cards": list(deck.get("cards") or []),
                     }
                 )
+            elif path == "/npc-decks":
+                try:
+                    from web.npc_decks import npc_decks
+
+                    self._json(npc_decks())
+                except Exception as e:  # noqa: BLE001
+                    self._json({"error": str(e)}, status=500)
             elif path == "/results":
                 self._json(
                     {
@@ -893,11 +989,13 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
                             "/rpc",
                             "/notify",
                             "/session",
+                            "/choose-deck",
                             "/game-end",
                             "/game-log",
                             "/health",
                             "/state",
                             "/ai-deck",
+                            "/npc-decks",
                             "/results",
                         ],
                     }
@@ -950,6 +1048,40 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
                     self._json({"error": str(e)}, status=400)
                     return
                 self._json(out)
+            elif path == "/choose-deck":
+                # C1 反选：人的牌组 -> 应对牌组（D19：对位矩阵 + decklab 固定规则）。
+                try:
+                    if not isinstance(body, dict):
+                        raise ValueError("body must be a JSON object")
+                    session = self._session_of(body)
+                    from web.counterpick import counter_pick, deck_view_from_json
+
+                    human = deck_view_from_json(body.get("deck"))
+                    pick = counter_pick(human)
+                    state.record_pick(session, pick.as_dict())
+                    payload = pick.as_dict()
+                    payload.update(
+                        {
+                            "session": session,
+                            "base_policy": state.base_spec,
+                            # 只有 deck-specific 的 expert:* 才会被按牌组改派；
+                            # neural:/heuristic/占位保持不动（牌组照用）。
+                            "policy_applied": bool(
+                                state.base_spec
+                                and state.base_spec.startswith("expert:")
+                            ),
+                        }
+                    )
+                    print(
+                        f"[ai-bridge] 会话 {session} 反选：{pick.slug} "
+                        f"({pick.method}, proxy={pick.proxy})",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    self._json({"error": str(e)}, status=400)
+                    return
+                self._json(payload)
             elif path == "/game-end":
                 try:
                     if not isinstance(body, dict):
@@ -1056,11 +1188,18 @@ def _is_end_phase(state_json: Any) -> bool:
     return state_json.get("phase") in _END_PHASES
 
 
-def build_policy_from_args(args: argparse.Namespace) -> tuple[Any, Any]:
+def build_policy_from_args(
+    args: argparse.Namespace,
+    *,
+    seat_specs: dict[tuple[str, int], str] | None = None,
+) -> tuple[Any, Any]:
     """按命令行参数组装策略：返回 `(seat0 策略, policy_factory)`。
 
     `policy_factory(session, who)` 每次返回**新实例**（T1：座位/会话隔离，
     独立 RNG 与 step 计数）。有 `--policy` 走模型桥，否则纯占位。
+
+    `seat_specs` 是 C1 的按座位 spec 覆盖（`/choose-deck` + `/session` 派生，
+    见 `State.assign_seat_specs`）；没有覆盖时用 `args.policy`。
     """
     from common.seeding import derive_seed
 
@@ -1069,10 +1208,12 @@ def build_policy_from_args(args: argparse.Namespace) -> tuple[Any, Any]:
         base_seed = None if args.seed is None else int(args.seed)
         seat_seed = None if base_seed is None else derive_seed(base_seed, role)
         placeholder = Policy(strategy=args.strategy, seed=seat_seed)
-        if not args.policy:
+        spec = None if seat_specs is None else seat_specs.get((session, who))
+        spec = spec or args.policy
+        if not spec:
             return placeholder
         return RepoPolicy(
-            spec=args.policy,
+            spec=spec,
             seed=base_seed,
             role=role,
             fallback=placeholder,
@@ -1141,7 +1282,8 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    seat0_policy, factory = build_policy_from_args(args)
+    seat_specs: dict[tuple[str, int], str] = {}
+    seat0_policy, factory = build_policy_from_args(args, seat_specs=seat_specs)
     ai_deck = resolve_ai_deck(args)
     log = None if args.no_log else DecisionLog(args.log_dir)
     state = State(
@@ -1149,6 +1291,8 @@ def main() -> None:
         policy_factory=factory,
         log=log,
         ai_deck=ai_deck,
+        seat_specs=seat_specs,
+        base_spec=args.policy,
     )
     server = ThreadingHTTPServer(
         (args.host, args.port), make_handler(state, args.quiet, args.cors_origin)

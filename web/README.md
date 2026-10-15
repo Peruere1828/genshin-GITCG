@@ -11,12 +11,14 @@
 |---|---|---|
 | `POST /rpc` | `{"session","who":0\|1,"request":RpcRequest}` | `RpcResponse` |
 | `POST /notify` | `{"session","who","seq","notification":{mutation,state}}` | `{"applied":bool,"seq","state_seq"}` |
-| `POST /session` | `{"session","meta":{version,ai_seat,ai_self_play,decks}}` | 会话记录 + `deck_mismatch` |
-| `POST /game-end` | `{"session","winner"}` | `{"ok","closed"}` |
+| `POST /session` | `{"session","meta":{version,ai_seat,human_seat,ai_self_play,decks}}` | 会话记录 + `deck_mismatch` + `seat_specs` |
+| `POST /choose-deck` | `{"session","deck":{characters,cards}}` | C1 反选结果（见下） |
+| `POST /game-end` | `{"session","winner","rounds"}` | `{"ok","closed"}` |
 | `POST /game-log` | `{"session","log"}` | `{"ok","dir"}`（引擎日志归档） |
 | `GET /health` | – | `{"ok":true,"policy","rpc","notify","sessions","stale_notify","ai_deck","log_dir"}` |
 | `GET /state?session=&who=` | – | 该座位最近一次掩码 GameState（不带参数＝老行为，返回最近一条） |
 | `GET /ai-deck` | – | `{"slug","characters","cards"}`（T3 牌组对齐） |
+| `GET /npc-decks` | – | C3：全部 NPC 关卡阵容（人数不固定，见下） |
 | `GET /results` | – | `{"log_dir","sessions":[…]}` |
 
 `session` 缺省落到 `"-"`（老客户端 / 直接 curl 调试）。
@@ -54,6 +56,43 @@ reps/train/torch 只在请求模型策略时延迟导入，默认路径仍是零
   记 `deck_mismatch:true`。
 
 原因：脚本专家规则是按自家牌组写的，牌组不符会**静默变蠢**。
+
+## C1 反选（D19：对位矩阵 + decklab 固定规则）
+
+`POST /choose-deck` 收**人的牌组** `{characters, cards}`，`web/counterpick.py` 挑一套
+应对牌组：
+
+1. 在评测池 20 套里找人的牌组的**代理**（相似度 = 0.6×角色 + 0.4×牌多重集），
+2. 用 `reports/arena/` 的 **20×20 对位矩阵**（双向合并后的两两胜率）择优，
+3. 相似度 < 0.2（池内没有像它的）→ 退到**总强度**最强的一套；
+4. 没有矩阵文件 → 退到 **decklab 池 C 固定规则牌组**（配 `heuristic`）。
+
+返回 `{slug,characters,cards,policy,method,proxy,similarity,win_rate,reason,
+base_policy,policy_applied}`，并把结果记进会话（供开局校验）。
+
+**策略改派**：`/session` 时若 base 策略是 deck-specific 的 `expert:*`，就按**各座位
+实际牌组**改派——池内 20 套派它自己的 `expert:<slug>`（人的牌组若也是池内套，自对弈
+时同样派它自己的脚本）；**非池内牌组（NPC 阵容/自改牌组）改派 deck-agnostic 的
+`heuristic`**（硬套别人的脚本每步都会回退占位，日志里会刷一屏 fallback），并 stderr
+告警。`neural:` 等用户显式选的策略**绝不覆盖**——那种情况 `policy_applied:false`，
+只换牌组不换策略。已在局中的座位不再改（实例已建）。
+
+前端流程（D18）：人选牌 → 点「AI 反选」（或直接开局时自动反选，只要没手改过 AI
+牌组）→ 定先手（人类 / AI / 随机）→ 开局。
+
+## C3 NPC 阵容（D18：人可持 NPC 敌人卡组）
+
+`GET /npc-decks` → `web/npc_decks.py`，**全部 16 关原样返回，不跳过、不凑 3 人**：
+
+| 真实特征 | 处理 |
+|---|---|
+| 出战人数不固定（数据里 2/3/4/5/6 都有，含同一敌人的多份） | 原样保留（含重复、含顺序）；引擎 `initPlayerState` 不校验人数，PvE 线已用 2–4 人阵容跑通 |
+| 支援区（预备）角色：出战全灭才上场 | 接在出战角色之后进牌组（= 后台角色），靠「不主动切换」近似原版语义；`n_support` 显式标注 |
+| 多轮挑战（换战场、玩家状态保留） | 单局表达不了、关卡数据也没有 `waves` 字段 → 按单局给阵容，多轮归 PvE 线；`semantics.waves` 写明 |
+
+行动牌统一用池 C 固定 core/fill 填 30 张（`decklab.builder.fill_cards`，不限角色数）。
+NPC 角色 id 不在官方 `share_id.json` 里、**编不出分享码**，所以前端按**牌组对象直传**
+（不走输入框分享码）。
 
 ### C4 逐决策日志
 

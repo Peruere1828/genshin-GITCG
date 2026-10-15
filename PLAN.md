@@ -362,7 +362,7 @@ genshin-GITCG/          # = ~/projects/genshin-GITCG
 |----|--------|--------|
 | **A 模型主线** | 表示层 + 信念根化 + MCCFR 脚手架 + search-as-teacher（S-A/S-B/S-C，§4.3）；数据先行 A5–A8（结论见 §0 D22–D24） | **策略改进**（自博弈/RL 或修好的搜索）——待选向；GPU 档放大约束见 §5.1 |
 | **B NPC PvE** | B0 构建链（`engine-overlay/README.md`）、B1–B5（敌人/策略/规格/关卡）+ PvE-v1 门禁（§4.4，`reports/npc/`） | 无（门禁已 PASS） |
-| **C Web 调试接口** | C0 standalone 起局 + 浏览器↔Python 桥（`reports/web_standalone_start.md`）；C2 模型桥（`web/ai_rpc_server.py` 加 `--policy`，接 `build_policy` 全 spec——`neural:<ckpt>[#t=]` / `heuristic` / `legal_random` / `expert:<slug>`）；调试底座 **T1**（`(session, who)` 隔离掩码状态/策略实例）、**T2**（`/notify` seq 护栏 + 浏览器 notify 队列）、**T3**（`--ai-deck` + `/ai-deck` 牌组对齐）、**C4 日志底座**（逐决策 JSONL `data/web/` + `/session` `/game-end` `/game-log` `/results`；协议见 `web/README.md`） | C1 选牌流程 / C3 NPC 卡组 / 随机先手 |
+| **C Web 调试接口** | C0 standalone 起局 + 浏览器↔Python 桥（`reports/web_standalone_start.md`）；C2 模型桥（`web/ai_rpc_server.py` 加 `--policy`，接 `build_policy` 全 spec——`neural:<ckpt>[#t=]` / `heuristic` / `legal_random` / `expert:<slug>`）；调试底座 **T1**（`(session, who)` 隔离掩码状态/策略实例）、**T2**（`/notify` seq 护栏 + 浏览器 notify 队列）、**T3**（`--ai-deck` + `/ai-deck` 牌组对齐）、**C4 日志底座**（逐决策 JSONL `data/web/` + `/session` `/game-end` `/game-log` `/results`）；**C1 反选**（`POST /choose-deck`＝对位矩阵 + decklab 兜底，`web/counterpick.py`，未手改时开局自动反选，并按各座位实际牌组改派策略）、**C3 NPC 阵容**（`GET /npc-decks`＝16 关原样、人数不为 3 也给，支援区/多轮的近似语义写进 `semantics`，`web/npc_decks.py`）、**先手三选**（人类 / AI / 随机 → `humanSeat` 派生座位）。协议与口径见 `web/README.md` | 组牌器直通回填 / LLM 辅助档 / `/notify` 降流量 / e2e 固化 |
 
 **并行收尾**（不阻塞主线）：WSL/MX550 小网络训练试验（结论写回 §5.2）；L5.2 全池 LLM 矩阵放量；L5.3 学习曲线留档；L5.5（可选）评测池扩容。机会算力窗口到手 → 按 §5.1 本地采集 / 传入 / GPU 放大 / 回流认证（M3 GPU → M4）。
 

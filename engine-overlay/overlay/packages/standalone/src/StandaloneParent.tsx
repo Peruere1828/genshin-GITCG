@@ -16,6 +16,7 @@
 import getData from "@gi-tcg/data";
 import {
   CancellablePlayerIO,
+  Deck,
   DetailLogEntry,
   Game,
   GameState,
@@ -31,37 +32,42 @@ import { createClient, StandaloneChessboard } from "@gi-tcg/web-ui-core";
 import "@gi-tcg/web-ui-core/style.css";
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { DetailLogViewer } from "@gi-tcg/detail-log-viewer";
-import { DEFAULT_ASSETS_MANAGER } from "@gi-tcg/assets-manager";
 import mergeErrorCause from "merge-error-cause";
 import { createAiHttpIo } from "./ai-http-io";
 
 export interface StandaloneParentProps {
   logs?: GameStateLogEntry[];
-  deck0: string;
-  deck1: string;
+  /** C1/C4：一局一个会话 id（App 在开局时生成），桥按它隔离状态/策略/日志 */
+  sessionId: string;
+  /** 本窗口（真人）这边的牌组对象；对面座位用 `otherDeck` */
+  myDeck: Deck;
+  /** 对面座位的牌组对象（AI 模式＝AI 牌组；双人模式＝弹窗那边） */
+  otherDeck: Deck;
+  /** 本窗口托管的座位：随机先手时可能是 0（=先手） */
+  humanSeat: 0 | 1;
   version: Version;
-  /** WS8/D18 overlay：非空时先手方（who=0）由该地址的 Python HTTP 服务托管 */
+  /** WS8/D18 overlay：非空时对面座位由该地址的 Python HTTP 服务托管 */
   aiOpponent?: string;
-  /** WS8/D18 overlay：非空时后手方（who=1）也由该地址托管（双方 AI 自对弈，便于调试） */
+  /** WS8/D18 overlay：非空时本窗口座位也托管（双方 AI 自对弈，便于调试） */
   aiSelfPlay?: boolean;
 }
 
-const CHILD_WHO = 0;
-const PARENT_WHO = 1;
-
 export function StandaloneParent(props: StandaloneParentProps) {
-  const [uiIo, Chessboard] = createClient(1, {
+  // 席位派生：seat0 恒为先手（引擎 currentTurn 从 0 开始）。「随机先手」= 随机决定
+  // 真人坐哪个座位，对面那个座位交给桥/弹窗。
+  const HUMAN_WHO: 0 | 1 = props.humanSeat;
+  const OTHER_WHO: 0 | 1 = (1 - props.humanSeat) as 0 | 1;
+  // 两个座位各自的牌组：真人坐 seat0 时两张牌对调。
+  const SEAT_DECKS: [Deck, Deck] =
+    HUMAN_WHO === 0
+      ? [props.myDeck, props.otherDeck]
+      : [props.otherDeck, props.myDeck];
+
+  const [uiIo, Chessboard] = createClient(HUMAN_WHO, {
     onGiveUp: () => {
-      game?.giveUp(PARENT_WHO);
+      game?.giveUp(HUMAN_WHO);
     },
   });
-
-  // WS8/D18（T1/C4）：一局一个会话 id。桥按 (session, who) 隔离掩码状态、
-  // 策略实例与决策日志目录；「从此处继续」沿用同一局的 id。
-  const sessionId: string =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
   const [popupWindow, setPopupWindow] = createSignal<Window | null>(null);
 
@@ -79,7 +85,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
     const autoGiveupWhenChildCloseInterval = window.setInterval(() => {
       if (newWindow?.closed && autoGiveupWhenChildCloseInterval !== null) {
         window.clearInterval(autoGiveupWhenChildCloseInterval);
-        game?.giveUp(CHILD_WHO);
+        game?.giveUp(OTHER_WHO);
         setPopupWindow(null);
       }
     }, 1000);
@@ -153,13 +159,13 @@ export function StandaloneParent(props: StandaloneParentProps) {
   const [fromImport, setFromImport] = createSignal(false);
   // -1 代表不显示历史
   const [viewingLogIndex, setViewingLogIndex] = createSignal<number>(-1);
-  const [viewingWho, setViewingWho] = createSignal<0 | 1>(1);
+  const [viewingWho, setViewingWho] = createSignal<0 | 1>(HUMAN_WHO);
   const viewingState = (): GameStateLogEntry | undefined => {
     const index = viewingLogIndex();
     return stateLog()[index];
   };
   const enableLog = () => {
-    setViewingWho(1);
+    setViewingWho(HUMAN_WHO);
     setViewingLogIndex(stateLog().length - 1);
   };
   const maxLogIndex = () => {
@@ -224,7 +230,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
     }
     console.error("[ai-http] io error", merged);
     const isAiSeat =
-      !!props.aiOpponent && (e.who === 0 || !!props.aiSelfPlay);
+      !!props.aiOpponent && (e.who === OTHER_WHO || !!props.aiSelfPlay);
     const seat = `${e.who === 0 ? "先手" : "后手"}方`;
     const hint = isAiSeat
       ? "\n若这是 AI 桥：请确认 web/ai_rpc_server.py 正在运行、地址可访问。"
@@ -247,35 +253,28 @@ export function StandaloneParent(props: StandaloneParentProps) {
     }
   };
 
-  // T3：把本局两个座位的牌组（解成 definition id）报给桥。桥用它校验
-  // AI 座位的牌组是否等于 `--ai-deck` 声明的那套（脚本专家规则按自家牌组写，
-  // 牌组不符会静默变蠢），并写进决策日志。
-  const deckAsJson = (code: string): unknown => {
-    try {
-      return DEFAULT_ASSETS_MANAGER.decode(code);
-    } catch {
-      return code; // 解不出来就原样上报，桥侧只做形状检查、不硬失败
-    }
-  };
-
+  // T3：把本局两个座位的牌组（definition id）报给桥。桥用它校验
+  // AI 座位的牌组是否等于 `--ai-deck`/反选声明的那套（脚本专家规则按自家牌组写，
+  // 牌组不符会静默变蠢），并按实际牌组派生座位策略，写进决策日志。
   const reportSession = async () => {
     if (!props.aiOpponent) {
       return;
     }
     const meta = {
       version: props.version,
-      ai_seat: CHILD_WHO,
+      ai_seat: OTHER_WHO,
+      human_seat: HUMAN_WHO,
       ai_self_play: !!props.aiSelfPlay,
       decks: {
-        [String(CHILD_WHO)]: deckAsJson(props.deck0),
-        [String(PARENT_WHO)]: deckAsJson(props.deck1),
+        "0": SEAT_DECKS[0],
+        "1": SEAT_DECKS[1],
       },
     };
     try {
       const resp = await fetch(`${props.aiOpponent}/session`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ session: sessionId, meta }),
+        body: JSON.stringify({ session: props.sessionId, meta }),
       });
       if (!resp.ok) {
         console.warn(`[ai-http] /session HTTP ${resp.status}`);
@@ -284,7 +283,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
       const out = (await resp.json()) as { deck_mismatch?: boolean };
       if (out?.deck_mismatch) {
         console.warn(
-          "[ai-http] AI 座位牌组与桥的 --ai-deck 声明不一致（详见桥的 stderr）",
+          "[ai-http] AI 座位牌组与桥声明的牌组不一致（详见桥的 stderr）",
         );
       }
     } catch (e) {
@@ -312,7 +311,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            session: sessionId,
+            session: props.sessionId,
             log: { ...serialized, gv: props.version },
           }),
         });
@@ -325,7 +324,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          session: sessionId,
+          session: props.sessionId,
           winner,
           rounds: finished.state.roundNumber,
         }),
@@ -344,10 +343,8 @@ export function StandaloneParent(props: StandaloneParentProps) {
 
   const createGame = async (state?: GameState) => {
     if (!state) {
-      const deck0 = DEFAULT_ASSETS_MANAGER.decode(props.deck0);
-      const deck1 = DEFAULT_ASSETS_MANAGER.decode(props.deck1);
       state = Game.createInitialState({
-        decks: [deck0, deck1],
+        decks: SEAT_DECKS,
         data: getData(props.version),
         versionBehavior: props.version,
       });
@@ -357,29 +354,30 @@ export function StandaloneParent(props: StandaloneParentProps) {
     (window as any).theGame = game;
     game.onPause = pause;
     game.onIoError = onIoError;
-    // WS8/D18 overlay：AI 模式下 AI 座位走 HTTP 桥，否则走弹窗真人 io。
+    // WS8/D18 overlay：本窗口座位托管真人棋盘；对面座位按模式交给 HTTP 桥或弹窗。
     // 两个 AI 座位共用同一 sessionId（T1：桥内部再按 who 分开）。
     if (props.aiOpponent) {
-      game.players[0].io = createAiHttpIo({
+      game.players[OTHER_WHO].io = createAiHttpIo({
         baseUrl: props.aiOpponent,
-        who: 0,
-        sessionId,
+        who: OTHER_WHO,
+        sessionId: props.sessionId,
         forwardNotifications: true,
         onLog: aiIoLog,
       });
+      if (props.aiSelfPlay) {
+        game.players[HUMAN_WHO].io = createAiHttpIo({
+          baseUrl: props.aiOpponent,
+          who: HUMAN_WHO,
+          sessionId: props.sessionId,
+          forwardNotifications: true,
+          onLog: aiIoLog,
+        });
+      } else {
+        game.players[HUMAN_WHO].io = uiIo;
+      }
     } else {
-      game.players[0].io = childIo;
-    }
-    if (props.aiOpponent && props.aiSelfPlay) {
-      game.players[1].io = createAiHttpIo({
-        baseUrl: props.aiOpponent,
-        who: 1,
-        sessionId,
-        forwardNotifications: true,
-        onLog: aiIoLog,
-      });
-    } else {
-      game.players[1].io = uiIo;
+      game.players[OTHER_WHO].io = childIo;
+      game.players[HUMAN_WHO].io = uiIo;
     }
     return game;
   };
@@ -432,7 +430,8 @@ export function StandaloneParent(props: StandaloneParentProps) {
       return;
     }
     if (data.method === "giveUp") {
-      game?.giveUp(CHILD_WHO);
+      // 弹窗托管的是对面那个座位（真人随机先手时可能在 seat0 或 seat1）。
+      game?.giveUp(OTHER_WHO);
     }
   };
   let detailDialog!: HTMLDialogElement;
@@ -471,7 +470,9 @@ export function StandaloneParent(props: StandaloneParentProps) {
         fallback={
           <>
             <div class="title-row">
-              <span class="title">后手方棋盘</span>
+              <span class="title">
+                {HUMAN_WHO === 0 ? "先手方棋盘（我）" : "后手方棋盘（我）"}
+              </span>
               <button disabled={stateLog().length <= 1} onClick={enableLog}>
                 查看历史
               </button>
