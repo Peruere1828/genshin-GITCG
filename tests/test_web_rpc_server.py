@@ -363,6 +363,22 @@ def test_http_health_reports_policy(http_server):
     assert "rpc" in data and "notify" in data
 
 
+def test_cors_preflight_caches_with_max_age(http_server):
+    """预检响应要带 Access-Control-Max-Age，浏览器才会缓存 OPTIONS 结果，
+    否则每个跨域请求都先配一次预检（/notify 一局几千条 → 请求数翻倍）。"""
+    conn = http.client.HTTPConnection("127.0.0.1", http_server.port, timeout=10)
+    try:
+        conn.request("OPTIONS", "/notify", headers={"Origin": "http://172.26.108.168:7001"})
+        resp = conn.getresponse()
+        resp.read()
+        assert resp.status == 204
+        assert resp.getheader("Access-Control-Max-Age") == str(srv._CORS_MAX_AGE_SECONDS)
+        assert resp.getheader("Access-Control-Allow-Methods")
+        assert resp.getheader("Access-Control-Allow-Headers")
+    finally:
+        conn.close()
+
+
 def test_http_notify_then_state_and_rpc(http_server, captured):
     entry = captured["action"]
     notification = json.loads(entry["notification_json"])

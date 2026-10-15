@@ -51,3 +51,11 @@ CORS 默认只放行本机 Origin（`localhost`/`127.0.0.1`/`::1`）；如需其
 这是**调试/训练辅助接口**，不进口径验收（D18）。C2 已把占位策略接到
 `reps/` + `train/` 的 CVPN checkpoint（`--policy neural:...`），即
 「HTTP 桥 → 本地模型」；`common/llm.py` 侧作为后续可选分支。
+
+预检响应带 `Access-Control-Max-Age`（`_CORS_MAX_AGE_SECONDS`），浏览器会缓存
+OPTIONS 结果，跨域访问时不再每个请求配一次预检。
+
+## 待办
+
+- `/notify` 目前是**每步一次的全量状态上报**（一局数千条）。可改增量/节流/合并
+  以降请求量；未做（当前不是瓶颈）。

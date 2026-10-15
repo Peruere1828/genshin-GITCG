@@ -70,6 +70,10 @@ _METHOD_TO_FIELD = {
 # 模型策略 seed 派生用的角色名（build_policy 把 seed/role 折进策略 RNG）。
 _WEB_ROLE = "web"
 
+# CORS 预检缓存时长（秒）：浏览器据此缓存 OPTIONS 结果，避免跨域访问时
+# 每个 /notify、/rpc 都先配一次预检请求。
+_CORS_MAX_AGE_SECONDS = 600
+
 
 def _is_local_origin(origin: str) -> bool:
     """Origin 形如 scheme://host[:port]，判断其 host 是否为本机。"""
@@ -380,6 +384,8 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
                 self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "content-type")
+            # 让浏览器缓存预检结果（否则每个跨域请求都配一个 OPTIONS）。
+            self.send_header("Access-Control-Max-Age", str(_CORS_MAX_AGE_SECONDS))
 
         def _json(self, obj: Any, status: int = 200) -> None:
             body = json.dumps(obj).encode("utf-8")
