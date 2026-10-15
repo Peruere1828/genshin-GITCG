@@ -9,9 +9,9 @@
 | 文件 | 改动 | 目的 |
 |---|---|---|
 | `vite.config.ts` | 新增 `envPrefix` + `define`，注入 `DEFAULT_STATIC_DATA_API_BASE_URL` / `globalThis.__GI_TCG_ASSETS_BASE_URL__`；`server.host/port` | 让浏览器里的 assets-manager 指向可达镜像；命令行可覆盖 |
-| `src/ai-http-io.ts` | **新增**：HTTP 版 `CancellablePlayerIO` | 浏览器引擎 ↔ Python 服务的桥 |
-| `src/App.tsx` | 配置页新增「AI 对手（HTTP 桥）」复选框 + 地址输入 + 「双方 AI 自对弈」 | 开局入口 |
-| `src/StandaloneParent.tsx` | `aiOpponent`/`aiSelfPlay` props：把某座位 io 换成 HTTP 桥，AI 模式不弹窗 | 接线 |
+| `src/ai-http-io.ts` | **新增**：HTTP 版 `CancellablePlayerIO` | 浏览器引擎 ↔ Python 服务的桥；带 `sessionId`（T1 会话隔离）+ 通知队列与 `seq`（T2 防陈旧状态） |
+| `src/App.tsx` | 配置页新增「AI 对手（HTTP 桥）」开关 + 地址 + 「取 AI 牌组」+「双方 AI 自对弈」 | 开局入口；勾上开关会自动取桥的 `/ai-deck` 回填先手牌组（T3 牌组对齐） |
+| `src/StandaloneParent.tsx` | `aiOpponent`/`aiSelfPlay` 接线；每局生成 `sessionId`；开局 `POST /session`（上报牌组）、终局 `POST /game-log` + `POST /game-end` | AI 模式不弹窗；C4 逐决策日志与战绩归档 |
 
 另有一处 **assets-manager** 的 overlay：
 `../assets-manager/src/constants.ts` 把 `DEFAULT_STATIC_DATA_API_BASE_URL` 的兜底默认值
@@ -57,25 +57,36 @@ package.json 只导出 `dist/`，Vite dev 无法直接解析其源码，因此�
 2. **双人类（上游默认）**：直接点「开始对局」，先手方棋盘在弹窗、后手方在本页。
    （需要浏览器允许弹出窗口。）
 3. **AI 对手（HTTP 桥）**：勾选「AI 对手（HTTP 桥）」，地址填
-   `http://127.0.0.1:8770`；先起 Python 服务：
+   `http://127.0.0.1:8770`（点了地址框右边的「取 AI 牌组」会把桥声明的
+   `--ai-deck` / `--policy expert:<slug>` 牌组回填到「先手牌组」，避免脚本专家
+   规则与实际牌组不符）；先起 Python 服务：
 
    ```sh
-   conda run -n gitcg python web/ai_rpc_server.py --port 8770 --strategy random --seed 1
+   conda run -n gitcg python web/ai_rpc_server.py --port 8770 \
+       --policy expert:superconduct_aggro
    ```
 
    则**先手方（who=0）由 Python 托管、不弹窗**，本页为后手方真人。
    再勾「双方 AI 自对弈」可让两边都交给 Python，便于零看管跑完整局。
 4. 「摆盘器」「导入日志」「查看历史/从此处继续」等上游功能保持可用。
 
-## HTTP 桥协议（最小原型）
+## HTTP 桥协议
 
 浏览器侧 `createAiHttpIo`（`src/ai-http-io.ts`）：
 
-- `rpc(request)` → `POST {base}/rpc`，body `{"who":0|1,"request":RpcRequest}`，期望回
+- `rpc(request)` → `POST {base}/rpc`，body `{"session","who","request"}`，期望回
   `RpcResponse`（`{"response":{"$case":..., "value":...}}`）。
-- `notify(notification)` → `POST {base}/notify`，body `{"who":..,"notification":{mutation,state}}`
-  （fire-and-forget，AI 用来“看盘”）。
+- `notify(notification)` → `POST {base}/notify`，body
+  `{"session","who","seq","notification":{mutation,state}}`（尽力而为，AI 用来“看盘”）。
 - `cancelRpc()` → `AbortController.abort()`。
+
+`session` 是每局一个的 id（`StandaloneParent` 用 `crypto.randomUUID()` 生成），桥
+按 `(session, who)` 隔离掩码状态、策略实例与决策日志（T1）；`seq` 是座位内单调
+的序号，桥丢弃过期通知，且 `rpc` 会先等前面的 notify 全部落地才发出（T2）。
+
+开局前 `StandaloneParent` 还会 `POST /session`（牌组/版本/座位），终局
+`POST /game-log`（引擎日志，含人类这边的决策）+ `POST /game-end`（胜负），落进
+桥的 `data/web/<时间戳>_<session>/`（C4，详见 `web/README.md`）。
 
 `RpcRequest/Response` 定义见 `packages/typings/src/gen/rpc.ts`；座位 `action` 请求里带
 合法动作列表（`validity===0` 为合法）、每个动作的 `autoSelectedDice`（引擎自动选骰），

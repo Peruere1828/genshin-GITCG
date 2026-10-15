@@ -1,17 +1,23 @@
-"""C2 模型桥（web/ai_rpc_server.py）单测。
+"""C2 模型桥（web/ai_rpc_server.py）+ T1/T2/T3/C4 单测。
 
-覆盖三块：
+覆盖五块：
   * 占位策略默认路径（不依赖任何重型依赖）；
   * snake_case payload -> camelCase 响应映射、protobuf-JSON -> StateSnapshot 转换；
   * 模型桥（`--policy`）端到端决策：用一次短种子对局在运行时生成真实
     `notification.state` 与 `action` 请求（protobuf-JSON），再喂给
     `RepoPolicy.decide` / HTTP handler，验证响应形状与回退行为。
+  * **T1/T2 隔离与护栏**：座位/会话各自一套掩码状态与策略实例；`/notify`
+    的 `seq` 护栏丢弃过期通知（老客户端不带 seq 时行为不变）。
+  * **T3/C4 调试闭环**：`/ai-deck` 与开局牌组校验、逐决策 JSONL 落盘、
+    终局关账与 `/results` 汇总、日志失败不影响对局。
 
 不依赖训练 checkpoint、不依赖浏览器；HTTP 用例绑 127.0.0.1 临时端口。
 """
 
 from __future__ import annotations
 
+import argparse
+import copy
 import http.client
 import json
 import os
@@ -20,6 +26,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -313,10 +320,10 @@ def test_repo_policy_without_notification_falls_back():
 # HTTP 路由：/health（含 policy）/ /notify / /state / /rpc 及回退
 # --------------------------------------------------------------------------- #
 class _Server:
-    def __init__(self, policy) -> None:
+    def __init__(self, policy=None, *, state=None) -> None:
         from http.server import ThreadingHTTPServer
 
-        self.state = srv.State(policy)
+        self.state = state if state is not None else srv.State(policy)
         self.httpd = ThreadingHTTPServer(
             ("127.0.0.1", 0), srv.make_handler(self.state, quiet=True)
         )
@@ -515,3 +522,396 @@ def test_direct_script_run_loads_model_policy(captured, tmp_path):
     assert "策略已加载" in err_text
     assert "No module named 'envs'" not in err_text
     assert "回退" not in err_text
+
+
+# --------------------------------------------------------------------------- #
+# T1：按 (session, who) 隔离 —— 自对弈/多开标签页时状态与策略互不覆盖
+# --------------------------------------------------------------------------- #
+class _RecordingPolicy:
+    """记录每次 decide 收到的 (who, latest_state)，用于断言座位视图隔离。"""
+
+    name = "recording"
+    last_fallback = False
+    last_error = None
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, dict | None]] = []
+
+    def decide(self, who, method, value, latest_state=None):
+        self.calls.append((who, latest_state))
+        return {"chosenActionIndex": 0, "usedDice": []}
+
+
+def _states_pair(captured) -> tuple[dict, dict]:
+    """两条可区分的掩码 state（引擎按座位掩码，这里只改 roundNumber 以便区分）。"""
+    base = _state(captured["action"])
+    other = copy.deepcopy(base)
+    other["roundNumber"] = int(base.get("roundNumber", 0)) + 7
+    return base, other
+
+
+def test_seat_state_is_isolated(captured):
+    """两个座位的 /notify 各存各的掩码视图：seat1 上报后 seat0 决策仍看自己的。"""
+    state_a, state_b = _states_pair(captured)
+    server = _Server(_RecordingPolicy())
+    try:
+        assert server.request(
+            "POST", "/notify",
+            {"session": "g", "who": 0, "seq": 1, "notification": {"state": state_a}},
+        )[0] == 200
+        assert server.request(
+            "POST", "/notify",
+            {"session": "g", "who": 1, "seq": 1, "notification": {"state": state_b}},
+        )[0] == 200
+
+        _, out0 = server.request("GET", "/state?session=g&who=0")
+        _, out1 = server.request("GET", "/state?session=g&who=1")
+        assert out0["state"] == state_a
+        assert out1["state"] == state_b
+
+        for who, expected in ((0, state_a), (1, state_b)):
+            status, resp = server.request(
+                "POST", "/rpc",
+                {"session": "g", "who": who,
+                 "request": {"request": {"$case": "rerollDice", "value": {}}}},
+            )
+            assert status == 200 and "response" in resp
+            seen_who, seen_state = server.state.policy.calls[-1]
+            assert seen_who == who and seen_state == expected
+    finally:
+        server.close()
+
+
+def test_session_state_is_isolated(captured):
+    """两个会话（两个标签页/两局）各自一套座位状态，互不覆盖。"""
+    state_a, state_b = _states_pair(captured)
+    server = _Server(_RecordingPolicy())
+    try:
+        server.request("POST", "/notify",
+                       {"session": "gA", "who": 0, "seq": 1, "notification": {"state": state_a}})
+        server.request("POST", "/notify",
+                       {"session": "gB", "who": 0, "seq": 1, "notification": {"state": state_b}})
+        _, a = server.request("GET", "/state?session=gA&who=0")
+        _, b = server.request("GET", "/state?session=gB&who=0")
+        assert a["state"] == state_a and b["state"] == state_b
+        _, health = server.request("GET", "/health")
+        assert health["sessions"] == 2
+    finally:
+        server.close()
+
+
+def test_build_policy_from_args_gives_per_seat_instances():
+    """生产路径：每个 (会话, 座位) 一个独立策略实例，role 带座位与会话。"""
+    args = argparse.Namespace(policy="heuristic", strategy="random", seed=2, ai_deck=None)
+    seat0, factory = srv.build_policy_from_args(args)
+    assert isinstance(seat0, srv.RepoPolicy)
+    assert seat0.role == "web0"
+    seat1 = factory("g1", 1)
+    other_session = factory("g1", 0)
+    assert seat1 is not seat0
+    assert other_session is not seat0
+    # role 带座位号；非默认会话再叠一个会话后缀（同一会话才可复现）
+    assert seat1.role == "web1@g1"
+    assert other_session.role == "web0@g1"
+    assert factory(srv.DEFAULT_SESSION, 1).role == "web1"
+
+
+def test_placeholder_seat_seeds_differ():
+    """占位策略两座位 seed 派生不同，自对弈时不会走出同一条随机流。"""
+    args = argparse.Namespace(policy=None, strategy="random", seed=7, ai_deck=None)
+    _, factory = srv.build_policy_from_args(args)
+    seat0 = factory("g", 0)
+    seat1 = factory("g", 1)
+    assert seat0.rng.random() != seat1.rng.random()
+
+
+# --------------------------------------------------------------------------- #
+# T2：/notify 序号护栏 —— 过期通知不覆盖新状态
+# --------------------------------------------------------------------------- #
+def test_notify_stale_seq_is_dropped(captured):
+    state_a, state_b = _states_pair(captured)
+    server = _Server(srv.Policy(strategy="greedy", seed=1))
+    try:
+        _, out = server.request(
+            "POST", "/notify",
+            {"session": "g", "who": 0, "seq": 5, "notification": {"state": state_a}},
+        )
+        assert out["applied"] is True
+        status, out = server.request(
+            "POST", "/notify",
+            {"session": "g", "who": 0, "seq": 2, "notification": {"state": state_b}},
+        )
+        assert status == 200
+        assert out == {"applied": False, "reason": "stale_seq", "seq": 2}
+
+        _, st = server.request("GET", "/state?session=g&who=0")
+        assert st["state"] == state_a, "过期通知把新状态覆盖了"
+        _, health = server.request("GET", "/health")
+        assert health["stale_notify"] == 1
+
+        # seq 是**座位内**单调：另一座位从 1 开始照样生效。
+        _, out = server.request(
+            "POST", "/notify",
+            {"session": "g", "who": 1, "seq": 1, "notification": {"state": state_b}},
+        )
+        assert out["applied"] is True
+        _, st1 = server.request("GET", "/state?session=g&who=1")
+        assert st1["state"] == state_b
+    finally:
+        server.close()
+
+
+def test_notify_without_seq_still_applies(captured):
+    """老客户端（不带 seq）不受护栏影响，行为与 C2 一致。"""
+    state_a, _ = _states_pair(captured)
+    server = _Server(srv.Policy(strategy="greedy", seed=1))
+    try:
+        _, out = server.request("POST", "/notify",
+                                {"who": 0, "notification": {"state": state_a}})
+        assert out["applied"] is True and out["seq"] is None
+        _, st = server.request("GET", "/state")
+        assert st["state"] == state_a
+    finally:
+        server.close()
+
+
+# --------------------------------------------------------------------------- #
+# T3：AI 牌组对齐 —— /ai-deck + 开局牌组校验
+# --------------------------------------------------------------------------- #
+def test_resolve_ai_deck_and_endpoint():
+    deck = srv.resolve_ai_deck(
+        argparse.Namespace(ai_deck="superconduct_aggro", policy=None)
+    )
+    assert deck["slug"] == "superconduct_aggro"
+    assert len(deck["characters"]) == 3 and len(deck["cards"]) == 30
+
+    server = _Server(state=srv.State(srv.Policy(strategy="greedy", seed=1), ai_deck=deck))
+    try:
+        status, out = server.request("GET", "/ai-deck")
+        assert status == 200
+        assert out["slug"] == "superconduct_aggro"
+        assert out["characters"] == deck["characters"]
+        assert out["cards"] == deck["cards"]
+    finally:
+        server.close()
+
+
+def test_ai_deck_endpoint_without_deck():
+    server = _Server(srv.Policy(strategy="greedy", seed=1))
+    try:
+        status, out = server.request("GET", "/ai-deck")
+        assert status == 200 and out["slug"] is None and out["cards"] == []
+    finally:
+        server.close()
+
+
+def test_resolve_ai_deck_from_expert_policy(capsys):
+    """不给 --ai-deck 时从 --policy expert:<slug> 推断；两者不一致要告警。"""
+    deck = srv.resolve_ai_deck(
+        argparse.Namespace(ai_deck=None, policy="expert:natlan_battleship")
+    )
+    assert deck["slug"] == "natlan_battleship"
+    assert "不一致" not in capsys.readouterr().err
+
+    srv.resolve_ai_deck(
+        argparse.Namespace(ai_deck="superconduct_aggro", policy="expert:natlan_battleship")
+    )
+    assert "不一致" in capsys.readouterr().err
+
+
+def test_session_reports_deck_mismatch(capsys):
+    expected = srv.resolve_ai_deck(
+        argparse.Namespace(ai_deck="superconduct_aggro", policy=None)
+    )
+    actual = srv.resolve_ai_deck(
+        argparse.Namespace(ai_deck="natlan_battleship", policy=None)
+    )
+    server = _Server(
+        state=srv.State(srv.Policy(strategy="greedy", seed=1), ai_deck=expected)
+    )
+    capsys.readouterr()  # 清掉 resolve 阶段的输出
+    try:
+        status, out = server.request(
+            "POST", "/session",
+            {"session": "g",
+             "meta": {"ai_seat": 0,
+                      "decks": {"0": {"characters": actual["characters"],
+                                      "cards": actual["cards"]}}}},
+        )
+        assert status == 200 and out["deck_mismatch"] is True
+        assert "不一致" in capsys.readouterr().err
+
+        status, out = server.request(
+            "POST", "/session",
+            {"session": "g2",
+             "meta": {"ai_seat": 0,
+                      "decks": {"0": {"characters": expected["characters"],
+                                      "cards": expected["cards"]}}}},
+        )
+        assert status == 200 and out["deck_mismatch"] is False
+        assert "不一致" not in capsys.readouterr().err
+    finally:
+        server.close()
+
+
+# --------------------------------------------------------------------------- #
+# C4：逐决策日志落盘 + 战绩汇总
+# --------------------------------------------------------------------------- #
+def test_decision_log_lifecycle(captured, tmp_path):
+    log = srv.DecisionLog(tmp_path)
+    server = _Server(state=srv.State(srv.Policy(strategy="greedy", seed=1), log=log))
+    entry = captured["action"]
+    notification = json.loads(entry["notification_json"])
+    try:
+        status, out = server.request(
+            "POST", "/session",
+            {"session": "g1", "meta": {"version": "v0.21.0", "ai_seat": 0}},
+        )
+        assert status == 200
+        session_dir = Path(out["dir"])
+        assert (session_dir / "session.json").exists()
+
+        server.request("POST", "/notify",
+                       {"session": "g1", "who": 0, "seq": 1, "notification": notification})
+        status, resp = server.request(
+            "POST", "/rpc",
+            {"session": "g1", "who": 0,
+             "request": {"request": {"$case": "action", "value": _payload(entry)}}},
+        )
+        assert status == 200 and "response" in resp
+
+        lines = [
+            json.loads(line)
+            for line in (session_dir / "decisions.jsonl").read_text().splitlines()
+        ]
+        decision = lines[0]
+        assert decision["type"] == "decision"
+        assert decision["session"] == "g1" and decision["who"] == 0
+        assert decision["method"] == "action" and decision["step"] == 0
+        assert decision["state_seq"] == 1 and decision["notify_seq"] == 1
+        assert decision["fallback"] is False
+        assert decision["policy"] == "placeholder:greedy"
+        assert decision["latency_ms"] >= 0
+        assert "chosenActionIndex" in decision["response"]
+
+        status, out = server.request("POST", "/game-end", {"session": "g1", "winner": 1})
+        assert status == 200 and out["closed"] is True
+        summary = json.loads((session_dir / "summary.json").read_text())
+        assert summary["winner"] == 1
+        assert summary["decisions_0"] == 1
+
+        end_line = json.loads(
+            (session_dir / "decisions.jsonl").read_text().splitlines()[-1]
+        )
+        assert end_line["type"] == "game_end" and end_line["winner"] == 1
+        assert end_line["decisions"] == [1, 0]
+
+        _, results = server.request("GET", "/results")
+        assert results["log_dir"] == str(tmp_path)
+        assert results["sessions"][0]["session"] == "g1"
+        assert results["sessions"][0]["winner"] == 1
+
+        # 幂等：重复关账不覆盖首局结果
+        _, out = server.request("POST", "/game-end", {"session": "g1", "winner": 0})
+        assert out["closed"] is False
+        summary = json.loads((session_dir / "summary.json").read_text())
+        assert summary["winner"] == 1
+    finally:
+        server.close()
+
+
+def test_decision_log_records_fallback(captured, tmp_path):
+    """模型桥回退占位时，日志里要能看到 fallback/error（调试闭环的关键字段）。"""
+    policy = srv.RepoPolicy(
+        "definitely-not-a-spec", seed=1, role="web",
+        fallback=srv.Policy(strategy="random", seed=1),
+    )
+    server = _Server(state=srv.State(policy, log=srv.DecisionLog(tmp_path)))
+    entry = captured["action"]
+    try:
+        server.request("POST", "/session", {"session": "gf", "meta": {}})
+        server.request("POST", "/notify",
+                       {"session": "gf", "who": 0, "seq": 1,
+                        "notification": json.loads(entry["notification_json"])})
+        status, resp = server.request(
+            "POST", "/rpc",
+            {"session": "gf", "who": 0,
+             "request": {"request": {"$case": "action", "value": _payload(entry)}}},
+        )
+        assert status == 200 and "response" in resp
+        session_dir = Path(server.state.session_info("gf")["dir"])
+        decision = json.loads(
+            (session_dir / "decisions.jsonl").read_text().splitlines()[0]
+        )
+        assert decision["fallback"] is True
+        assert decision["error"]
+        _, results = server.request("GET", "/results")
+        assert results["sessions"][0]["fallbacks_0"] == 1
+    finally:
+        server.close()
+
+
+def test_notify_winner_closes_session(captured, tmp_path):
+    """浏览器没发 /game-end 时（老前端/标签页崩了），靠 state.winner 关账兜底。"""
+    server = _Server(
+        state=srv.State(srv.Policy(strategy="greedy", seed=1), log=srv.DecisionLog(tmp_path))
+    )
+    ended = dict(_state(captured["action"]))
+    ended["winner"] = 1
+    ended["phase"] = "PHASE_TYPE_GAME_END"
+    try:
+        _, out = server.request("POST", "/notify",
+                                {"session": "ge", "who": 0, "seq": 1,
+                                 "notification": {"state": ended}})
+        assert out["applied"] is True
+        _, results = server.request("GET", "/results")
+        info = results["sessions"][0]
+        assert info["winner"] == 1
+        assert info["closed_at"] and info["close_source"] == "notify"
+        assert info["rounds"] is not None
+        summary = json.loads((Path(info["dir"]) / "summary.json").read_text())
+        assert summary["winner"] == 1
+    finally:
+        server.close()
+
+
+def test_game_log_upload(tmp_path):
+    """浏览器上传引擎日志（含人类决策）→ 与桥侧决策日志同目录归档。"""
+    server = _Server(
+        state=srv.State(srv.Policy(strategy="greedy", seed=1), log=srv.DecisionLog(tmp_path))
+    )
+    try:
+        status, out = server.request(
+            "POST", "/game-log",
+            {"session": "gl", "log": {"gv": "v0.21.0", "entries": [1, 2, 3]}},
+        )
+        assert status == 200 and out["dir"]
+        payload = json.loads((Path(out["dir"]) / "game_log.json").read_text())
+        assert payload == {"gv": "v0.21.0", "entries": [1, 2, 3]}
+        _, results = server.request("GET", "/results")
+        assert results["sessions"][0]["game_log"] is True
+    finally:
+        server.close()
+
+
+def test_log_failure_does_not_break_rpc(captured, tmp_path, capsys):
+    """日志目录建不起来（根路径是个文件）→ 告警但对局照跑，handler 不 500。"""
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x", encoding="utf-8")
+    server = _Server(
+        state=srv.State(srv.Policy(strategy="greedy", seed=1), log=srv.DecisionLog(blocker))
+    )
+    entry = captured["action"]
+    capsys.readouterr()
+    try:
+        status, out = server.request("POST", "/session", {"session": "gx", "meta": {}})
+        assert status == 200 and out["dir"] is None
+        status, resp = server.request(
+            "POST", "/rpc",
+            {"session": "gx", "who": 0,
+             "request": {"request": {"$case": "action", "value": _payload(entry)}}},
+        )
+        assert status == 200 and "response" in resp
+        assert "决策日志目录创建失败" in capsys.readouterr().err
+    finally:
+        server.close()

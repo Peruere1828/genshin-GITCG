@@ -5,10 +5,24 @@
 #
 # 浏览器侧 `@gi-tcg/standalone` 的 AI 座位把 `PlayerIO.rpc/notify` 转成对
 # 本服务的 HTTP POST（见 engine-overlay/overlay/packages/standalone/src/ai-http-io.ts）：
-#   POST /rpc      body {"who":0|1, "request": RpcRequest}      -> RpcResponse
-#   POST /notify   body {"who":0|1, "notification": {...}}       -> {}（尽力而为）
-#   GET  /health   -> {"ok":true,...}
-#   GET  /state    -> 最近一次通知里的（掩码后）GameState，供调试
+#   POST /rpc       {"session","who","seq?","request"}  -> RpcResponse
+#   POST /notify    {"session","who","seq","notification"} -> {"applied":bool}
+#   POST /session   {"session","meta"}                  -> {"ok",...}（开局元数据）
+#   POST /game-end  {"session","winner"}                -> 终局关账
+#   POST /game-log  {"session","log"}                   -> 引擎日志归档（含人类决策）
+#   GET  /health    -> {"ok":true,...}
+#   GET  /state?session=&who= -> 该座位最近一次（掩码后）notification.state
+#   GET  /ai-deck   -> {"slug","characters","cards"}（T3：AI 座位牌组，供 UI 回填）
+#   GET  /results   -> 已开局会话的汇总（C4 调试闭环）
+#
+# 三个隔离维度（T1/T2）：
+#   * **座位**：引擎的 `exposeState(who, …)` 按座位掩码（自己手牌/骰子可见、
+#     对手隐 id），所以每个 (session, who) 各存一份 `latest_state`；自对弈时两个
+#     座位的 /notify 不再互相覆盖。
+#   * **会话**：一局一个 `session`（浏览器每局生成），状态、策略实例、决策计数、
+#     日志目录都按 session 隔离，多开标签页不串局。
+#   * **通知序号（T2）**：`/notify` 带座位内单调递增的 `seq`，过期通知直接丢弃；
+#     浏览器侧还会把 notify 串成队列、发 rpc 前先等队列排空，避免决策吃到陈旧状态。
 #
 # 决策逻辑有两种模式：
 #   * 默认（不给 --policy）：纯标准库占位策略，合法动作里随机/贪心挑一个：
@@ -19,16 +33,24 @@
 #       action       -> 优先选“合法且非 declareEnd”的动作；否则第一个合法；
 #                       usedDice 用该动作的 autoSelectedDice（引擎提示的自动选骰）。
 #   * `--policy SPEC`（C2 模型桥）：把五种请求都路由到仓库已训练策略
-#       `envs.policy.build_policy(SPEC, seed=SEED, role="web")` +
+#       `envs.policy.build_policy(SPEC, seed=SEED, role=…)` +
 #       `reps.action_adapter.build_decision_context`。SPEC 支持
 #       `neural:<checkpoint.pt>[#t=<temp>]`、`heuristic`、`legal_random`、
 #       `expert:<slug>`、`random`。reps/train/torch 等依赖只在请求模型策略时
-#       才延迟导入，默认路径仍是零依赖。任何加载/转换/选择失败都回退占位策略。
+#       才延迟导入，默认路径仍是零依赖。任何加载/转换/选择失败都回退占位策略
+#       （回退会写进决策日志的 `fallback` 字段）。
+#
+# T3 牌组对齐：`--ai-deck <slug>`（或 `--policy expert:<slug>` 隐含）声明 AI 座位
+# 应该用的牌组，`/ai-deck` 把它给前端回填；开局 `/session` 里浏览器上报实际牌组，
+# 与声明不一致就 stderr 告警并记进会话（脚本专家规则是按自家牌组写的，牌组不符会
+# 静默变蠢）。
 #
 # 跑：
 #   conda run -n gitcg python web/ai_rpc_server.py --port 8770
 #   conda run -n gitcg python web/ai_rpc_server.py --port 8770 \
 #       --policy "neural:data/checkpoints/curve_dfbcsa_e15_d128_n48000.pt#t=0.2"
+#   conda run -n gitcg python web/ai_rpc_server.py --port 8770 \
+#       --policy expert:superconduct_aggro --ai-deck superconduct_aggro
 # 前端（standalone）里勾选「AI 对手（HTTP 桥）」并填 http://127.0.0.1:8770 即可。
 
 from __future__ import annotations
@@ -39,9 +61,11 @@ import os
 import random
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 # 允许直接 `python web/ai_rpc_server.py` 运行：此时 sys.path[0] 是 web/，仓库根不在
 # 路径上，`envs`/`reps`/`train` 无法导入（C2 的延迟导入会全部失败并回退占位）。
@@ -67,12 +91,22 @@ _METHOD_TO_FIELD = {
     "selectCard": "select_card",
 }
 
-# 模型策略 seed 派生用的角色名（build_policy 把 seed/role 折进策略 RNG）。
+# 模型策略 seed 派生用的角色前缀（build_policy 把 seed/role 折进策略 RNG）。
 _WEB_ROLE = "web"
+
+# 没带 session 的老客户端（或直接 curl 调试）统一落到这个默认会话。
+DEFAULT_SESSION = "-"
+
+# 决策日志根目录（`data/**` 已 gitignore，只提交 schema/清单，见 AGENTS 约定）。
+DEFAULT_LOG_DIR = os.path.join(_REPO_ROOT, "data", "web")
 
 # CORS 预检缓存时长（秒）：浏览器据此缓存 OPTIONS 结果，避免跨域访问时
 # 每个 /notify、/rpc 都先配一次预检请求。
 _CORS_MAX_AGE_SECONDS = 600
+
+# 掩码 state 的 phase 枚举在 proto-JSON 里的各种写法（Python MessageToDict 与
+# protobuf-ts 的 toJson 都可能出现），用于识别终局。
+_END_PHASES = {"PHASE_TYPE_GAME_END", "GAME_END", "gameEnd", 5}
 
 
 def _is_local_origin(origin: str) -> bool:
@@ -89,6 +123,18 @@ def _warn(message: str) -> None:
     print(f"[ai-bridge] {message}", file=sys.stderr, flush=True)
 
 
+def _now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _role_for(session: str, who: int) -> str:
+    """策略 role：按座位区分 seed 流，再按会话区分（同一 session 才可复现）。"""
+    role = f"{_WEB_ROLE}{who}"
+    if session and session != DEFAULT_SESSION:
+        role = f"{role}@{session}"
+    return role
+
+
 class Policy:
     """占位策略：合法动作里随机/贪心挑一个（不主动 declareEnd，除非只剩它）。"""
 
@@ -96,6 +142,9 @@ class Policy:
         self.strategy = strategy
         self.name = f"placeholder:{strategy}"
         self.rng = random.Random(seed)
+        # 决策日志用：占位策略本身即兜底，恒为 False。
+        self.last_fallback = False
+        self.last_error: str | None = None
 
     def decide(
         self, who: int, method: str, value: dict[str, Any], latest_state: Any = None
@@ -156,6 +205,8 @@ class RepoPolicy:
     首次决策时延迟导入，默认占位路径保持纯标准库零依赖。任何一步失败
     （无 notification、proto 转换失败、`choose()` 抛错、选中非法动作码）
     都回退到占位策略并写 stderr 警告，保证 handler 永不 500/挂死。
+
+    `last_fallback` / `last_error` 供决策日志标注「这一步是不是模型真的说的」。
     """
 
     def __init__(
@@ -174,6 +225,8 @@ class RepoPolicy:
         self._policy: Any = None
         self._load_error: str | None = None
         self._step_index = 0
+        self.last_fallback = False
+        self.last_error: str | None = None
 
     def _ensure_policy(self) -> Any:
         """延迟构造仓库策略；失败只记一次错误并静默回退。"""
@@ -191,6 +244,8 @@ class RepoPolicy:
     def decide(
         self, who: int, method: str, value: dict[str, Any], latest_state: Any = None
     ) -> dict[str, Any]:
+        self.last_fallback = False
+        self.last_error = None
         try:
             policy = self._ensure_policy()
             if policy is None:
@@ -202,7 +257,11 @@ class RepoPolicy:
             return resp
         except Exception as exc:  # noqa: BLE001
             _warn(f"策略决策失败（{method}），回退占位策略：{type(exc).__name__}: {exc}")
-            return self._fallback.decide(who, method, value, latest_state)
+            resp = self._fallback.decide(who, method, value, latest_state)
+            # 占位策略会把 last_fallback 复位，所以必须在它之后再置位。
+            self.last_fallback = True
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            return resp
 
 
 def _flatten_ts_oneofs(descriptor: Any, obj: Any) -> Any:
@@ -354,24 +413,292 @@ def _response_from_payload(method: str, payload: dict[str, Any]) -> dict[str, An
     raise ValueError(f"unknown rpc method: {method!r}")
 
 
-class State:
-    def __init__(self, policy: Any) -> None:
+# --------------------------------------------------------------------------- #
+# C4：逐决策日志落盘
+# --------------------------------------------------------------------------- #
+class DecisionLog:
+    """每局一个目录的 JSONL 决策日志（`data/web/<UTC时间戳>_<session>/`）。
+
+    目录内容：`session.json`（开局元数据）、`decisions.jsonl`（逐决策 + game_end）、
+    `summary.json`（关账汇总）、`game_log.json`（浏览器上传的引擎日志，含人类决策）。
+
+    写盘失败只写 stderr，绝不打断对局——日志是调试辅助，不是强依赖。
+    """
+
+    def __init__(self, root: str | os.PathLike[str]) -> None:
+        self.root = Path(root)
+        self._dirs: dict[str, Path] = {}
+        self._names: set[str] = set()
+        self._lock = threading.Lock()
+
+    # -- 目录 ------------------------------------------------------------- #
+    def open(self, session: str, meta: dict[str, Any] | None = None) -> Path | None:
+        """给会话分配目录并写 `session.json`；已存在则只合并记录，不重置。"""
+        with self._lock:
+            path = self._dirs.get(session)
+            if path is None:
+                path = self._allocate(session)
+                try:
+                    path.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:
+                    _warn(f"决策日志目录创建失败（{path}），本局不落盘：{exc}")
+                    return None
+                self._dirs[session] = path
+                fresh = True
+            else:
+                fresh = False
+        if fresh:
+            payload = {"session": session, "opened_at": _now_iso()}
+            if meta:
+                payload.update(meta)
+            self._write_json(path / "session.json", payload)
+        return path
+
+    def _allocate(self, session: str) -> Path:
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        base = f"{stamp}_{_safe_session(session)}"
+        name = base
+        index = 1
+        while name in self._names or (self.root / name).exists():
+            name = f"{base}_{index}"
+            index += 1
+        self._names.add(name)
+        return self.root / name
+
+    def path(self, session: str) -> Path | None:
+        with self._lock:
+            return self._dirs.get(session)
+
+    # -- 写入 ------------------------------------------------------------- #
+    def append(self, session: str, record: dict[str, Any]) -> None:
+        path = self.path(session)
+        if path is None:
+            return
+        try:
+            with (path / "decisions.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+                fh.flush()
+        except OSError as exc:
+            _warn(f"决策日志写入失败（{session}）：{exc}")
+
+    def write_json(self, session: str, name: str, payload: Any) -> None:
+        path = self.path(session)
+        if path is None:
+            return
+        self._write_json(path / name, payload)
+
+    @staticmethod
+    def _write_json(path: Path, payload: Any) -> None:
+        try:
+            path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            _warn(f"日志写入失败（{path}）：{exc}")
+
+
+def _safe_session(session: str) -> str:
+    """会话 id 变成目录名片段：只留安全字符并截断。"""
+    out = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in session)
+    return (out or "session")[:24]
+
+
+# --------------------------------------------------------------------------- #
+# 状态：按 (session, who) 隔离
+# --------------------------------------------------------------------------- #
+class Seat:
+    """一个 (会话, 座位) 的决策上下文：掩码视图、通知序号、策略实例、计数。"""
+
+    __slots__ = (
+        "session",
+        "who",
+        "policy",
+        "latest_state",
+        "latest_mutation",
+        "state_seq",
+        "applied_seq",
+        "decisions",
+    )
+
+    def __init__(self, session: str, who: int, policy: Any) -> None:
+        self.session = session
+        self.who = who
         self.policy = policy
+        self.latest_state: Any = None
+        self.latest_mutation: Any = None
+        self.state_seq = 0        # 已应用的 /notify 条数
+        self.applied_seq = -1     # 浏览器侧最后一个已应用的 seq（-1 = 未带 seq）
+        self.decisions = 0        # 本座位决策条数（决策日志的 step）
+        # 过期通知/回退计数记在会话记录里（summary 与 /results 读它）。
+
+
+class State:
+    """桥的全局状态：会话表 + 座位表 + 日志。
+
+    * `policy` 保留为 seat0/未分座位时的策略（兼容直接构造的旧用法）；
+    * `policy_factory(session, who)` 才是生产路径：每个座位、每个会话各拿一个
+      独立实例（独立 RNG 与 step 计数，T1）；
+    * `log` 为 None 时不落盘（单测默认路径）。
+    """
+
+    def __init__(
+        self,
+        policy: Any,
+        *,
+        policy_factory: Any = None,
+        log: DecisionLog | None = None,
+        ai_deck: dict[str, Any] | None = None,
+    ) -> None:
+        self.policy = policy
+        self.policy_factory = policy_factory
+        self.log = log
+        self.ai_deck = ai_deck
         self.lock = threading.Lock()
         self.rpc_counts: dict[str, int] = {}
         self.notify_count = 0
+        # 兼容字段：最近一次被应用的 /notify state（/state 不带参数时返回它）。
         self.latest_state: Any = None
         self.latest_mutation: Any = None
+        self._seats: dict[tuple[str, int], Seat] = {}
+        self._sessions: dict[str, dict[str, Any]] = {}
+
+    # -- 座位 ------------------------------------------------------------- #
+    def _policy_for(self, session: str, who: int) -> Any:
+        if self.policy_factory is not None:
+            return self.policy_factory(session, who)
+        return self.policy  # 直接构造 State(policy) 的旧用法（单测）：座位共用实例
+
+    def seat(self, session: str, who: int) -> Seat:
+        key = (session, who)
+        with self.lock:
+            seat = self._seats.get(key)
+            if seat is None:
+                seat = Seat(session, who, self._policy_for(session, who))
+                self._seats[key] = seat
+            return seat
+
+    def peek_seat(self, session: str, who: int) -> Seat | None:
+        with self.lock:
+            return self._seats.get((session, who))
+
+    # -- 会话 ------------------------------------------------------------- #
+    @staticmethod
+    def _new_session_info(session: str) -> dict[str, Any]:
+        return {
+            "session": session,
+            "opened_at": _now_iso(),
+            "closed_at": None,
+            "winner": None,
+            "close_source": None,
+            "rounds": None,
+            "dir": None,
+            "notify_0": 0,
+            "notify_1": 0,
+            "decisions_0": 0,
+            "decisions_1": 0,
+            "fallbacks_0": 0,
+            "fallbacks_1": 0,
+            "stale_drops": 0,
+            "game_log": False,
+            "meta": {},
+        }
+
+    def open_session(self, session: str, meta: dict[str, Any] | None = None) -> dict[str, Any]:
+        """开局：建会话记录、开日志目录；重复调用只合并元数据、不重置计数。"""
+        with self.lock:
+            info = self._sessions.get(session)
+            if info is None:
+                info = self._new_session_info(session)
+                self._sessions[session] = info
+            if meta:
+                info["meta"].update(meta)
+            snapshot = json.loads(json.dumps(info))  # 锁内深拷贝，返回给外部随便改
+        if self.log is not None:
+            path = self.log.open(session, {"meta": snapshot["meta"]})
+            if path is not None:
+                with self.lock:
+                    self._sessions[session]["dir"] = str(path)
+                snapshot["dir"] = str(path)
+        return snapshot
+
+    def session_info(self, session: str) -> dict[str, Any] | None:
+        with self.lock:
+            info = self._sessions.get(session)
+            return json.loads(json.dumps(info)) if info is not None else None
+
+    def has_session(self, session: str) -> bool:
+        with self.lock:
+            return session in self._sessions
+
+    def close_session(
+        self,
+        session: str,
+        winner: Any = None,
+        source: str = "notify",
+        rounds: Any = None,
+    ) -> dict[str, Any] | None:
+        """终局关账：写 game_end + summary.json；已关账则返回 None（幂等）。"""
+        with self.lock:
+            info = self._sessions.get(session)
+            if info is None:
+                # 没开过会话就直接收到终局（老客户端）：补一条极简记录。
+                info = self._new_session_info(session)
+                self._sessions[session] = info
+            if info["closed_at"] is not None:
+                return None
+            info["closed_at"] = _now_iso()
+            info["winner"] = winner
+            info["close_source"] = source
+            info["rounds"] = rounds
+            snapshot = json.loads(json.dumps(info))
+        record = {
+            "t": time.time(),
+            "iso": _now_iso(),
+            "type": "game_end",
+            "session": session,
+            "winner": winner,
+            "source": source,
+            "rounds": rounds,
+            "decisions": [snapshot["decisions_0"], snapshot["decisions_1"]],
+            "notify": [snapshot["notify_0"], snapshot["notify_1"]],
+            "fallbacks": [snapshot["fallbacks_0"], snapshot["fallbacks_1"]],
+            "stale_drops": snapshot["stale_drops"],
+        }
+        if self.log is not None:
+            self.log.append(session, record)
+            self.log.write_json(session, "summary.json", snapshot)
+        return snapshot
+
+    def sessions(self) -> list[dict[str, Any]]:
+        with self.lock:
+            return [json.loads(json.dumps(v)) for v in self._sessions.values()]
+
+    def total_stale_drops(self) -> int:
+        with self.lock:
+            return sum(v["stale_drops"] for v in self._sessions.values())
+
+
+def _notify_rounds(state_json: Any) -> Any:
+    """从掩码 state 里读回合数（终局关账时用）。"""
+    if isinstance(state_json, dict):
+        value = state_json.get("roundNumber")
+        if isinstance(value, int):
+            return value
+    return None
 
 
 def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "giTcgAiBridge/0.1"
+        server_version = "giTcgAiBridge/0.2"
 
         # ---- helpers ---------------------------------------------------
         def _path(self) -> str:
             """去掉 query string 的路径，用于精确路由匹配。"""
             return urlparse(self.path).path
+
+        def _query(self) -> dict[str, list[str]]:
+            return parse_qs(urlparse(self.path).query)
 
         def _cors(self) -> None:
             # 默认仅回显本机 Origin（localhost/127.0.0.1/::1）；--cors-origin 可显式覆盖。
@@ -407,18 +734,99 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
                 return {}
             return json.loads(raw.decode("utf-8"))
 
-        def _dispatch_rpc(self, who: int, request: dict[str, Any]) -> dict[str, Any]:
+        @staticmethod
+        def _session_of(body: dict[str, Any]) -> str:
+            session = body.get("session")
+            return session if isinstance(session, str) and session else DEFAULT_SESSION
+
+        def _dispatch_rpc(self, session: str, who: int, request: dict[str, Any]) -> dict[str, Any]:
             req = (request or {}).get("request") or {}
             method = req.get("$case")
             value = req.get("value") or {}
             if method not in _METHOD_TO_FIELD:
                 raise ValueError(f"unknown rpc method: {method!r}")
+            if not state.has_session(session):
+                # 只发 rpc 不发 notify 的客户端（例如关掉 forwardNotifications）
+                # 也要有会话目录，否则决策日志无处可写。
+                state.open_session(session)
+            seat = state.seat(session, who)
             with state.lock:
                 state.rpc_counts[method] = state.rpc_counts.get(method, 0) + 1
-                latest_state = state.latest_state
+                info = state._sessions.get(session)
+                if info is not None:
+                    info["decisions_%d" % who] += 1
             # 模型策略/占位策略共用 decide()；自身保证不抛异常。
-            resp_value = state.policy.decide(who, method, value, latest_state)
+            started = time.perf_counter()
+            resp_value = seat.policy.decide(who, method, value, seat.latest_state)
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            fallback = bool(getattr(seat.policy, "last_fallback", False))
+            if fallback:
+                with state.lock:
+                    info = state._sessions.get(session)
+                    if info is not None:
+                        info["fallbacks_%d" % who] += 1
+            with state.lock:
+                step = seat.decisions
+                seat.decisions += 1
+                notify_seq = seat.applied_seq
+                state_seq = seat.state_seq
+            self._log_decision(
+                session=session,
+                who=who,
+                method=method,
+                step=step,
+                state_seq=state_seq,
+                notify_seq=None if notify_seq < 0 else notify_seq,
+                latency_ms=round(elapsed_ms, 3),
+                policy=getattr(seat.policy, "name", "unknown"),
+                fallback=fallback,
+                error=getattr(seat.policy, "last_error", None),
+                response=resp_value,
+            )
             return {"response": {"$case": method, "value": resp_value}}
+
+        def _log_decision(self, **fields: Any) -> None:
+            if state.log is None:
+                return
+            record: dict[str, Any] = {"t": time.time(), "iso": _now_iso(), "type": "decision"}
+            record.update(fields)
+            state.log.append(fields.get("session", DEFAULT_SESSION), record)
+
+        def _open_session(self, body: dict[str, Any]) -> dict[str, Any]:
+            session = self._session_of(body)
+            meta = body.get("meta")
+            if not isinstance(meta, dict):
+                meta = {}
+            info = state.open_session(session, meta)
+            mismatch = self._check_deck(session, meta)
+            info["deck_mismatch"] = mismatch
+            return info
+
+        def _check_deck(self, session: str, meta: dict[str, Any]) -> bool:
+            """T3：浏览器上报的实际牌组 vs --ai-deck 声明的牌组。"""
+            if not state.ai_deck:
+                return False
+            decks = meta.get("decks")
+            if not isinstance(decks, dict):
+                return False
+            seat_no = int(meta.get("ai_seat", 0))
+            actual = decks.get(str(seat_no)) or decks.get(seat_no)
+            if isinstance(actual, str) or not isinstance(actual, dict):
+                return False
+            expected_chars = list(state.ai_deck.get("characters") or [])
+            expected_cards = sorted(int(c) for c in state.ai_deck.get("cards") or [])
+            actual_chars = [int(c) for c in actual.get("characters") or []]
+            actual_cards = sorted(int(c) for c in actual.get("cards") or [])
+            if actual_chars == expected_chars and actual_cards == expected_cards:
+                return False
+            _warn(
+                f"会话 {session} 的 AI 座位牌组与 --ai-deck "
+                f"{state.ai_deck.get('slug')!r} 不一致：实际 "
+                f"characters={actual_chars} cards={len(actual_cards)}，期望 "
+                f"characters={expected_chars} cards={len(expected_cards)}。"
+                "脚本专家规则是按自家牌组写的，牌组不符会静默变蠢。"
+            )
+            return True
 
         # ---- routes ----------------------------------------------------
         def do_OPTIONS(self) -> None:  # noqa: N802
@@ -430,6 +838,7 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
         def do_GET(self) -> None:  # noqa: N802
             path = self._path()
             if path == "/health":
+                stale = state.total_stale_drops()  # 自己拿锁，别嵌进下面的 with
                 with state.lock:
                     self._json(
                         {
@@ -437,13 +846,62 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
                             "policy": getattr(state.policy, "name", "unknown"),
                             "rpc": dict(state.rpc_counts),
                             "notify": state.notify_count,
+                            "sessions": len(state._sessions),
+                            "stale_notify": stale,
+                            "ai_deck": (state.ai_deck or {}).get("slug"),
+                            "log_dir": str(state.log.root) if state.log else None,
                         }
                     )
             elif path == "/state":
-                with state.lock:
-                    self._json({"state": state.latest_state})
+                query = self._query()
+                if "session" in query or "who" in query:
+                    session = query.get("session", [DEFAULT_SESSION])[0]
+                    who = int(query.get("who", ["0"])[0])
+                    seat = state.peek_seat(session, who)
+                    self._json(
+                        {
+                            "state": seat.latest_state if seat is not None else None,
+                            "session": session,
+                            "who": who,
+                            "state_seq": seat.state_seq if seat is not None else 0,
+                        }
+                    )
+                else:
+                    with state.lock:
+                        self._json({"state": state.latest_state})
+            elif path == "/ai-deck":
+                deck = state.ai_deck or {}
+                self._json(
+                    {
+                        "slug": deck.get("slug"),
+                        "characters": list(deck.get("characters") or []),
+                        "cards": list(deck.get("cards") or []),
+                    }
+                )
+            elif path == "/results":
+                self._json(
+                    {
+                        "log_dir": str(state.log.root) if state.log else None,
+                        "sessions": state.sessions(),
+                    }
+                )
             else:
-                self._json({"service": "gi-tcg-ai-bridge", "endpoints": ["/rpc", "/notify", "/health", "/state"]})
+                self._json(
+                    {
+                        "service": "gi-tcg-ai-bridge",
+                        "endpoints": [
+                            "/rpc",
+                            "/notify",
+                            "/session",
+                            "/game-end",
+                            "/game-log",
+                            "/health",
+                            "/state",
+                            "/ai-deck",
+                            "/results",
+                        ],
+                    }
+                )
 
         def do_POST(self) -> None:  # noqa: N802
             try:
@@ -456,7 +914,10 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
                 try:
                     if not isinstance(body, dict):
                         raise ValueError("body must be a JSON object")
-                    out = self._dispatch_rpc(int(body.get("who", 0)), body.get("request") or {})
+                    who = int(body.get("who", 0))
+                    out = self._dispatch_rpc(
+                        self._session_of(body), who, body.get("request") or {}
+                    )
                 except Exception as e:  # noqa: BLE001
                     self._json({"error": str(e)}, status=500)
                     return
@@ -470,31 +931,181 @@ def make_handler(state: State, quiet: bool, cors_origin: str | None = None):
                     if note is not None and not isinstance(note, dict):
                         raise ValueError("notification must be a JSON object")
                     note = note or {}
-                    with state.lock:
-                        state.notify_count += 1
-                        state.latest_state = note.get("state")
-                        state.latest_mutation = note.get("mutation")
+                    out = self._apply_notification(
+                        self._session_of(body),
+                        int(body.get("who", 0)),
+                        body.get("seq"),
+                        note,
+                    )
                 except Exception as e:  # noqa: BLE001
                     self._json({"error": str(e)}, status=400)
                     return
-                self._json({})
+                self._json(out)
+            elif path == "/session":
+                try:
+                    if not isinstance(body, dict):
+                        raise ValueError("body must be a JSON object")
+                    out = self._open_session(body)
+                except Exception as e:  # noqa: BLE001
+                    self._json({"error": str(e)}, status=400)
+                    return
+                self._json(out)
+            elif path == "/game-end":
+                try:
+                    if not isinstance(body, dict):
+                        raise ValueError("body must be a JSON object")
+                    session = self._session_of(body)
+                    state.open_session(session)  # 会话可能没开过
+                    rounds = body.get("rounds")
+                    info = state.close_session(
+                        session,
+                        winner=body.get("winner"),
+                        source="game-end",
+                        rounds=rounds if isinstance(rounds, int) else None,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    self._json({"error": str(e)}, status=400)
+                    return
+                self._json({"ok": True, "closed": info is not None, "session": session})
+            elif path == "/game-log":
+                try:
+                    if not isinstance(body, dict):
+                        raise ValueError("body must be a JSON object")
+                    session = self._session_of(body)
+                    info = state.open_session(session)
+                    if state.log is not None:
+                        state.log.write_json(session, "game_log.json", body.get("log"))
+                    with state.lock:
+                        if session in state._sessions:
+                            state._sessions[session]["game_log"] = True
+                    out = {"ok": True, "dir": info.get("dir")}
+                except Exception as e:  # noqa: BLE001
+                    self._json({"error": str(e)}, status=400)
+                    return
+                self._json(out)
             else:
                 self._json({"error": "not found"}, status=404)
+
+        # ---- 通知应用（T1 座位隔离 + T2 序号护栏） ------------------------
+        def _apply_notification(
+            self,
+            session: str,
+            who: int,
+            seq: Any,
+            note: dict[str, Any],
+        ) -> dict[str, Any]:
+            seat = state.seat(session, who)
+            try:
+                seq_value = int(seq) if seq is not None else None
+            except (TypeError, ValueError):
+                seq_value = None
+
+            applied = True
+            stale = False
+            with state.lock:
+                if seq_value is not None and seq_value <= seat.applied_seq:
+                    # T2：过期通知（乱序/重发）——保留更新的状态，只记一笔。
+                    stale = True
+                    applied = False
+                    info = state._sessions.get(session)
+                    if info is not None:
+                        info["stale_drops"] += 1
+                else:
+                    seat.latest_state = note.get("state")
+                    seat.latest_mutation = note.get("mutation")
+                    seat.state_seq += 1
+                    if seq_value is not None:
+                        seat.applied_seq = seq_value
+                    state.notify_count += 1
+                    state.latest_state = seat.latest_state
+                    state.latest_mutation = seat.latest_mutation
+                    info = state._sessions.get(session)
+                    if info is not None:
+                        info["notify_%d" % who] += 1
+
+            if stale:
+                return {"applied": False, "reason": "stale_seq", "seq": seq_value}
+
+            # 终局检测：state.winner 被置位（或 phase 变成 gameEnd）就关账。
+            if not state.has_session(session):
+                state.open_session(session)
+            winner = _winner_of(seat.latest_state)
+            if winner is not None or _is_end_phase(seat.latest_state):
+                state.close_session(
+                    session,
+                    winner=winner,
+                    source="notify",
+                    rounds=_notify_rounds(seat.latest_state),
+                )
+            return {"applied": True, "seq": seq_value, "state_seq": seat.state_seq}
 
     return Handler
 
 
-def build_policy_from_args(args: argparse.Namespace) -> Any:
-    """按命令行参数组装策略：有 `--policy` 走模型桥，否则纯占位。"""
-    placeholder = Policy(strategy=args.strategy, seed=args.seed)
-    if not args.policy:
-        return placeholder
-    return RepoPolicy(
-        spec=args.policy,
-        seed=args.seed,
-        role=_WEB_ROLE,
-        fallback=placeholder,
-    )
+def _winner_of(state_json: Any) -> Any:
+    """掩码 state 里读 winner；没设置（未终局）返回 None。"""
+    if not isinstance(state_json, dict):
+        return None
+    winner = state_json.get("winner")
+    return winner if winner in (0, 1, "0", "1") else None
+
+
+def _is_end_phase(state_json: Any) -> bool:
+    if not isinstance(state_json, dict):
+        return False
+    return state_json.get("phase") in _END_PHASES
+
+
+def build_policy_from_args(args: argparse.Namespace) -> tuple[Any, Any]:
+    """按命令行参数组装策略：返回 `(seat0 策略, policy_factory)`。
+
+    `policy_factory(session, who)` 每次返回**新实例**（T1：座位/会话隔离，
+    独立 RNG 与 step 计数）。有 `--policy` 走模型桥，否则纯占位。
+    """
+    from common.seeding import derive_seed
+
+    def factory(session: str, who: int) -> Any:
+        role = _role_for(session, who)
+        base_seed = None if args.seed is None else int(args.seed)
+        seat_seed = None if base_seed is None else derive_seed(base_seed, role)
+        placeholder = Policy(strategy=args.strategy, seed=seat_seed)
+        if not args.policy:
+            return placeholder
+        return RepoPolicy(
+            spec=args.policy,
+            seed=base_seed,
+            role=role,
+            fallback=placeholder,
+        )
+
+    return factory(DEFAULT_SESSION, 0), factory
+
+
+def resolve_ai_deck(args: argparse.Namespace) -> dict[str, Any] | None:
+    """T3：解析 AI 座位牌组（`--ai-deck`，或 `--policy expert:<slug>` 隐含）。"""
+    slug = args.ai_deck
+    policy_spec = args.policy or ""
+    if not slug and policy_spec.startswith("expert:"):
+        slug = policy_spec.split(":", 1)[1]
+    if not slug:
+        return None
+    if policy_spec.startswith("expert:") and policy_spec.split(":", 1)[1] != slug:
+        _warn(
+            f"--policy {policy_spec!r} 与 --ai-deck {slug!r} 不一致："
+            "脚本专家规则按自家牌组写，建议两者取同一套。"
+        )
+    try:
+        from envs.decks import deck_spec  # 延迟导入：默认零依赖路径不 import gitcg
+
+        spec = deck_spec(slug)
+    except Exception as exc:  # noqa: BLE001
+        _warn(f"解析 AI 牌组 {slug!r} 失败，/ai-deck 将返回空：{type(exc).__name__}: {exc}")
+        return None
+    return {
+        "slug": spec.name,
+        "characters": [int(c) for c in spec.characters],
+        "cards": [int(c) for c in spec.cards],
+    }
 
 
 def main() -> None:
@@ -511,6 +1122,17 @@ def main() -> None:
             " 例：neural:<ckpt.pt>[#t=<temp>] | heuristic | legal_random | expert:<slug> | random"
         ),
     )
+    ap.add_argument(
+        "--ai-deck",
+        default=None,
+        help="AI 座位应使用的牌组 slug（T3 牌组对齐）；留空则从 --policy expert:<slug> 推断",
+    )
+    ap.add_argument(
+        "--log-dir",
+        default=DEFAULT_LOG_DIR,
+        help=f"逐决策日志根目录（默认 {DEFAULT_LOG_DIR}，在 gitignore 内）",
+    )
+    ap.add_argument("--no-log", action="store_true", help="关闭逐决策日志落盘")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument(
         "--cors-origin",
@@ -519,14 +1141,23 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    policy = build_policy_from_args(args)
-    state = State(policy)
+    seat0_policy, factory = build_policy_from_args(args)
+    ai_deck = resolve_ai_deck(args)
+    log = None if args.no_log else DecisionLog(args.log_dir)
+    state = State(
+        seat0_policy,
+        policy_factory=factory,
+        log=log,
+        ai_deck=ai_deck,
+    )
     server = ThreadingHTTPServer(
         (args.host, args.port), make_handler(state, args.quiet, args.cors_origin)
     )
     print(
         f"[ai-bridge] listening on http://{args.host}:{args.port} "
-        f"(policy={policy.name}, seed={args.seed}, "
+        f"(policy={seat0_policy.name}, seed={args.seed}, "
+        f"ai_deck={ai_deck['slug'] if ai_deck else None}, "
+        f"log={'off' if log is None else log.root}, "
         f"cors={'local-only' if args.cors_origin is None else args.cors_origin})",
         flush=True,
     )

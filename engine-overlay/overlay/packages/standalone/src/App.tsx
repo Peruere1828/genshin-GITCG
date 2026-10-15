@@ -63,6 +63,38 @@ export function App() {
   const [aiOpponent, setAiOpponent] = createSignal(false);
   const [aiServerUrl, setAiServerUrl] = createSignal("http://127.0.0.1:8770");
   const [aiSelfPlay, setAiSelfPlay] = createSignal(false);
+  // T3：桥声明的 AI 座位牌组 slug（拿到后回填到先手牌组，AI 座位就是 seat 0）
+  const [aiDeckSlug, setAiDeckSlug] = createSignal<string | null>(null);
+
+  const fetchAiDeck = async () => {
+    const base = aiServerUrl().replace(/\/+$/, "");
+    try {
+      const resp = await fetch(`${base}/ai-deck`);
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      }
+      const data = (await resp.json()) as {
+        slug: string | null;
+        characters: number[];
+        cards: number[];
+      };
+      if (!data?.slug) {
+        setAiDeckSlug(null);
+        return;
+      }
+      setDeck0(
+        DEFAULT_ASSETS_MANAGER.encode({
+          characters: data.characters,
+          cards: data.cards,
+        }),
+      );
+      setAiDeckSlug(data.slug);
+    } catch (e) {
+      // 取不到不拦开局：只是没做牌组对齐（桥侧 /session 还会再校验一次）。
+      console.warn("[ai-deck] 取 AI 牌组失败", e);
+      setAiDeckSlug(null);
+    }
+  };
 
   const importLog = async () => {
     return new Promise<GameStateLogEntry[]>((resolve, reject) => {
@@ -209,7 +241,15 @@ export function App() {
                   <input
                     type="checkbox"
                     checked={aiOpponent()}
-                    onChange={(e) => setAiOpponent(e.currentTarget.checked)}
+                    onChange={(e) => {
+                      const on = e.currentTarget.checked;
+                      setAiOpponent(on);
+                      if (on) {
+                        void fetchAiDeck();
+                      } else {
+                        setAiDeckSlug(null);
+                      }
+                    }}
                   />{" "}
                   AI 对手（HTTP 桥）
                 </label>
@@ -220,6 +260,13 @@ export function App() {
                   onInput={(e) => setAiServerUrl(e.currentTarget.value)}
                   placeholder="http://127.0.0.1:8770"
                 />
+                <button
+                  type="button"
+                  disabled={!aiOpponent()}
+                  onClick={() => void fetchAiDeck()}
+                >
+                  取 AI 牌组
+                </button>
                 <label>
                   <input
                     type="checkbox"
@@ -240,6 +287,11 @@ export function App() {
                     AI 对手模式：先手方由 {aiServerUrl()} 的 Python 服务托管
                     （不弹窗），本页面为后手方真人。
                   </strong>
+                  <Show when={aiDeckSlug()}>
+                    <br />
+                    AI 卡组：<code>{aiDeckSlug()}</code>（已回填到「先手牌组」，
+                    与桥的 <code>--policy</code>/<code>--ai-deck</code> 对齐）。
+                  </Show>
                 </Show>
                 <Show when={IS_BETA}>
                   <br />

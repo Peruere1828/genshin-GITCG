@@ -11,15 +11,19 @@
 // GNU Affero General Public License for more details.
 //
 // You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // --- WS8/D18 overlay 新增：浏览器引擎 ↔ Python 的 HTTP 桥 ---------------------
 // 把某个座位的 `CancellablePlayerIO` 实现为对本地 Python 服务的 HTTP 调用：
-//   rpc(request)      -> POST {base}/rpc      body {who, request}   -> RpcResponse
-//   notify(note)      -> POST {base}/notify   body {who, notification}（fire-and-forget）
-//   cancelRpc()       -> AbortController.abort()（回合被取消/终止时）
-// 这样 Python 侧（web/ai_rpc_server.py）就能拿到引擎的请求/状态并作出决策，
-// 为后续「AI 看对手牌反选」「模型 HTTP 桥」打地基。
+//   rpc(request)      -> POST {base}/rpc      body {session, who, request}   -> RpcResponse
+//   notify(note)      -> POST {base}/notify   body {session, who, seq, notification}
+//   cancelRpc() -> AbortController.abort()（回合被取消/终止时）
+//
+// 两个隔离要求（T1/T2）：
+//   * **sessionId**：桥按 (session, who) 各存一份掩码状态、策略实例与决策日志，
+//     自对弈与多开标签页都不会互相覆盖；
+//   * **顺序**：notify 按座位串成队列、逐条带单调 `seq`，`rpc` 必须等队列排空
+//     才发出去 —— 否则服务端可能先处理 rpc 再处理 notify，决策就吃到陈旧状态。
 
 import type {
   CancellablePlayerIO,
@@ -33,6 +37,8 @@ export interface AiHttpIoOptions {
   baseUrl: string;
   /** 该 io 服务的座位（0 = 先手弹窗位，1 = 主窗口位） */
   who: 0 | 1;
+  /** 一局一个的会话 id；不传则落到桥的默认会话 "-"（只建议调试时这样） */
+  sessionId?: string;
   /** 是否把引擎通知（对局事件/状态）也 POST 给 Python，默认 true（AI 需要看盘） */
   forwardNotifications?: boolean;
   /** 调试日志回调 */
@@ -41,58 +47,87 @@ export interface AiHttpIoOptions {
 
 const trimSlash = (s: string) => s.replace(/\/+$/, "");
 
+// notify 单条超时（毫秒）：服务端卡住时靠 abort 收尾，保证 rpc 的等待队列不会
+// 被一条挂死的通知永久堵住。
+const NOTIFY_TIMEOUT_MS = 10_000;
+
 export function createAiHttpIo(options: AiHttpIoOptions): CancellablePlayerIO {
   const base = trimSlash(options.baseUrl);
   const { who, forwardNotifications = true, onLog } = options;
+  const session = options.sessionId;
   let controller: AbortController | null = null;
 
-  return {
-    notify: (notification: Notification) => {
-      if (!forwardNotifications) {
-        return;
-      }
-      // 注意：不要加 `keepalive: true`——按 Fetch 规范，带 keepalive 的请求体
-      // 上限被压到 64 KiB，大 notification（完整 GameState）会静默失败。
-      void fetch(`${base}/notify`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ who, notification }),
-      }).catch((e) => {
-        // 通知是尽力而为、不阻塞对局，但错误不能静默吞掉：交给上层日志/提示。
-        onLog?.("!", "notify", e);
-      });
-    },
+  // T2：同一座位的 notify 按序送达，且 rpc 发出前要等它们全部落地。
+  // 链上每一步都吞掉错误（通知本来就是尽力而为），链条永不 reject。
+  let notifySeq = 0;
+  let pendingNotify: Promise<void> = Promise.resolve();
 
-    rpc: async (request: RpcRequest): Promise<RpcResponse> => {
-      controller?.abort();
+  const notify: CancellablePlayerIO["notify"] = (notification: Notification) => {
+    if (!forwardNotifications) {
+      return;
+    }
+    const seq = ++notifySeq;
+    pendingNotify = pendingNotify.then(async () => {
       const ctrl = new AbortController();
-      controller = ctrl;
-      const method = request.request?.$case ?? "unknown";
-      onLog?.("→", method, request);
-      let resp: Response;
+      const timer = setTimeout(() => ctrl.abort(), NOTIFY_TIMEOUT_MS);
       try {
-        resp = await fetch(`${base}/rpc`, {
+        // 注意：不要加 `keepalive: true`——按 Fetch 规范，带 keepalive 的请求体
+        // 上限被压到 64 KiB，大 notification（完整 GameState）会静默失败。
+        const resp = await fetch(`${base}/notify`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ who, request }),
+          body: JSON.stringify({ session, who, seq, notification }),
           signal: ctrl.signal,
         });
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => "");
+          onLog?.("!", "notify", `HTTP ${resp.status}: ${text}`);
+        }
       } catch (e) {
-        onLog?.("!", method, e);
-        throw e;
+        // 通知是尽力而为、不阻塞对局，但错误不能静默吞掉：交给上层日志/提示。
+        onLog?.("!", "notify", e);
+      } finally {
+        window.clearTimeout(timer);
       }
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => "");
-        throw new Error(`AI HTTP ${resp.status} ${resp.statusText}: ${text}`);
-      }
-      const json = (await resp.json()) as RpcResponse;
-      if (!json || typeof json !== "object" || !("response" in json)) {
-        throw new Error(`AI HTTP invalid response: ${JSON.stringify(json)}`);
-      }
-      onLog?.("←", method, json);
-      return json;
-    },
+    });
+  };
 
+  const rpc = async (request: RpcRequest): Promise<RpcResponse> => {
+    // T2：等前面所有 notify 都拿到响应（即已在服务端落地）再问决策，
+    // 否则 latest_state 可能还是上一步的。
+    await pendingNotify;
+    controller?.abort();
+    const ctrl = new AbortController();
+    controller = ctrl;
+    const method = request.request?.$case ?? "unknown";
+    onLog?.("→", method, request);
+    let resp: Response;
+    try {
+      resp = await fetch(`${base}/rpc`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ session, who, request }),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      onLog?.("!", method, e);
+      throw e;
+    }
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`AI HTTP ${resp.status} ${resp.statusText}: ${text}`);
+    }
+    const json = (await resp.json()) as RpcResponse;
+    if (!json || typeof json !== "object" || !("response" in json)) {
+      throw new Error(`AI HTTP invalid response: ${JSON.stringify(json)}`);
+    }
+    onLog?.("←", method, json);
+    return json;
+  };
+
+  return {
+    notify,
+    rpc,
     cancelRpc: () => {
       controller?.abort();
       controller = null;

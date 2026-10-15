@@ -56,6 +56,13 @@ export function StandaloneParent(props: StandaloneParentProps) {
     },
   });
 
+  // WS8/D18（T1/C4）：一局一个会话 id。桥按 (session, who) 隔离掩码状态、
+  // 策略实例与决策日志目录；「从此处继续」沿用同一局的 id。
+  const sessionId: string =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
   const [popupWindow, setPopupWindow] = createSignal<Window | null>(null);
 
   const showPopup = async () => {
@@ -240,6 +247,101 @@ export function StandaloneParent(props: StandaloneParentProps) {
     }
   };
 
+  // T3：把本局两个座位的牌组（解成 definition id）报给桥。桥用它校验
+  // AI 座位的牌组是否等于 `--ai-deck` 声明的那套（脚本专家规则按自家牌组写，
+  // 牌组不符会静默变蠢），并写进决策日志。
+  const deckAsJson = (code: string): unknown => {
+    try {
+      return DEFAULT_ASSETS_MANAGER.decode(code);
+    } catch {
+      return code; // 解不出来就原样上报，桥侧只做形状检查、不硬失败
+    }
+  };
+
+  const reportSession = async () => {
+    if (!props.aiOpponent) {
+      return;
+    }
+    const meta = {
+      version: props.version,
+      ai_seat: CHILD_WHO,
+      ai_self_play: !!props.aiSelfPlay,
+      decks: {
+        [String(CHILD_WHO)]: deckAsJson(props.deck0),
+        [String(PARENT_WHO)]: deckAsJson(props.deck1),
+      },
+    };
+    try {
+      const resp = await fetch(`${props.aiOpponent}/session`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ session: sessionId, meta }),
+      });
+      if (!resp.ok) {
+        console.warn(`[ai-http] /session HTTP ${resp.status}`);
+        return;
+      }
+      const out = (await resp.json()) as { deck_mismatch?: boolean };
+      if (out?.deck_mismatch) {
+        console.warn(
+          "[ai-http] AI 座位牌组与桥的 --ai-deck 声明不一致（详见桥的 stderr）",
+        );
+      }
+    } catch (e) {
+      console.warn("[ai-http] /session 上报失败", e);
+    }
+  };
+
+  // 终局归档（C4）：把引擎日志（含人类这边的决策）和胜负报给桥，与桥侧的
+  // 逐决策 JSONL 落到同一目录。没接桥（纯人机对打）时什么都不做。
+  const finishGame = async (finished: Game) => {
+    const winner = finished.state.winner;
+    if (winner === null || winner === undefined) {
+      // 被「从此处继续」terminate 掉的那局没有胜负，不是真正的终局。
+      console.warn("[ai-http] 对局结束但无 winner，跳过归档");
+      return;
+    }
+    if (!props.aiOpponent) {
+      return;
+    }
+    const logs = stateLog();
+    if (logs.length > 0) {
+      try {
+        const serialized = serializeGameStateLog(logs);
+        await fetch(`${props.aiOpponent}/game-log`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            session: sessionId,
+            log: { ...serialized, gv: props.version },
+          }),
+        });
+      } catch (e) {
+        console.warn("[ai-http] /game-log 上传失败", e);
+      }
+    }
+    try {
+      await fetch(`${props.aiOpponent}/game-end`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          session: sessionId,
+          winner,
+          rounds: finished.state.roundNumber,
+        }),
+      });
+    } catch (e) {
+      console.warn("[ai-http] /game-end 上报失败", e);
+    }
+  };
+
+  const startEndedGame = (started: Game) => {
+    started
+      .start()
+      .then(() => finishGame(started).catch(() => undefined))
+      .catch((e) => onGameError(e, started));
+  };
+
   const createGame = async (state?: GameState) => {
     if (!state) {
       const deck0 = DEFAULT_ASSETS_MANAGER.decode(props.deck0);
@@ -255,11 +357,13 @@ export function StandaloneParent(props: StandaloneParentProps) {
     (window as any).theGame = game;
     game.onPause = pause;
     game.onIoError = onIoError;
-    // WS8/D18 overlay：AI 模式下先手方走 HTTP 桥，否则走弹窗真人 io
+    // WS8/D18 overlay：AI 模式下 AI 座位走 HTTP 桥，否则走弹窗真人 io。
+    // 两个 AI 座位共用同一 sessionId（T1：桥内部再按 who 分开）。
     if (props.aiOpponent) {
       game.players[0].io = createAiHttpIo({
         baseUrl: props.aiOpponent,
         who: 0,
+        sessionId,
         forwardNotifications: true,
         onLog: aiIoLog,
       });
@@ -270,6 +374,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
       game.players[1].io = createAiHttpIo({
         baseUrl: props.aiOpponent,
         who: 1,
+        sessionId,
         forwardNotifications: true,
         onLog: aiIoLog,
       });
@@ -284,29 +389,35 @@ export function StandaloneParent(props: StandaloneParentProps) {
       if (!props.aiOpponent) {
         await showPopup();
       }
+      await reportSession();
       const initialGame = await createGame();
       game = initialGame;
-      initialGame.start().catch((e) => onGameError(e, initialGame));
+      startEndedGame(initialGame);
     } catch (e) {
       onGameError(e);
     }
   };
 
   const resumeGame = async () => {
-    if (!props.aiOpponent) {
-      await showPopup();
+    try {
+      if (!props.aiOpponent) {
+        await showPopup();
+      }
+      await reportSession();
+      const logs = stateLog().slice(0, viewingLogIndex() + 1);
+      childIo.cancelRpc?.();
+      uiIo.cancelRpc?.();
+      game?.terminate();
+      const latestState = logs[logs.length - 1];
+      const newGame = await createGame(latestState.state);
+      game = newGame;
+      startEndedGame(newGame);
+      setStateLog(logs);
+      setViewingLogIndex(-1);
+      setFromImport(false);
+    } catch (e) {
+      onGameError(e);
     }
-    const logs = stateLog().slice(0, viewingLogIndex() + 1);
-    childIo.cancelRpc?.();
-    uiIo.cancelRpc?.();
-    game?.terminate();
-    const latestState = logs[logs.length - 1];
-    const newGame = await createGame(latestState.state);
-    game = newGame;
-    newGame.start().catch((e) => onGameError(e, newGame));
-    setStateLog(logs);
-    setViewingLogIndex(-1);
-    setFromImport(false);
   };
 
   const childGiveUpHandler = (e: MessageEvent) => {
