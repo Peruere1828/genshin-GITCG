@@ -115,7 +115,28 @@ def build_deck(
     for character_id in characters:
         if not pool.has_character(character_id):
             raise ValueError(f"character {character_id} is not in pool {pool.name!r}")
+    return DeckSpec(
+        name=name,
+        characters=characters,
+        cards=fill_cards(
+            pool, size=size, core=core, fill=fill, copies=copies
+        ),
+    )
 
+
+def fill_cards(
+    pool: CardPool,
+    *,
+    size: int = DECK_SIZE,
+    core: Sequence[int] = (),
+    fill: Sequence[int] = (),
+    copies: int = MAX_COPIES,
+) -> tuple[int, ...]:
+    """按 ``core`` → ``fill`` → 池内顺序补满 ``size`` 张牌（每卡 ≤ ``copies`` 张）。
+
+    只管牌、**不做角色校验**——需要「角色不限 3 个」的牌组填充时用这个，
+    `build_deck` 也复用它（它自己负责那条「恰好 3 个不同角色」的校验）。
+    """
     ordered: list[int] = []
     for card_id in (*core, *fill):
         card_id = int(card_id)
@@ -143,8 +164,7 @@ def build_deck(
             f"pool {pool.name!r} only yields {len(ordered)} cards at <= {copies} copies; "
             f"need {size}"
         )
-    ordered = ordered[:size]
-    return DeckSpec(name=name, characters=characters, cards=tuple(ordered))
+    return tuple(ordered[:size])
 
 
 # --------------------------------------------------------------------------- #
