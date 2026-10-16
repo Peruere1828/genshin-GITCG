@@ -22,6 +22,14 @@
 `https://gi-tcg-assets-api-hf.guyutongxue.site/`（仍保留 `import.meta.env` /
 `process.env` / `GI_TCG_ASSETS_BASE_URL` 三级覆盖）。
 
+**NPC 牌组的骰子**（D18）：App 把 `/npc-decks` 各阵容的角色列表传给
+`StandaloneParent`；createGame 时按座位判断——牌组的角色与某个阵容**完全一致**
+（顺序无关、保留重复）且**没有行动牌**，就置
+`game.players[who].config.alwaysOmni = true`（游戏内 NPC 每轮 8 个万能骰；张数＝
+全局 `initialDiceCount`＝8）。重投照常可用（重投出来的按全局规则随机，游戏内 NPC
+不重投）。判据是**阵容整体匹配**而不是「命中某个 NPC 角色 id」——官方
+`share_id.json` 里也有敌人角色（2202 / 2301），按 id 判会把官方牌组误判成 NPC 牌组。
+
 ## 构建 & 起局
 
 前置：`build/engine/` 已 materialize（`engine-overlay/scripts/materialize.sh`）；

@@ -58,6 +58,13 @@ export interface StandaloneParentProps {
    * 前端会崩：`undefined.matchAll` / `e.playCost is not iterable`）。
    */
   npcCustomData?: CustomData;
+  /**
+   * C3/D18：`GET /npc-decks` 各阵容的角色列表（原样，含重复）。座位牌组的角色与之
+   * 完全一致（且没有行动牌＝NPC 的空牌堆）就按「NPC 牌组」对待 —— 游戏内 NPC 每轮
+   * 拿 8 个万能骰，本接口用引擎的 `alwaysOmni` 对齐（初始掷骰全 OMNI，张数＝全局
+   * `initialDiceCount`＝8）。
+   */
+  npcLineups?: number[][];
   /** WS8/D18 overlay：非空时对面座位由该地址的 Python HTTP 服务托管 */
   aiOpponent?: string;
   /** WS8/D18 overlay：非空时本窗口座位也托管（双方 AI 自对弈，便于调试） */
@@ -91,6 +98,24 @@ export function StandaloneParent(props: StandaloneParentProps) {
     HUMAN_WHO === 0
       ? [props.myDeck, props.otherDeck]
       : [props.otherDeck, props.myDeck];
+
+  // C3/D18：牌组是不是「NPC 阵容」——角色列表与某个关卡阵容完全一致（顺序无关、
+  // 保留重复），且没有行动牌（NPC 的空牌堆）。**不能**用「命中某个 NPC 角色 id」
+  // 来判断：官方 share_id 里也有敌人角色（2202 / 2301），那样会把官方牌组误判成
+  // NPC 牌组。命中时该座位开局置 `alwaysOmni`（见 createGame）。
+  const lineupKey = (chars: readonly number[]) =>
+    [...chars].sort((a, b) => a - b).join(",");
+  const isNpcDeck = (deck: Deck): boolean => {
+    const lineups = props.npcLineups;
+    if (!lineups || lineups.length === 0) {
+      return false;
+    }
+    if ((deck.cards ?? []).length > 0 || deck.characters.length === 0) {
+      return false;
+    }
+    const key = lineupKey(deck.characters);
+    return lineups.some((lineup) => lineupKey(lineup) === key);
+  };
 
   // C3：带 NPC 自定义数据的 AssetsManager。构造时 `setupCustomData` 会把角色/技能/
   // 实体的 datum 灌进缓存，`getData` 因此不再打镜像 → 名字、技能描述、骰子费用、
@@ -434,6 +459,15 @@ export function StandaloneParent(props: StandaloneParentProps) {
     (window as any).theGame = game;
     game.onPause = pause;
     game.onIoError = onIoError;
+    // C3/D18：哪一方的牌组是 NPC 阵容，哪一方就按游戏内 NPC 规则拿 8 个万能骰
+    // （`alwaysOmni` 是每轮初始掷骰都全 OMNI，张数＝全局 `initialDiceCount`＝8）。
+    // 人持 NPC 阵容（App 的「NPC 阵容」下拉）走的就是这条路；桥若给 AI 座位的是
+    // NPC 牌组也同样适用。这是每轮都读的游戏级开关，续局/导入日志时一并生效。
+    for (const who of [0, 1] as const) {
+      if (isNpcDeck(SEAT_DECKS[who])) {
+        game.players[who].config.alwaysOmni = true;
+      }
+    }
     // WS8/D18 overlay：本窗口座位托管真人棋盘；对面座位按模式交给 HTTP 桥或弹窗。
     // 两个 AI 座位共用同一 sessionId（T1：桥内部再按 who 分开）；续局时每个座位
     // 从桥给的 seq 基线继续数（T2）。

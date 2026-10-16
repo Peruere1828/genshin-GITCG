@@ -242,8 +242,15 @@ def payload_text(payload: dict, key: str) -> str:
 def test_npc_decks_documents_the_three_approximations(npc_payload):
     """三件事的说明必须**如实记录差异**（支援区/多轮与游戏内不一致，不能冒充原版）。"""
     assert set(SEMANTICS) == set(npc_payload["semantics"])
-    assert set(SEMANTICS) >= {"lineup_size", "support", "waves", "cards", "share_code"}
-    for key in ("support", "waves"):
+    assert set(SEMANTICS) >= {
+        "lineup_size",
+        "support",
+        "waves",
+        "cards",
+        "dice",
+        "share_code",
+    }
+    for key in ("support", "waves", "dice"):
         text = payload_text(npc_payload, key)
         assert "【游戏内】" in text and "【本接口】" in text and "【差异】" in text, key
     assert "后台" in payload_text(npc_payload, "support")
@@ -251,6 +258,17 @@ def test_npc_decks_documents_the_three_approximations(npc_payload):
     assert "多轮" in payload_text(npc_payload, "waves")
     assert "血量和卡牌状态" in payload_text(npc_payload, "waves")
     assert "share_id" in payload_text(npc_payload, "share_code")
+
+
+def test_npc_decks_document_omni_dice(npc_payload):
+    """D18：持 NPC 牌组的座位拿 8 个万能骰（引擎 alwaysOmni，重投照常可用）。"""
+    dice = payload_text(npc_payload, "dice")
+    assert "8" in dice and "万能" in dice
+    assert "alwaysOmni" in dice and "initialDiceCount" in dice
+    # 重投照常可选（重投出来的按全局规则随机）——这个差异要如实写出来。
+    assert "重投" in dice and "仍可主动重投" in dice
+    # 旧的「骰子仍按全局规则发放」说明已被替换掉
+    assert "骰子仍按全局规则发" not in payload_text(npc_payload, "cards")
 
 
 def test_npc_decks_todo_is_tracked_in_module():

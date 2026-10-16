@@ -13,7 +13,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import { For, Match, Show, Switch, createSignal, onMount } from "solid-js";
+import {
+  For,
+  Match,
+  Show,
+  Switch,
+  createMemo,
+  createSignal,
+  onMount,
+} from "solid-js";
 import getData from "@gi-tcg/data";
 import {
   CURRENT_VERSION,
@@ -136,6 +144,13 @@ export function App() {
   const [gameCfg, setGameCfg] = createSignal<GameConfig | null>(null);
 
   const bridgeBase = () => aiServerUrl().replace(/\/+$/, "");
+
+  // C3/D18：NPC 各阵容的角色列表（原样，含重复）。座位牌组的角色与之完全一致
+  // （且无行动牌）就按 NPC 牌组处理 —— StandaloneParent 据此给该座位 8 个万能骰。
+  // 人持 NPC 阵容（下面的「NPC 阵容」下拉 → `npcPick`）走的就是这条路。
+  const npcLineups = createMemo(
+    () => (npcList()?.decks ?? []).map((d) => d.characters ?? []),
+  );
 
   const deckOrEmpty = (code: string): Deck => {
     try {
@@ -756,6 +771,7 @@ export function App() {
               humanSeat={gameCfg()!.humanSeat}
               version={version()}
               npcCustomData={npcList()?.assets}
+              npcLineups={npcLineups()}
               aiOpponent={aiOpponent() ? bridgeBase() : undefined}
               aiSelfPlay={aiSelfPlay()}
             />

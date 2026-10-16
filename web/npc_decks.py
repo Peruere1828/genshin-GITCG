@@ -13,6 +13,8 @@ D18 说「人可持 NPC 敌人卡组」。NPC「冒险挑战」的阵容有三�
 **牌组不带行动牌**（`cards=[]`）：游戏内 NPC 没有手牌，而引擎 `initialHandsCount`
 是**全局**配置、没有 per-player 版本，只能靠**空牌堆**让这一侧开局没有手牌
 （`drawCardsPlain` 遇空堆直接跳过）。人持 NPC 阵容时也一样——只能用角色技能和骰子打。
+**骰子**按游戏内 NPC 规则给：持 NPC 阵容的座位在前端置 `alwaysOmni`，每轮初始
+掷骰＝8 个万能骰（详见 `SEMANTICS["dice"]`）。
 
 浏览器侧拿到 `{characters, cards}` 后**直接当牌组对象传给引擎**，不走分享码：
 NPC 角色 id 不在官方 `share_id.json` 里，`DEFAULT_ASSETS_MANAGER.encode` 会抛错。
@@ -52,8 +54,14 @@ SEMANTICS: dict[str, str] = {
         "【本接口】牌组 `cards=[]`，靠空牌堆让这一侧开局没有手牌——引擎的"
         " `initialHandsCount` 是全局配置、没有 per-player 版本，空堆时"
         "`drawCardsPlain` 直接跳过。"
-        "【差异】人持 NPC 阵容时同样拿不到行动牌（只能用角色技能与骰子），"
-        "骰子仍按全局规则发放。"
+        "【差异】人持 NPC 阵容时同样拿不到行动牌（只能用角色技能与骰子）。"
+    ),
+    "dice": (
+        "【游戏内】NPC 每轮拿 8 个万能元素骰。"
+        "【本接口】持 NPC 阵容的座位在引擎里置 `alwaysOmni`：每轮初始掷骰全为万能骰，"
+        "张数＝全局 `initialDiceCount`（默认 8）。"
+        "【差异】骰子仍可主动重投——重投出来的按全局规则随机、不再是万能骰"
+        "（游戏内 NPC 不重投，NPC 侧不受影响）。"
     ),
     "share_code": (
         "NPC 角色 id 不在官方 share_id 表里，编不出分享码——前端按牌组对象直传。"
