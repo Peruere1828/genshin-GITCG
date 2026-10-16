@@ -459,6 +459,10 @@ def test_direct_script_run_loads_model_policy(captured, tmp_path):
                 str(port),
                 "--policy",
                 "heuristic",
+                # 桥的默认日志目录是**仓库内**的 `data/web/`（绝对路径，与 cwd 无关），
+                # 不指走的话每跑一次本用例都会在仓库里新建一个日志目录。
+                "--log-dir",
+                str(tmp_path / "web-log"),
             ],
             cwd=REPO_ROOT,
             stdout=out,
