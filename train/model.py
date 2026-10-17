@@ -37,6 +37,26 @@ class CVPNConfig:
     belief_group_dim: int = 0
     belief_card_dim: int = 0
     belief_hidden: int = 128
+    # H3 (value calibration): "identity" keeps the historical linear head (default);
+    # "sigmoid" makes the head emit a probability, which is what Brier/BCE-trained
+    # runs and the search frontier want. Recorded in the checkpoint, so consumers
+    # always receive a probability either way.
+    value_activation: str = "identity"
+
+
+def activate_value(value: torch.Tensor, config) -> torch.Tensor:
+    """Map the value head's raw output to the space its loss/consumers expect.
+
+    ``identity`` (default) keeps the historical linear scalar; ``sigmoid`` makes it
+    a probability in (0, 1) — required for Brier/BCE-trained value heads (H3) and
+    safe for the search frontier, which treats the value as P(win).
+    """
+    activation = getattr(config, "value_activation", "identity")
+    if activation == "sigmoid":
+        return torch.sigmoid(value)
+    if activation in ("identity", "", None):
+        return value
+    raise ValueError(f"unknown value_activation: {activation!r}")
 
 
 class CVPN(nn.Module):
@@ -83,7 +103,7 @@ class CVPN(nn.Module):
         repeated = global_vec.unsqueeze(1).expand(-1, option_vec.size(1), -1)
         logits = self.option_scorer(torch.cat([repeated, option_vec], dim=-1)).squeeze(-1)
         logits = logits.masked_fill(~option_mask, float("-inf"))
-        value = self.value_head(global_vec).squeeze(-1)  # (B,)
+        value = activate_value(self.value_head(global_vec).squeeze(-1), self.config)  # (B,)
         belief = self.belief_head(global_vec) if self.has_belief else None
         return logits, value, belief
 
@@ -182,6 +202,7 @@ class TransformerCVPNConfig:
     belief_group_dim: int = 0
     belief_card_dim: int = 0
     belief_hidden: int = 128
+    value_activation: str = "identity"
 
 
 class TransformerCVPN(nn.Module):
@@ -251,7 +272,7 @@ class TransformerCVPN(nn.Module):
         )  # (B, K, d)
         logits = self.option_scorer(torch.cat([attended, option_vec], dim=-1)).squeeze(-1)
         logits = logits.masked_fill(~option_mask, float("-inf"))
-        value = self.value_head(pooled).squeeze(-1)
+        value = activate_value(self.value_head(pooled).squeeze(-1), self.config)
         belief = self.belief_head(pooled) if self.has_belief else None
         return logits, value, belief
 

@@ -165,6 +165,22 @@ python -m train.pipeline --replays data/replays/bc_c100 --epochs 30 --tag cluste
   用 `scripts.eval_protocol` 的配对种子非劣门禁（`CI_low(Δ) ≥ −0.02`，`eval.scoreboard.merge_gate`）自动判定，
   报告＋曲线落 `reports/train/distill_smoke_<ts>.json`。
 
+### 策略目标：BC / 优势加权 / 动作价值（H2，2026-10-16）
+
+`scripts/datafirst_bc_train.py --loss {ce,awr,q}` 在同一个 compact store 上换**策略目标**（默认 `ce`＝原有 BC，
+行为不变）：
+
+- `ce`：硬标签交叉熵（原路径）。
+- `awr`：优势加权 BC —— `w = exp(β·(G − V(s)))`（`G`＝该局 episode 结果，`V` 取网络自己的 value 头且 detach），
+  裁剪并归一化到均值 1；`β=0` 与 `ce` **逐值/逐梯度等价**（`tests/test_offline_rl.py`）。它让「赢的局里的动作」
+  比「输的局里的动作」有更大的梯度权重——BC 会连专家在败局里的坏手一起模仿，AWR 不会。
+- `q`：DouZero 式动作价值 —— 只对**实际被走的动作**回归 MC 回报（`Q(s, a_teacher) → G`；
+  `--q-target discount` 时按该局剩余步数乘 `γ^k`）；头仍是「每 option 一个标量」，因此 `neural:<ckpt>` 的
+  `argmax` 直接变成贪心 Q 策略（`agents/neural.py` 零改动），可以选到专家没走过的合法动作——目前唯一能
+  **超过 teacher** 的改进算子。
+
+诊断项：报告里 `val_acc` 仍是「与专家动作一致率」（对 `q` 仅作参考），`val_q_mse` / `val_w_mean` / `val_w_max` 单列。
+
 ## 待办（M3，按 `train/CONTINUAL_RESOLVING.md` 顺序，D15）
 
 1. **信念根化（G1+G3）**：`envs/fork_search.py` 搜索根换「公共信念 + 采样确定化」（禁用隐藏真值），`reps/belief_groups.py` 接入根与 update；**S-A 已交付**（`reps/belief.py`），剩余接入 MCCFR 求解器的 belief 目标。

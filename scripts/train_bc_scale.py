@@ -305,6 +305,47 @@ def _reorder(store: Store, order: Sequence[int]) -> None:
         setattr(store, field, [seq[i] for i in order])
 
 
+def _game_last_steps(store: Store) -> dict[tuple[Any, ...], int]:
+    """Highest ``step_index`` seen per game (used for discounted MC returns).
+
+    Tolerates both key layouts seen on disk: ``(opponent, seed, step)`` from the
+    older store builder and ``(deck, opponent, seed, step)`` from the current one —
+    the step is always the last element and the game identity is everything before it.
+    """
+    last: dict[tuple[Any, ...], int] = {}
+    for key in store.keys:
+        game = tuple(key[:-1])
+        step = int(key[-1])
+        if step > last.get(game, -1):
+            last[game] = step
+    return last
+
+
+def q_scale_for_store(store: Store, *, target: str, gamma: float) -> list[float] | None:
+    """Per-sample ``gamma ** steps_remaining`` factors (``None`` for episode targets).
+
+    ``steps_remaining`` = the game's last step index minus this sample's step index,
+    so the last decision of a game gets weight 1.0. This gives the Q target a
+    little credit assignment without needing a next-state bootstrap.
+    """
+    if target != "discount":
+        return None
+    last = _game_last_steps(store)
+    return [
+        float(gamma) ** (last[tuple(k[:-1])] - int(k[-1]))
+        for k in store.keys
+    ]
+
+
+def _q_targets(values: torch.Tensor, index: Sequence[int], q_scale: Sequence[float] | None) -> torch.Tensor:
+    if q_scale is None:
+        return values
+    scale = torch.tensor(
+        [float(q_scale[i]) for i in index], dtype=values.dtype, device=values.device
+    )
+    return values * scale
+
+
 def _collate(store: Store, index: Sequence[int], device: str):
     """Pad a batch to its own max and stack (vectorised via ``pad_sequence``)."""
     from torch.nn.utils.rnn import pad_sequence
@@ -356,36 +397,87 @@ def _belief_loss(belief, bt) -> torch.Tensor:
     return belief_loss(belief, targets)
 
 
-def run_batch(model, store, index, device, value_coef, belief_coef, has_belief):
+def _value_loss(value: torch.Tensor, targets: torch.Tensor, config, model) -> torch.Tensor:
+    """Episode-outcome loss for the value head (H3).
+
+    Contract: ``mse`` regresses whatever the head outputs (the historical path:
+    identity activation); ``brier``/``bce`` are proper scoring rules that require a
+    probability head (``value_activation="sigmoid"``), and are refused otherwise so a
+    raw-logit head can never be silently trained as if it were a probability.
+    """
+    kind = getattr(config, "value_loss", "mse") if config is not None else "mse"
+    smooth = float(getattr(config, "value_smooth", 0.0) or 0.0) if config is not None else 0.0
+    target = targets * (1.0 - 2.0 * smooth) + smooth if smooth else targets
+    activation = getattr(getattr(model, "config", None), "value_activation", "identity")
+    if kind == "mse":
+        return F.mse_loss(value, target)
+    if activation != "sigmoid":
+        raise ValueError(f"value_loss={kind!r} needs value_activation='sigmoid'")
+    if kind == "brier":
+        return F.mse_loss(value, target)
+    if kind == "bce":
+        p = value.clamp(1e-4, 1 - 1e-4)
+        return -(target * p.log() + (1 - target) * (1 - p).log()).mean()
+    raise ValueError(f"unknown value_loss: {kind!r}")
+
+
+def run_batch(model, store, index, device, value_coef, belief_coef, has_belief,
+              config=None, q_scale=None):
     tokens, token_mask, options, option_mask, teacher, values = _collate(store, index, device)
     if has_belief:
         logits, value, belief = model.forward_all(tokens, token_mask, options, option_mask)
     else:
         logits, value = model(tokens, token_mask, options, option_mask)
         belief = None
-    ce = F.cross_entropy(logits, teacher)
-    mse = F.mse_loss(value, values)
+    loss_kind = getattr(config, "loss", "ce") if config is not None else "ce"
+    extra: dict[str, float] = {}
+    if loss_kind == "q":
+        # DouZero-style: only the played (teacher) action's Q is supervised; the
+        # shared option features let the unscored actions inherit a ranking.
+        target = _q_targets(values, index, q_scale)
+        q_played = logits.gather(1, teacher.unsqueeze(1)).squeeze(1)
+        policy_loss = F.mse_loss(q_played, target)
+        extra["q_mse"] = float(policy_loss.item())
+    else:
+        raw = F.cross_entropy(logits, teacher, reduction="none")
+        if loss_kind == "awr":
+            beta = float(getattr(config, "awr_beta", 1.0))
+            max_w = float(getattr(config, "awr_max_weight", 10.0))
+            # in-batch advantage baseline: the model's own value head (detached)
+            adv = values - value.detach()
+            weights = torch.exp(beta * adv).clamp(max=max_w)
+            weights = weights / weights.mean().clamp(min=1e-6)
+            policy_loss = (weights * raw).mean()
+            extra["w_mean"] = float(weights.mean().item())
+            extra["w_max"] = float(weights.max().item())
+        elif loss_kind == "ce":
+            policy_loss = raw.mean()
+        else:
+            raise ValueError(f"unknown loss kind: {loss_kind!r}")
+    mse = _value_loss(value, values, config, model)
     bl = _belief_loss(belief, _belief_batch(store, index, device)) if has_belief else torch.zeros((), device=device)
-    loss = ce + value_coef * mse + belief_coef * bl
+    loss = policy_loss + value_coef * mse + belief_coef * bl
     with torch.no_grad():
         acc = (logits.argmax(dim=-1) == teacher).float().mean()
-    return loss, {"ce": float(ce.item()), "value": float(mse.item()), "belief": float(bl.item()), "acc": float(acc.item())}
+    return loss, {"ce": float(policy_loss.item()), "value": float(mse.item()),
+                  "belief": float(bl.item()), "acc": float(acc.item()), **extra}
 
 
 @torch.no_grad()
-def evaluate(model, store, config, device, has_belief):
+def evaluate(model, store, config, device, has_belief, q_scale=None):
     model.eval()
     if len(store) == 0:
         return {"ce": 0.0, "value": 0.0, "belief": 0.0, "acc": 0.0, "n": 0}
     n = len(store)
-    agg = {"ce": 0.0, "value": 0.0, "belief": 0.0, "acc": 0.0}
+    agg: dict[str, float] = {}
     for start in range(0, n, config.batch_size):
         index = list(range(start, min(start + config.batch_size, n)))
-        _, info = run_batch(model, store, index, device, config.value_coef, config.belief_coef, has_belief)
-        for k in agg:
-            agg[k] += info[k] * len(index)
-    for k in agg:
-        agg[k] /= n
+        _, info = run_batch(model, store, index, device, config.value_coef,
+                            config.belief_coef, has_belief, config, q_scale)
+        for key, val in info.items():
+            agg[key] = agg.get(key, 0.0) + float(val) * len(index)
+    for key in agg:
+        agg[key] /= n
     agg["n"] = n
     model.train()
     return agg
@@ -402,6 +494,27 @@ class Config:
     seed: int = 0
     device: str = "cpu"
     log_every: int = 1
+    # --- offline-RL policy targets (H2 of the 2-day strength plan) ----------
+    # "ce"  = behaviour cloning (default, unchanged);
+    # "awr" = advantage-weighted CE: w = exp(beta * (G - V(s))) from the model's
+    #         own (detached) value head, normalised to mean 1 and clipped;
+    # "q"   = DouZero-style action value: MSE of Q(s, a_teacher) to the MC return
+    #         (optionally discounted by the remaining steps of that game). The
+    #         head stays a per-option scorer, so ``argmax`` at inference is a
+    #         greedy Q policy (``neural:<ckpt>`` needs no change).
+    loss: str = "ce"
+    awr_beta: float = 1.0
+    awr_max_weight: float = 10.0
+    q_target: str = "episode"   # "episode" | "discount"
+    q_gamma: float = 0.97
+    # --- H3 value calibration -------------------------------------------------
+    # "mse"  = historical regression on the episode score (default);
+    # "brier"= same target but for a sigmoid value head (proper scoring rule);
+    # "bce"  = cross entropy in probability space (log-clamped).
+    # ``value_smooth`` pulls the 0/1 targets towards 0.5 (label smoothing), which
+    # also fights the optimistic bias a plain MSE head develops.
+    value_loss: str = "mse"
+    value_smooth: float = 0.0
 
 
 def train(train_store: Store, val_store: Store, model, config: Config, has_belief: bool):
@@ -410,6 +523,14 @@ def train(train_store: Store, val_store: Store, model, config: Config, has_belie
     model.train()
     opt = torch.optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     n = len(train_store)
+    q_scale = (
+        q_scale_for_store(train_store, target=config.q_target, gamma=config.q_gamma)
+        if config.loss == "q" else None
+    )
+    val_q_scale = (
+        q_scale_for_store(val_store, target=config.q_target, gamma=config.q_gamma)
+        if config.loss == "q" and val_store is not None and len(val_store) else None
+    )
     order0 = list(range(n))
     import random as _random
 
@@ -426,7 +547,7 @@ def train(train_store: Store, val_store: Store, model, config: Config, has_belie
             if not index:
                 continue
             opt.zero_grad(set_to_none=True)
-            loss, info = run_batch(model, train_store, index, config.device, config.value_coef, config.belief_coef, has_belief)
+            loss, info = run_batch(model, train_store, index, config.device, config.value_coef, config.belief_coef, has_belief, config, q_scale)
             loss.backward()
             opt.step()
             agg["loss"] += float(loss.item())
@@ -437,11 +558,15 @@ def train(train_store: Store, val_store: Store, model, config: Config, has_belie
             agg[k] /= max(1, nb)
         row = {"epoch": epoch, **{k: round(v, 5) for k, v in agg.items()}}
         if val_store is not None and len(val_store):
-            v = evaluate(model, val_store, config, config.device, has_belief)
+            v = evaluate(model, val_store, config, config.device, has_belief, val_q_scale)
             row["val_ce"] = round(v["ce"], 5)
             row["val_acc"] = round(v["acc"], 4)
             row["val_value"] = round(v["value"], 5)
             row["val_belief"] = round(v["belief"], 5)
+            row["val_n"] = int(v.get("n", 0))
+            for extra in ("q_mse", "w_mean", "w_max"):
+                if extra in v:
+                    row[f"val_{extra}"] = round(float(v[extra]), 5)
         history.append(row)
         if config.log_every and (epoch % config.log_every == 0 or epoch == config.epochs - 1):
             print(f"[train] {json.dumps(row)}", flush=True)

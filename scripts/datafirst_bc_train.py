@@ -12,6 +12,9 @@ data-first scale runs actually need:
   holdout is itself capped (``--val-limit``) so the curve/accuracy is still
   measured but training is not val-bound.
 
+Policy targets (H2 of the 2-day strength plan): ``--loss {ce,awr,q}`` — plain BC,
+advantage-weighted BC, or DouZero-style action value (``--awr-beta`` / ``--q-target``).
+
 Checkpoints are byte-compatible with the ``neural:<ckpt>`` policy spec (saved via
 ``CVPN.save`` with the encoder config) so they plug straight into
 ``scripts.eval_protocol``.
@@ -67,6 +70,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--device", default="cpu")
     p.add_argument("--train-limit", type=int, default=None)
     p.add_argument("--val-limit", type=int, default=8000)
+    p.add_argument("--loss", choices=["ce", "awr", "q"], default="ce",
+                   help="policy target: ce = BC (default), awr = advantage-weighted CE, q = DouZero-style action value")
+    p.add_argument("--awr-beta", type=float, default=1.0, help="advantage temperature for --loss awr")
+    p.add_argument("--awr-max-weight", type=float, default=10.0, help="clip for the AWR weight")
+    p.add_argument("--q-target", choices=["episode", "discount"], default="episode",
+                   help="MC return for --loss q: raw episode outcome, or discounted by remaining steps")
+    p.add_argument("--q-gamma", type=float, default=0.97, help="discount per remaining step for --q-target discount")
+    p.add_argument("--value-loss", choices=["mse", "brier", "bce"], default="mse",
+                   help="episode-outcome loss for the value head (H3 calibration)")
+    p.add_argument("--value-activation", choices=["identity", "sigmoid"], default="identity",
+                   help="value head activation stored in the checkpoint (sigmoid = probability head)")
+    p.add_argument("--value-smooth", type=float, default=0.0, help="label smoothing for the value target")
     p.add_argument("--threads", type=int, default=None, help="torch CPU threads")
     p.add_argument("--out", required=True)
     p.add_argument("--report", default=None)
@@ -92,15 +107,20 @@ def main(argv: list[str] | None = None) -> int:
         cfg = transformer_config_for_encoder(
             encoder, belief=args.belief, d_model=args.d_model,
             n_layers=args.n_layers, n_heads=args.n_heads,
+            value_activation=args.value_activation,
         )
         model = TransformerCVPN(cfg)
     else:
-        cfg = config_for_encoder(encoder, belief=args.belief, d_model=args.d_model)
+        cfg = config_for_encoder(encoder, belief=args.belief, d_model=args.d_model,
+                                 value_activation=args.value_activation)
         model = CVPN(cfg)
     has_belief = bool(getattr(model, "has_belief", False))
     config = Config(
         epochs=args.epochs, lr=args.lr, batch_size=args.batch_size,
         seed=args.seed, device=args.device, weight_decay=args.weight_decay,
+        loss=args.loss, awr_beta=args.awr_beta, awr_max_weight=args.awr_max_weight,
+        q_target=args.q_target, q_gamma=args.q_gamma,
+        value_loss=args.value_loss, value_smooth=args.value_smooth,
     )
     history, train_seconds = train(train_store, val_store, model, config, has_belief)
     out = Path(args.out)
