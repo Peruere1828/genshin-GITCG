@@ -1,0 +1,264 @@
+# 2 天高强度实验计划：从 0.46 到「顶过专家 + 修 floor」（含 Kaggle GPU）
+
+> 2026-10-16。排序原则（用户指定）：**效果优先，运行时长次要（上限 ≈2 天）**。
+> 依据：`reports/datafirst_bc.md`、`reports/train/bc_scale_datafirst.md`、`reports/search/a4_search_budget_ladder.md`、PLAN §0 D22–D24。
+> 结论前置：**真正能抬强度的是两件事**——① 在现有语料上引入**非模仿的改进算子**（Q/DMC 或优势重加权）；
+> ② **价值头标定**（它是搜索与 RL 的共同前置）。③ floor 靠**定向数据 + 对手条件化**。
+> 这三件都**不需要新的大算力**，只需要「很多 epoch」——这正是 Kaggle GPU 能廉价买到的。
+
+---
+
+## 1. Kaggle 可用性（已核实）
+
+| 项 | 事实 | 来源 |
+|---|---|---|
+| CLI | 本机 `/home/ubuntuaaa/miniconda3/bin/kaggle` **2.2.4**，账号 `fmyh1828`，`~/.kaggle/kaggle.json` 已配 | 本机实测 |
+| GPU 额度 | `kaggle quota` → **GPU 30.00h 剩余 / 30h，2026-10-17 刷新**（即 2 天内可用 ≈**60h**；TPU 20h） | `kaggle quota` |
+| **T4×2 可脚本指定（解决「要手点网页」）** | `kaggle kernels push --accelerator NvidiaTeslaT4`，或 metadata `"machine_shape": "NvidiaTeslaT4"`（官方文档：`NvidiaTeslaT4` = GPU T4 ×2；另有 `NvidiaL4`、`TpuV5E8`） | kaggle-cli 2.2.4 `--help` + `docs/kernels_metadata.md` |
+| **P100：不要指望** | ① Kaggle 已公告 **2026-09-15 停用 P100**；② 即便出现，Kaggle 现行 torch 只编到 **sm_70+**，P100 是 **sm_60** → 直接不可用（除非自装旧 torch，需联网+时间，不划算） | Kaggle 公告 + `Kaggle/docker-python#1546` |
+| 单会话 | **12h 上限**，`kaggle kernels push -t <秒>` 可控；脚本 kernel 支持（`kernel_type: "script"`） | Kaggle 文档 |
+| 机器 | 4 vCPU / 29 GB RAM / **16 GB 显存 ×2** / `/kaggle/working` 20 GB 自动保存 | Kaggle 文档 |
+| 数据集 | **200 GB/数据集**、**200 GB 私有总量**（旧的 20 GB 说法已过时）；挂载在 `/kaggle/input/<slug>`（只读） | Kaggle 文档 |
+| **网络** | Kaggle 的 **blob 上传端点是 `googleapis.com`**，本机直连超时（实测挂在 0 B/s）；**必须走本地代理**（本机 `127.0.0.1:7890`，实测上传 5–30 MB/s） | 本机实测（`~/.kaggle` 已有凭据；`kaggle datasets list` 直连 OK，上传不 OK） |
+
+**判读：Kaggle 对我们是「免费的 epoch 预算」，不是「免费的对局引擎」。**
+采集/评测/MCCFR 全在 V8/cffi（CPU），Kaggle 只有 4 vCPU（≈1/3 本机）→ **采集与认证留在本地或 WSL**。
+
+### 1.1 训练路径已在本地验证「无引擎可跑」
+
+`scripts/datafirst_bc_train.py` / `datafirst_bc_store.py` **不导入 gitcg**（`weights_only=False` 读 store）。
+实测（本地，模拟 Kaggle 只读输入）：
+
+```bash
+GITCG_DATA_DIR=/tmp/k/data GITCG_REPORTS_DIR=/tmp/k/reports \
+python -m scripts.datafirst_bc_train --store-cache data/store/double_geo_navia.pt \
+  --d-model 64 --epochs 1 --train-limit 512 --val-limit 256 --out /tmp/k/ckpt_smoke.pt --report /tmp/k/reports/smoke.json
+# [load] cache ... train=512 val=256 → epoch 0 → [done] train_seconds=0.2（10s 含 6GB 级 store 载入路径）
+```
+
+两个必须在 bundle 里带上/绕开的点：
+- `envs/decks.py` 顶层 `from gitcg import Deck`（被 `envs.observation.default_encoder()` 间接引用）→ **把 11 MB 的 `gitcg-0.21.0-py3-none-manylinux_2_34_x86_64.whl` 一起传**（`njugit/vendor` 分支已有；也可 Kaggle 联网 `pip install gitcg==0.21.0`）。
+- `agents/scripted/assets.py` 的缓存路径 **不吃** `GITCG_DATA_DIR`，硬编码 `repo_root/data/assets/...`（可用 `GITCG_ASSETS_CACHE` 覆盖）→ bundle 里带上 `data/assets` + `configs/`，或设该环境变量。
+
+---
+
+## 2. 实验设计（效果优先）
+
+### 2.1 四个假设（每条都有独立 A/B 与门禁）
+
+| 假设 | 内容 | 现状证据 | 本次判定门禁 |
+|---|---|---|---|
+| **H1 预算** | 100–200 epoch × 全量语料能继续抬强度 | 5→15 ep 显著 +0.076（D24 明确建议「优先把 epoch 放大到 100–200」） | pooled ≥0.50 且 **floor 违规数明显下降** |
+| **H2 改进算子** | 非模仿目标（**Q/DMC 的 MC 回报** 或 **优势加权 BC**）能**超过同 deck 专家** | BC 天花板＝teacher（最好只打平） | 配对 Δ 的 **CI 下界 ≥ −0.02**（非劣）+ 点估计 >0 |
+| **H3 价值标定** | 价值头标定（分布化/HL-Gauss + `search_value` 目标）→ 搜索 Δ ≥ 0 | 现在根价值区分度 ≈0、搜索 Δ 显著负（D23） | 标定 ECE 显著下降 **且** 搜索配对 Δ ≥ 0 |
+| **H4 floor** | worst-matchup 定向数据 + 对手 archetype 条件化能修长尾 | floor 全 deck FAIL、与数据量无关（结构性） | floor 违规数 **6–20 → ≤5** |
+
+### 2.2 待写代码（都在训练侧，本地可单测）
+
+1. **`Q/DMC` 损失**：同一 CVPN trunk 换成「每个 option 出 Q 值」，目标＝**MC 回报**（episode 结果，可加余量/回合数 shaping）；推理＝`argmax Q`（先验/搜索接口不变）。这是唯一能**选到 teacher 不会选的合法动作**的改进算子（DouZero 蓝本：`refs/AI`）。
+2. **优势加权 BC（AWR/CRR）**：`w = exp(β·(MC 回报 − V(s)))`，clip；`β=0` 精确退化为现 BC（回归测试）。
+3. **价值头标定**：`--value-target {outcome, hlgauss, search_value}`；HL-Gauss 用 101 bins 的交叉熵替代 MSE；`search_value` 已由 S-C 写进 replay（`train.data.collect_search_samples`）。
+4. **对手条件化**：观测追加「对手 archetype token」（对手 3 个角色是**公共信息**）+ 多 deck 单模型（`reports/datafirst_bc.md` §9.4/§9.5 未决）。
+5. **Kaggle 侧胶水**：`kaggle/train_arm.py`（跑 run 列表、`CUDA_VISIBLE_DEVICES` 分卡、**幂等可续**：已存在的 checkpoint 跳过、逐 run 落 `summary.json`）+ `kernel-metadata.json` + `scripts/kaggle_push.sh` / `kaggle_pull.sh`。
+
+---
+
+## 3. 排产（Day 0 / 1 / 2）
+
+### Day 0 — 本地准备（≈4–6h，含后台传输）
+
+| # | 任务 | 产出 | 备注 |
+|---|---|---|---|
+| T0.1 | 打 Kaggle 数据集 `gitcg-train-v1`：repo 代码 tar（不含 data/reports）＋ gitcg wheel（11 MB）＋ `configs/`＋`data/assets`（3.3 MB）＋ store 语料（`store/sa_all.pt` 6.0 G、`store/dfbc_*.pt` 4.6 G，合计 ≈11 GB ≤ 20 GB 上限） | `kaggle datasets create -p bundle` | **先起后台传**，是整条链路最长的一环；若上行太慢，先只传单 deck store（6 G）跑通 |
+| T0.2 | 写 `kaggle/` 胶水（kernel 脚本 + metadata + push/pull） | `kaggle kernels push --accelerator NvidiaTeslaT4` | 私有 kernel；`enable_internet: false`（自给自足） |
+| T0.3 | **CPU kernel 冒烟**（不烧 GPU 额度）：挂载数据 → 装 wheel → 1 epoch → 回写 checkpoint | `kaggle kernels status/output` | 验证路径/权限/numpy-torch 版本兼容（pickle：torch≥2.6 默认 `weights_only=True`，本仓全用 `False`） |
+| T0.4 | 实现 §2.2 的 1–3（训练侧）+ 单测 | `tests/test_offline_rl.py` | β=0 ≡ BC；Q 目标不引入隐藏信息到**输入**（只作标签，符合 §C10） |
+| T0.5 | 启动 **worst-matchup 定向补采**（tmux，后台） | `data/replays/tgt_<deck>_<opp>` | 每 deck 取最差 3–5 套对手 × 200–300 种子；本机 ~4,000 局/h |
+
+### Day 1 — Kaggle 会话 1（≈10–11h，2 卡并行）＋ 本地认证
+
+| 卡 | 跑什么 | 配置 |
+|---|---|---|
+| 0 | **H1 预算轴**：BC d256，同数据同种子，**15 / 50 / 150 epoch** | `store/sa_all.pt` + `dfbc_sa.pt`；batch 512–1024、lr 1e-3→3e-4 cosine、fp16 AMP（T4 有 tensor core）+ `--precollate` |
+| 1 | **H2 改进算子**：AWR β∈{0.5,1,2} × 100 ep；**Q/DMC** × 100 ep；对照＝同 seed 的 BC-100ep | 同上；每个 run 落 checkpoint + `summary.json` |
+| 本地 | 拉回 checkpoint/report → `scripts/eval_protocol --contestant neural:<ckpt> --contestant-deck <deck> --seeds 20 --strict-ci --baseline expert:<deck>`；**只认证每组 top-2** | 800 局/组 ≈ 30–60 min（12 核） |
+| 本地（并行） | 定向补采继续跑 | — |
+
+**门禁 G1**：H1 出 pooled/floor 数字；H2 出「Δ 下界 ≥ −0.02 且点估计 >0」→ 若过，H2 的赢家即刻作为 **H5 自博弈**的种子策略。
+
+### Day 2 — Kaggle 会话 2（2 卡）＋ 本地搜索消融
+
+| 卡 | 跑什么 | 门禁 |
+|---|---|---|
+| 0 | **H3**：三个 value 目标（outcome / HL-Gauss / `search_value`）各训一版 → 出 ECE/AUC；把标定最好的 value 交给本地 fork 搜索（`ForkSearchPolicy` 的 `priors` / `--value-spec`）跑 A4 同协议的配对消融 | **G2**：搜索配对 Δ ≥ 0（否则正式关闭搜索分支，写进 §0） |
+| 1 | **H4**：多 deck 单模型 + 对手 archetype token，训练集＝Day 0 的定向补采 + 现有语料 | **G3**：floor 违规数 ≤5；最差 matchup 净涨 |
+| 本地 | 若 G1 过：**启动自博弈迭代 1**（用 H2 赢家对池 + 自我对弈，~10h/40k 局，`train.collect --teacher-spec neural:<ckpt> --opponent-spec ...`，保留 `expert:` 锚点防漂移） | 阶梯：net₁ vs 上一代/锚点 |
+| Kaggle 尾部 | 自博弈数据到位则训一版（下一周额度仍在） | — |
+
+### 资源账
+
+- Kaggle GPU：Day1 ~11h + Day2 ~11h = **~22h ≤ 60h**（30h/周，10-17 刷新）。
+- 本地 CPU：采集 6–8h、认证 4–6h、实现 4–6h；不与 GPU 抢。
+- 上传：≈11 GB（上行决定，1.5–5h，后台跑）。
+
+---
+
+## 4. 风险与回退
+
+| 风险 | 回退 |
+|---|---|
+| 上传太慢/超 20 GB | 只传单 deck store（6 G）+ 该 deck 的实验先跑；多 deck 语料下一版数据集 |
+| numpy/torch pickle 版本不兼容（本机 numpy 2.4 / torch 2.14+cpu） | 用 compact replay 在 Kaggle 侧**现场重建 store**（`datafirst_bc_store.py`），或改用 `.npy` 落盘 |
+| 12h 会话被砍 | `-t 39600` 提前优雅退出；`train_arm.py` 幂等（已有 checkpoint 跳过）→ 新版本 kernel 续跑 |
+| Q/DMC 数据不足（仅 ~8k 局 / 372k 决策） | 期望值放低（几个 pp）；通过则说明「自博弈采集」值得投，这是本计划最大的分叉点 |
+| 价值标定后搜索仍 Δ<0 | 正式归档搜索分支（写 §0），资源全投 H2+H5 |
+| floor 修不动 | 说明是**表示**问题 → 下一轮押注分层动作头 + belief 作输入特征（§0.1 C10 前提不变） |
+
+---
+
+## 5. 「批准后立刻做的 3 件事」
+
+1. T0.1 起后台传输数据集（11 GB，最长链路先跑）。
+2. T0.2+T0.3 搭 `kaggle/` 胶水并做 **CPU 冒烟**（不消耗 GPU 额度，验证挂载/装包/回写）。
+3. T0.4 实现 Q/DMC + AWR（本地单测），同时 T0.5 起定向补采。
+
+> 说明：以上**不改验收口径**（仍是纯策略、逐 deck、≥20 seeds、strict CI；PLAN §6.3/D24）。只有当某个门禁（G1/G2/G3）真的翻转时，才建议在 PLAN §0 追加决策记录 + 更新 §10 的「下一步」。
+
+---
+
+## 6. 执行记录
+
+### Day 0（2026-10-16）——已完成
+
+| # | 项 | 状态 | 证据/产物 |
+|---|---|---|---|
+| T0.0 | Kaggle 可用性核实 | ✅ | `kaggle` CLI 2.2.4（`~/miniconda3/bin/kaggle`）、账号 `fmyh1828`、GPU 额度 **30h 剩余**（10-17 刷新）；**T4×2 可由 `--accelerator NvidiaTeslaT4` 指定**（不必手点网页）；**P100 停用且 sm_60 与现行 torch 不兼容** |
+| T0.0b | 网络绕行 | ✅ | 上传必须经本地代理 `http://127.0.0.1:7890`（googleapis 直连超时）；已固化进 `scripts/kaggle_{push,pull}.sh`（`KAGGLE_PROXY` 可覆盖） |
+| T0.1 | 数据集 | 🔄 | `fmyh1828/genshin-gitcg-code`（repo tar + gitcg wheel + assets，11.8 MB，**ready**）；`fmyh1828/genshin-gitcg-corpus`（`sa_all.pt` + 4 个 deck store，**11 GB**，上传中） |
+| T0.2 | kernel 胶水 | ✅ | `kaggle/train_arm.py`（幂等、双卡并行、`.part.pt` 原子落盘、`mode.txt` 固定模式、`--max-seconds` 到点收工）、`kaggle/kernel-metadata.json`（script / 私有 / `NvidiaTeslaT4` / 挂两个数据集）、`scripts/kaggle_push.sh`、`scripts/kaggle_pull.sh`、`kaggle/README.md` |
+| T0.3 | 冒烟（本地等价） | ✅ | 用 `GITCG_KAGGLE_{WORK,INPUT,DEVICE}` 在本地复现整套 kernel 流程：解 tar → 解 gitcg wheel → 建合成 store → 4 个 run（ce/awr/q + 真 store 探针）全部 `ok`，checkpoint/report/summary 落盘（`/tmp/opencode/kwork`）。**待推 Kaggle GPU 版复核 torch/numpy 版本与双卡** |
+| T0.4 | 离线 RL 目标 | ✅ | `scripts/train_bc_scale.py` 加 `loss ∈ {ce,awr,q}`（+`awr_beta`/`awr_max_weight`/`q_target`/`q_gamma`）；`scripts/datafirst_bc_train.py` 暴露同名 CLI；`tests/test_offline_rl.py`（β=0 ≡ CE 逐梯度等价、AWR 提高败局里正回报动作的质量、Q 头在「专家走坏手」的状态上反转偏好、折扣回报 `γ^剩余步`）；全量测试 **384 passed** |
+| T0.5 | 定向补采 | 🔄 | `kaggle/grids/run_targeted_collect.sh`（4 deck × 4 长尾对手 × 300 种子 = 4,800 局，`seed-start 1000`）已在 tmux/setsid 后台跑 |
+
+### Day 1（2026-10-16/17）——结果（认证口径：`eval_protocol`，10 seeds，配对，`--strict-ci`）
+
+| run | 训练数据 | epochs | val_acc | pooled | 配对 Δ vs 同 deck 专家 | floor 违规 |
+|---|---|---|---|---|---|---|
+| `orl_bc_e15`（本地 CPU） | 30k | 15 | 0.764 | 0.4763 | −0.033 [−0.090,+0.025] ns | 11/20 |
+| `orl_awr_b1_e15` | 30k | 15 | 0.762 | 0.4750 | −0.034 [−0.092,+0.025] ns | 11/20 |
+| `orl_awr_b2_e15` | 30k | 15 | 0.751 | 0.4713 | −0.038 [−0.096,+0.021] ns | 11/20 |
+| `orl_q_disc_e15` | 30k | 15 | （acc 0.18 无意义） | **0.0675** | **−0.441 [−0.490,−0.392]** | 20/20 |
+| `kg_bc_e15`（Kaggle T4） | **334k（全量）** | 15 | **0.851** | **0.4288** | **−0.080 [−0.131,−0.029] 显著负** | 12/20 |
+| `kg_bc_e50`（Kaggle T4） | 334k | 50 | 0.872 | 0.4688 | −0.040 [−0.091,+0.011] ns | 12/20 |
+| 基线 `expert:superconduct_aggro` | — | — | — | 0.5088 | — | **8/20** |
+
+**判定（H1/H2 全线未过门禁）**：
+
+- **AWR（优势加权 BC）无增益**：三条臂与 BC 在噪声内相同（±0.005），机制指纹也极小（赢局−输局一致率差仅 +0.005，BC 为 −0.004）。
+- **Q/DMC（`--loss q`）灾难性失败**：pooled 0.068。诊断：argmax 分布并不退化（mean_rel_pos 0.43、前五 index 分散），但只监督「被走动作」的 Q 在未走动作上无约束 → 贪心选出让分动作。**在该数据规模/动作空间下（DouZero 式）动作价值不可用**。
+- **模仿保真度 ≠ 强度**：全量 334k 的 15 ep 把一致率从 0.764 抬到 **0.851**，但 pooled 反而从 0.476 **降到 0.429**（显著低于专家）。50 ep 回到 0.469（ns）。→ 「更多数据/更长训练」不单调转化为对池胜率。
+- **floor 是继承性的**：连**专家自己**都有 8/20 对手低于 0.45；我们的网多 3–4 个违规。但**同一张网在个别 matchup 上显著强于老师**（double_geo_navia +0.25、electrocharged_moon +0.20、trial_skirk +0.12）→ **按 matchup/对手条件化**是与门禁对齐的下一杠杆（H4）。
+
+**Kaggle 侧（口径修正）**：上一版 kernel **不是被队列卡死**，而是真跑到 2× Tesla T4 并产出了 checkpoint；`timeout` 来自①我设的**单 run 45 min 上限**（150 ep 需要 ~90 min）②**会话 `-t 7200`（2 h）**。已修正为单 run 4 h / 会话 11 h，重推的 5×150 ep 网格正在跑（GPU 已计 0.41 h）。实测吞吐：全量 334k 样本 **≈36 s/epoch（~9.2k 样本/s）**，仍是 CPU collate 瓶颈（A800 上 precollate 相对它快 39×）→ **`--precollate` 是 Kaggle 上量前必做**。
+
+### Day 1b（2026-10-17）——H3 价值头标定与搜索门禁、H4 混合语料
+
+**H3a 价值头标定**（`scripts/eval_value_calibration.py`，`sa_all.pt` val 8k，`reports/train/value_calibration_*.json`）：
+
+| 价值头 | pred | 实际 score | bias | Brier（skill） | ECE | AUC |
+|---|---|---|---|---|---|---|
+| 30k/15ep · identity+MSE（基线） | 0.577 | 0.480 | +0.097 | 0.1908（0.236） | 0.0972 | 0.807 |
+| 30k/15ep · sigmoid+Brier | 0.598 | 0.480 | +0.118 | 0.1924（0.229） | 0.1180 | 0.811 |
+| 30k/15ep · sigmoid+BCE | 0.622 | 0.480 | +0.142 | 0.1976（0.208） | 0.1419 | 0.815 |
+| 全量 334k/15ep · identity+MSE | 0.494 | 0.480 | +0.014 | 0.1731（0.307） | 0.0569 | 0.825 |
+| **全量 334k/50ep · identity+MSE** | 0.529 | 0.480 | +0.049 | **0.1671（0.330）** | **0.0606** | **0.841** |
+
+结论：**价值头「会排序」**（AUC 0.81–0.84，D23 说的「区分度≈0」指的是 MCCR 根价值，不是这个学习头）；
+**calibration 的杠杆是训练预算，不是损失函数**——proper scoring rule（Brier/BCE）在小预算下反而把乐观偏差放大
+（+0.097→+0.118→+0.142），全量长训才把它压到 ECE 0.061 / bias +0.049。
+
+**H3b 搜索门禁**（A4 同协议：6 对手 × 6 种子 = 72 配对局；`reports/search/h3_*.json`）：
+
+| 档 | 基座 | 前沿价值 | expert（无搜索） | cfr（搜索） | 配对 Δ | 95% CI | 对照 A4 |
+|---|---|---|---|---|---|---|---|
+| i8 d1 c4 ms8 | expert | 全量 50ep（AUC 0.841） | 0.4306 | 0.3889 | −0.0417 | [−0.200,+0.116] | A4 同档 −0.042 |
+| i8 d1 c4 ms8 | 网（base+prior） | 同上 | 0.4167 | 0.3472 | −0.0694 | [−0.226,+0.087] | A4 net 档 ≈ 同号 |
+| i8 d2 c4 ms4 | expert | 同上 | 0.4306 | 0.5278 | +0.0972 | [−0.048,+0.242] | A4 D 档 +0.097（全池复测 −0.114） |
+
+结论：**门禁未过**。d1 档结果与 A4 **逐值相同** → 换价值前沿在 depth-1 不改变选择；d2 档那个 +0.097 是
+A4 已有的噪声级点估计（全池 −0.114），**不是标定带来的增益**。→ 「价值头标定」单独不足以重开搜索；
+D23 另外两条前置（非任意候选裁剪、门控覆盖）仍是缺口。
+
+**H4 混合语料（floor 方向）**：`data/store/mixed_four_decks.pt`（11,200 局 = 4 deck × 20 池 × 80 种子 + 4 个 deck × 4 长尾对手 × 300 种子的定向补采；542k/28.8k 样本）
+→ 单模型 `data/checkpoints/h4_mixed_d256_e15.pt`（200k 样本、15 ep、val_acc 0.682）；逐 deck 认证（4 deck × 20 池 × 10 seeds，配对 vs 各自 expert）在跑。
+
+### Day 2（2026-10-17）——Kaggle 150ep 网格 + H4 结果
+
+**Kaggle 会话（2×T4，4.64 h/30 h 周额度，5/5 ok）**：`sa_bc_d256_e150` 96 min、`sa_awr_b05_e150` 98 min、
+`sa_awr_b1_e150` 96 min、`sa_awr_b2_e150` 98 min、`sa_q_disc_e150` 83 min；全量 334k 样本，checkpoint 已回流
+`data/checkpoints/kaggle/`。终端训练指标：
+
+| run | val_acc | val_q_mse/val_ce | 备注 |
+|---|---|---|---|
+| bc_e150 | 0.8945 | 0.163（value） | — |
+| awr_b05_e150 | 0.8827 | 权重上限 1.72 | — |
+| awr_b1_e150 | 0.8980 | 权重上限 2.87 | — |
+| awr_b2_e150 | 0.8730 | 权重上限 6.04 | — |
+| q_disc_e150 | 0.1871（与老师一致率，无意义） | **0.0609（最好）** | **Q 回归拟合最好、策略最差** → 失败在策略抽取（对未走动作无约束），不是价值拟合 |
+
+**价值头标定（150 ep，`reports/train/value_calibration_kg150.json`）**：`awr_b1_e150` **ECE 0.0274 / bias +0.012 / AUC 0.848**，
+`bc_e150` 0.0449 / +0.031 / 0.845，`q_disc_e150` 0.0353 / +0.017 / 0.843
+→ **训练预算把标定推到 ECE ≈ 0.03（50 ep 时 0.061），D23 的「标定过的价值头」这一条基本达标**；
+但 H3b 已证「标定本身不能让搜索超过不搜索」。
+
+**H4 混合语料单模型逐 deck 认证**（`h4_mixed_d256_e15.pt`，200k 样本/15 ep；10 seeds 配对）：
+
+| deck | pooled | Wilson95 | 同 deck 专家 | 配对 Δ | 95% CI | floor 违规 | merge 门禁 |
+|---|---|---|---|---|---|---|---|
+| superconduct_aggro | 0.5075 | [0.459,0.556] | 0.5088 | −0.0013 | [−0.060,+0.057] | 15 | ✗ |
+| dvalin_bonk | 0.6438 | [0.596,0.689] | 0.6863 | −0.0425 | [−0.092,+0.007] | 10 | ✗ |
+| unyielding_geo | 0.7837 | [0.741,0.821] | 0.7987 | −0.0150 | [−0.060,+0.030] | 6 | ✗ |
+| double_geo_navia | 0.7250 | [0.679,0.766] | 0.6813 | **+0.0437** | [−0.008,+0.096] | 8 | **✓ PASS** |
+
+**首个 merge 门禁 PASS（double_geo_navia，非劣 +0.044）**；四个 deck **全部统计打平或更好**（无显著负），
+且 SA 从单 deck BC 的 0.476/0.429 **升到 0.5075 ≈ 专家 0.5088**（Δ=−0.0013，逐 deck 首次追平专家）。
+**floor 仍全 FAIL**（SA 15 违规 > 专家自己的 8）——长尾 matchup 依旧是唯一未过的门禁。
+
+### Day 2b（2026-10-17）——150ep 全量认证：**四条线全部到顶**
+
+`sa_all.pt`（334k 样本）150 epoch、2×T4，10 seeds 配对认证（`reports/explore/kg150_*.json`）：
+
+| run | val_acc | pooled | 配对 Δ vs 专家(0.5088) | 95% CI | merge |
+|---|---|---|---|---|---|
+| `sa_bc_d256_e150` | 0.8945 | 0.453 | −0.056 | [−0.108,−0.004] | ✗ |
+| `sa_awr_b05_e150` | 0.8827 | 0.431 | −0.077 | [−0.131,−0.024] | ✗ |
+| `sa_awr_b1_e150` | 0.8980 | **0.352** | **−0.156** | [−0.210,−0.103] | ✗ |
+| `sa_awr_b2_e150` | 0.8730 | 0.471 | −0.037 | [−0.091,+0.016] | ✗ |
+| `sa_q_disc_e150` | 0.1871 | 0.275 | −0.234 | [−0.289,−0.179] | ✗ |
+
+（对照：30k/15ep BC 0.476、30k/15ep AWR 0.475、30k/15ep Q 0.068。）
+
+**三条判定**：
+
+1. **模仿保真度与强度脱钩**：val_acc 随预算单调上升 0.764 → 0.851 → **0.895**，pooled 始终停在 0.43–0.48
+   且**从未达到老师 0.509**；最大预算下 BC **显著劣于自己的老师**。
+2. **离线 RL 在长预算下有害**：AWR 15 ep 中性、150 ep **显著负且随 β 单调恶化**（β=1 达 −0.156）；
+   Q 从 0.068（15 ep）升到 0.275（150 ep）仍远低于专家。→ AWR/Q 归档，不作为主线。
+3. **价值标定由预算解决，不由损失函数解决**：ECE 0.097（30k/15ep）→ 0.061（334k/50ep）→ **0.027–0.045**（150ep），
+   AUC 0.807 → 0.848；Brier/BCE 在小预算下反而更差。
+
+**唯一正增益来自数据构成**：H4 混合语料单模型在 4/4 deck 打平或更好（double_geo 首个 merge PASS），
+SA 从单 deck BC 的 0.476/0.429 抬到 **0.5075 = 专家水平**。→ **主线收敛为「扩数据构成 + 按 matchup 攻坚 floor」**。
+
+### 下一步（按序，2026-10-17 修订）
+
+1. **H4 v2（正在跑）**：`mixed_four_decks.pt` 上 4 个 run（BC 50ep / BC 150ep / AWR β=1 100ep / Q 100ep，
+   Kaggle 2×T4，会话 11 h 上限）→ 逐 deck 认证，看**混合语料上预算是否继续抬强度**（v1 只用 200k/15ep 就到平手）。
+2. **floor 专项（新主线）**：靶向数据扩到**每 deck 的 8 个 floor 违规 matchup**（现在只覆盖 4 个长尾对手），
+   并试点「按对手公开阵容条件化」的 mixture-of-experts；门禁＝floor 违规数 ≤ 老师自己的 8。
+3. **搜索分支**：**暂时归档**。D23 三条前置里「标定价值头」已达标（ECE 0.027/AUC 0.848）却仍不能让搜索超过不搜索
+   → 剩余缺口在**候选裁剪/覆盖/目标**，不在价值头；重开需新的机制假设，不再投入预算阶梯。
+4. **AWR / Q(DMC) 归档**：证据为「中性→有害」与「灾难性」，不再排产；保留 `--loss {awr,q}` 作为可复现的负结果。
+5. 工程收口：提交本次代码（`kaggle/`、`scripts/{compare_offline_rl,eval_value_calibration}.py`、训练侧 knob、测试）、
+   报告（`reports/explore/plan_strength_2day_kaggle.md`、`reports/search/h3_*.json`、`reports/train/value_calibration_*.json`）
+   与 checkpoint 清单；`data/` 与 checkpoint 不入库（已有 gitignore）。
