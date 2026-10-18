@@ -82,6 +82,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--value-activation", choices=["identity", "sigmoid"], default="identity",
                    help="value head activation stored in the checkpoint (sigmoid = probability head)")
     p.add_argument("--value-smooth", type=float, default=0.0, help="label smoothing for the value target")
+    p.add_argument("--matchup-weight", choices=["none", "balance", "deficit"], default="none",
+                   help="H5 floor attack: reweight samples by (deck, opponent) group "
+                        "(balance = inverse frequency, deficit = boost matchups below --matchup-floor)")
+    p.add_argument("--matchup-weight-strength", type=float, default=1.0)
+    p.add_argument("--matchup-floor", type=float, default=0.45)
     p.add_argument("--threads", type=int, default=None, help="torch CPU threads")
     p.add_argument("--out", required=True)
     p.add_argument("--report", default=None)
@@ -121,6 +126,9 @@ def main(argv: list[str] | None = None) -> int:
         loss=args.loss, awr_beta=args.awr_beta, awr_max_weight=args.awr_max_weight,
         q_target=args.q_target, q_gamma=args.q_gamma,
         value_loss=args.value_loss, value_smooth=args.value_smooth,
+        matchup_weight=args.matchup_weight,
+        matchup_weight_strength=args.matchup_weight_strength,
+        matchup_floor=args.matchup_floor,
     )
     history, train_seconds = train(train_store, val_store, model, config, has_belief)
     out = Path(args.out)

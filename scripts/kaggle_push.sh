@@ -27,13 +27,18 @@ PROBE="${PROBE:-0}"                  # 1 = push the CPU env-probe kernel instead
 export HTTPS_PROXY="$PROXY" HTTP_PROXY="$PROXY" NO_PROXY="127.0.0.1,localhost"
 
 cd "$REPO"
+if [ "$KAGGLE_MODE" != "auto" ]; then
+  REFRESH_CODE=1   # the mode ships inside the code dataset (see train_arm.resolve_pinned_mode)
+fi
+echo "$KAGGLE_MODE" > build/kaggle/bundle-code/mode.txt
 if [ "$REFRESH_CODE" = "1" ]; then
-  echo "[push] refreshing code dataset $CODE_DS"
+  echo "[push] refreshing code dataset $CODE_DS (mode=$KAGGLE_MODE)"
   tar czf build/kaggle/bundle-code/gitcg-code.tar.gz \
     --exclude='__pycache__' --exclude='*.pyc' --exclude='*.pt' --exclude='.pytest_cache' \
     PLAN.md AGENTS.md README.md NOTICE.md LICENSE pyproject.toml \
     common reps envs train scripts agents eval coach decklab npc configs tests web kaggle \
-    data/assets/README.md data/assets/expert_system_assets_chs_latest.json
+    data/assets/README.md data/assets/expert_system_assets_chs_latest.json \
+    -C build/kaggle/bundle-code mode.txt
   if "$KAGGLE_BIN" datasets status "$CODE_DS" >/dev/null 2>&1; then
     "$KAGGLE_BIN" datasets version -p build/kaggle/bundle-code -r skip \
       -m "commit $(git rev-parse --short HEAD)"

@@ -250,8 +250,31 @@ D23 另外两条前置（非任意候选裁剪、门控覆盖）仍是缺口。
 **唯一正增益来自数据构成**：H4 混合语料单模型在 4/4 deck 打平或更好（double_geo 首个 merge PASS），
 SA 从单 deck BC 的 0.476/0.429 抬到 **0.5075 = 专家水平**。→ **主线收敛为「扩数据构成 + 按 matchup 攻坚 floor」**。
 
-### 下一步（按序，2026-10-17 修订）
+### 2026-10-18 —— floor 门禁的统计功率与 H5
 
+**floor 的统计功率（测量口径）**：`--strict-ci` 的 floor 用「Wilson 下界 ≥ 0.45」，而 10 seeds = 每 matchup 20 局。
+数值扫描（`Wilson 下界 = 0.45` 反解）：
+
+| 每 matchup 局数 | 20 | 40 | 60 | 100 |
+|---|---|---|---|---|
+| 过关所需真实胜率 | **0.668** | 0.604 | 0.576 | 0.548 |
+
+即 10 seeds 下 floor 实际是「**每 matchup ≥ 67%**」的挑战级指标（D24「floor 全 FAIL」由此得到解释）。
+**攻坚口径改用「rate < 0.45 的 matchup 数」**（H4 模型：SA 9、dvalin 3、unyielding 1、double_geo 1），
+严格 Wilson 口径留作拉伸目标；两者分列报告，避免把统计功率不足误读成策略崩。
+
+**H5 matchup 重加权**（`--matchup-weight {balance,deficit}`，`tests/test_matchup_weights.py`）：
+按 `(deck, opponent)` 分组，`balance` 反频率、`deficit` 只抬「数据本身胜率 < floor」的 matchup
+（权重 `1+strength·(floor−rate)`，归一化均值 1；`none` 与历史 BC 损失逐值相同）。
+实测权重范围 0.84–1.22（多数 matchup 已在 0.45 以上，效应温和）。正在跑 `h5_mixed_deficit_e15`（混合语料 200k/15ep）
++ SA/dvalin 认证，并跑 **跨 deck 迁移对照**（SA-only 同预算 200k/15ep）判定 H4 的 +0.03 是「跨 deck 数据」还是「更多数据」。
+
+**语料广度（新主线）**：`kaggle/grids/run_corpus_all_decks.sh` 补齐其余 16 deck × 20 池 × 80 种子（≈25,600 局 compact），
+目标「单模型打全部 20 deck」（Web/decklab 也需要）。依据：目前唯一实测正增益来自数据构成/跨 deck 迁移。
+靶向补采第 2 轮同时进行（`run_targeted_collect_round2.sh`：shenhe_double_swirl / double_geo_navia /
+superconduct_mika_attack / dvalin_bonk / yelan_clorinde_ororon，seed 2000+）。
+
+### 下一步（按序，2026-10-17 修订）
 1. **H4 v2（正在跑）**：`mixed_four_decks.pt` 上 4 个 run（BC 50ep / BC 150ep / AWR β=1 100ep / Q 100ep，
    Kaggle 2×T4，会话 11 h 上限）→ 逐 deck 认证，看**混合语料上预算是否继续抬强度**（v1 只用 200k/15ep 就到平手）。
 2. **floor 专项（新主线）**：靶向数据扩到**每 deck 的 8 个 floor 违规 matchup**（现在只覆盖 4 个长尾对手），

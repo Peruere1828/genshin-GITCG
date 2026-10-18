@@ -388,6 +388,29 @@ def probe_environment() -> dict:
     return info
 
 
+def resolve_pinned_mode() -> str | None:
+    """The mode pinned by the push script, wherever it can be found.
+
+    Kaggle script kernels run *only* the code file (other files in the pushed folder
+    are not next to ``__file__`` at runtime — verified 2026-10-18: a mode.txt beside
+    the script silently fell back to ``auto``), so the mode ships with the *code
+    dataset* instead: ``<repo>/mode.txt`` after extraction, or ``<code ds>/mode.txt``.
+    """
+    candidates = [REPO / "mode.txt", CODE_DS / "mode.txt"]
+    if CODE_DS.exists():
+        candidates.extend(sorted(p for p in CODE_DS.glob("*/mode.txt")))
+    candidates.append(Path(__file__).parent / "mode.txt")  # local dry-runs
+    for path in candidates:
+        try:
+            if path.is_file():
+                text = path.read_text(encoding="utf-8").strip().splitlines()[0].strip()
+                if text in ("probe", "smoke", "runs", "h4"):
+                    return text
+        except Exception:  # noqa: BLE001 - a broken mode file must not kill the run
+            continue
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=["auto", "probe", "smoke", "runs", "h4"], default="auto",
@@ -406,15 +429,11 @@ def main(argv: list[str] | None = None) -> int:
     stores = link_stores()
     mode = args.mode
     if mode == "auto":
-        # Kaggle script kernels run with no argv, so the pushed folder may pin the
-        # mode in mode.txt (written by scripts/kaggle_push.sh); otherwise infer it.
-        pinned = Path(__file__).parent / "mode.txt"
-        if pinned.exists():
-            text = pinned.read_text(encoding="utf-8").strip()
-            if text in ("probe", "smoke", "runs", "h4"):
-                mode = text
-                print(f"[mode] pinned by mode.txt -> {mode}", flush=True)
-        if mode == "auto":
+        pinned = resolve_pinned_mode()
+        if pinned:
+            mode = pinned
+            print(f"[mode] pinned -> {mode}", flush=True)
+        else:
             mode = "runs" if stores else "smoke"
             print(f"[mode] auto -> {mode} (corpus stores: {len(stores)})", flush=True)
     if mode == "probe":

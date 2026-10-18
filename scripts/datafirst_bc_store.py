@@ -77,17 +77,28 @@ def load_store_any(
     val_every: int,
     device: str = "cpu",
     progress_every: int = 500,
+    min_outcome: float | None = None,
 ) -> tuple[Store, Store, dict]:
-    """Stream replay dirs (jsonl and/or compact) into compact train/val stores."""
+    """Stream replay dirs (jsonl and/or compact) into compact train/val stores.
+
+    ``min_outcome`` keeps only games whose trainee-side episode score is at least
+    that value (1.0 = wins only). That is the cheap "filtered self-play" step of the
+    expert-iteration loop: BC on the wins of the current policy's own games.
+    """
     empty = lambda: Store([], [], [], [], [], [], [], [], [], [], [])
     train, val = empty(), empty()
-    n_games = n_skipped = n_dup = n_events = 0
+    n_games = n_skipped = n_dup = n_events = n_filtered = 0
     seen: set[tuple[str, str, int]] = set()
     t0 = time.perf_counter()
     for record in _iter_replay_records(replay_dirs):
         if record.get("error"):
             n_skipped += 1
             continue
+        if min_outcome is not None:
+            samples = record.get("samples") or ()
+            if not samples or float(samples[0].get("value_target", 0.0)) < min_outcome:
+                n_filtered += 1
+                continue
         key = _game_key(record)
         if key in seen:
             n_dup += 1
@@ -139,6 +150,8 @@ def load_store_any(
         "skipped_games": n_skipped,
         "duplicate_games": n_dup,
         "events": n_events,
+        "filtered_games": n_filtered,
+        "min_outcome": min_outcome,
         "train_samples": len(train),
         "val_samples": len(val),
         "load_seconds": round(time.perf_counter() - t0, 1),
@@ -156,6 +169,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--val-every", type=int, default=10, help="every Nth seed -> val (0=no val)")
     p.add_argument("--device", default="cpu")
     p.add_argument("--report", default=None)
+    p.add_argument("--min-outcome", type=float, default=None,
+                   help="keep only games the trainee scored >= this (1.0 = wins only; filtered self-play)")
     return p
 
 
@@ -166,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         seed_start=args.seed_start,
         val_every=args.val_every,
         device=args.device,
+        min_outcome=args.min_outcome,
     )
     cache = Path(args.store_cache)
     ensure_dir(cache.parent)

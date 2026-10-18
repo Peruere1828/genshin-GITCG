@@ -305,6 +305,59 @@ def _reorder(store: Store, order: Sequence[int]) -> None:
         setattr(store, field, [seq[i] for i in order])
 
 
+def matchup_weights_for_store(store: Store, *, mode: str, strength: float = 1.0,
+                              floor: float = 0.45) -> list[float] | None:
+    """Per-sample weights that rebalance matchups (H5, floor attack).
+
+    Groups are ``(deck, opponent)`` — everything in the key but the step index — and
+    the group's own win rate comes from the stored episode scores. ``None`` means
+    "unweighted" so callers can skip the multiply entirely (the default path stays
+    byte-for-byte the historical BC loss).
+
+    ``balance`` uses inverse frequency: a matchup with n samples gets weight
+    ``mean(n) / n``, so a corpus where the targeted worst matchups carry 4x the
+    games does not simply drown the other matchups (and vice versa).
+    ``deficit`` is evidence-driven: only groups below the M4 floor get boosted,
+    proportionally to how far below they are.
+    """
+    if mode in ("none", "", None):
+        return None
+    groups: dict[Any, list[int]] = {}
+    scores: dict[Any, list[float]] = {}
+    for i, key in enumerate(store.keys):
+        group = tuple(key[:-1])
+        groups.setdefault(group, []).append(i)
+        scores.setdefault(group, []).append(float(store.value[i]))
+    counts = {g: len(idx) for g, idx in groups.items()}
+    if not counts:
+        return None
+    if mode == "balance":
+        target = sum(counts.values()) / len(counts)
+        group_weight = {g: target / n for g, n in counts.items()}
+    elif mode == "deficit":
+        group_weight = {}
+        for group, idx in groups.items():
+            rate = sum(scores[group]) / len(idx)
+            group_weight[group] = 1.0 + strength * max(0.0, floor - rate)
+    else:
+        raise ValueError(f"unknown matchup_weight mode: {mode!r}")
+    weights = [0.0] * len(store.keys)
+    for group, idx in groups.items():
+        for i in idx:
+            weights[i] = group_weight[group]
+    mean = sum(weights) / len(weights)
+    return [w / mean for w in weights] if mean > 0 else None
+
+
+def _apply_sample_weights(loss_per_sample: torch.Tensor, index: Sequence[int],
+                          sample_weights: Sequence[float] | None) -> torch.Tensor:
+    if sample_weights is None:
+        return loss_per_sample.mean()
+    w = torch.tensor([float(sample_weights[i]) for i in index],
+                     dtype=loss_per_sample.dtype, device=loss_per_sample.device)
+    return (w * loss_per_sample).mean()
+
+
 def _game_last_steps(store: Store) -> dict[tuple[Any, ...], int]:
     """Highest ``step_index`` seen per game (used for discounted MC returns).
 
@@ -422,7 +475,7 @@ def _value_loss(value: torch.Tensor, targets: torch.Tensor, config, model) -> to
 
 
 def run_batch(model, store, index, device, value_coef, belief_coef, has_belief,
-              config=None, q_scale=None):
+              config=None, q_scale=None, sample_weights=None):
     tokens, token_mask, options, option_mask, teacher, values = _collate(store, index, device)
     if has_belief:
         logits, value, belief = model.forward_all(tokens, token_mask, options, option_mask)
@@ -451,7 +504,9 @@ def run_batch(model, store, index, device, value_coef, belief_coef, has_belief,
             extra["w_mean"] = float(weights.mean().item())
             extra["w_max"] = float(weights.max().item())
         elif loss_kind == "ce":
-            policy_loss = raw.mean()
+            # H5: optional matchup reweighting; ``sample_weights=None`` reproduces
+            # the historical plain CE mean exactly.
+            policy_loss = _apply_sample_weights(raw, index, sample_weights)
         else:
             raise ValueError(f"unknown loss kind: {loss_kind!r}")
     mse = _value_loss(value, values, config, model)
@@ -464,7 +519,7 @@ def run_batch(model, store, index, device, value_coef, belief_coef, has_belief,
 
 
 @torch.no_grad()
-def evaluate(model, store, config, device, has_belief, q_scale=None):
+def evaluate(model, store, config, device, has_belief, q_scale=None, sample_weights=None):
     model.eval()
     if len(store) == 0:
         return {"ce": 0.0, "value": 0.0, "belief": 0.0, "acc": 0.0, "n": 0}
@@ -473,7 +528,7 @@ def evaluate(model, store, config, device, has_belief, q_scale=None):
     for start in range(0, n, config.batch_size):
         index = list(range(start, min(start + config.batch_size, n)))
         _, info = run_batch(model, store, index, device, config.value_coef,
-                            config.belief_coef, has_belief, config, q_scale)
+                            config.belief_coef, has_belief, config, q_scale, sample_weights)
         for key, val in info.items():
             agg[key] = agg.get(key, 0.0) + float(val) * len(index)
     for key in agg:
@@ -515,6 +570,16 @@ class Config:
     # also fights the optimistic bias a plain MSE head develops.
     value_loss: str = "mse"
     value_smooth: float = 0.0
+    # --- H5 matchup weighting (floor attack) ----------------------------------
+    # "none"  = every sample counts once (default);
+    # "balance" = inverse-frequency across (deck, opponent) groups, so a deck that
+    #             was collected 80 seeds × 20 opponents counts each matchup equally;
+    # "deficit" = upweight groups whose own episode win rate is below ``floor``
+    #             (weight = 1 + strength * (floor - rate)), i.e. mine the matchups
+    #             the current data loses. Weights are normalised to mean 1.
+    matchup_weight: str = "none"
+    matchup_weight_strength: float = 1.0
+    matchup_floor: float = 0.45
 
 
 def train(train_store: Store, val_store: Store, model, config: Config, has_belief: bool):
@@ -531,6 +596,13 @@ def train(train_store: Store, val_store: Store, model, config: Config, has_belie
         q_scale_for_store(val_store, target=config.q_target, gamma=config.q_gamma)
         if config.loss == "q" and val_store is not None and len(val_store) else None
     )
+    sample_weights = matchup_weights_for_store(
+        train_store, mode=config.matchup_weight,
+        strength=config.matchup_weight_strength, floor=config.matchup_floor,
+    )
+    if sample_weights is not None:
+        print(f"[train] matchup weighting: {config.matchup_weight} "
+              f"(mean 1.0, min {min(sample_weights):.3f}, max {max(sample_weights):.3f})", flush=True)
     order0 = list(range(n))
     import random as _random
 
@@ -547,7 +619,7 @@ def train(train_store: Store, val_store: Store, model, config: Config, has_belie
             if not index:
                 continue
             opt.zero_grad(set_to_none=True)
-            loss, info = run_batch(model, train_store, index, config.device, config.value_coef, config.belief_coef, has_belief, config, q_scale)
+            loss, info = run_batch(model, train_store, index, config.device, config.value_coef, config.belief_coef, has_belief, config, q_scale, sample_weights)
             loss.backward()
             opt.step()
             agg["loss"] += float(loss.item())
