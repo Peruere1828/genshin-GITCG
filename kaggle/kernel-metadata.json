@@ -10,7 +10,8 @@
   "machine_shape": "NvidiaTeslaT4",
   "dataset_sources": [
     "fmyh1828/genshin-gitcg-code",
-    "fmyh1828/genshin-gitcg-corpus"
+    "fmyh1828/genshin-gitcg-corpus",
+    "fmyh1828/genshin-gitcg-corpus-alld"
   ],
   "competition_sources": [],
   "kernel_sources": [],
