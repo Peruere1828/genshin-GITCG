@@ -124,9 +124,10 @@ H4_RUNS = [
 # 707k samples, 12 GB store). The store does not fit twice in Kaggle's 29 GB RAM, so the
 # push pins workers=1 in mode.txt and the session runs one arm at a time.
 ALL_DECKS_RUNS = [
-    {"name": "alld_bc_d256_e150", "store": "all_decks_40s.pt", "loss": "ce", "epochs": 150},
-    {"name": "alld_bc_d256_e50", "store": "all_decks_40s.pt", "loss": "ce", "epochs": 50},
-    {"name": "alld_transformer_e80", "store": "all_decks_40s.pt", "loss": "ce", "epochs": 80,
+    # 2026-10-19 session 7: the 4-layer transformer was cut by the 4 h per-run cap at
+    # epoch 43 (val_acc 0.7371) — already better than the mean-pool CVPN's 150-epoch
+    # 0.6932 — so re-run it with an epoch budget that fits the cap.
+    {"name": "alld_transformer_e60", "store": "all_decks_40s.pt", "loss": "ce", "epochs": 60,
      "arch": "transformer", "n_layers": 4, "n_heads": 8},
 ]
 
@@ -206,7 +207,12 @@ def prepare_pylibs() -> None:
 
 
 def link_stores() -> list[str]:
-    """Expose the corpus stores under ``repo/data/store`` (staged to local scratch).
+    """Expose every mounted corpus store under ``repo/data/store`` (staged to scratch).
+
+    Kaggle mounts datasets under *different* roots for different datasets in the same
+    session (verified 2026-10-19: the code dataset under ``/kaggle/input/datasets/
+    <owner>/<slug>`` while a freshly attached one sat at ``/kaggle/input/<slug>``), so
+    this scans the whole input tree instead of assuming one layout.
 
     The mount is read-only and network-backed, so each store is copied once per
     session into :data:`SCRATCH` and the in-repo path becomes a symlink to the copy
@@ -215,23 +221,27 @@ def link_stores() -> list[str]:
     store_dir = REPO / "data" / "store"
     store_dir.mkdir(parents=True, exist_ok=True)
     found: list[str] = []
-    if CORPUS_DS.exists():
-        for pt in sorted(CORPUS_DS.rglob("*.pt")):
-            dst = store_dir / pt.name
-            if not dst.exists():
-                staged = SCRATCH / pt.name
-                try:
-                    if not staged.exists():
-                        SCRATCH.mkdir(parents=True, exist_ok=True)
-                        t0 = time.time()
-                        shutil.copy2(pt, staged)
-                        print(f"[setup] staged {pt.name} ({pt.stat().st_size / 1e9:.2f} GB) "
-                              f"in {time.time() - t0:.0f}s", flush=True)
-                    os.symlink(staged, dst)
-                except Exception as exc:  # noqa: BLE001 - fall back to the mount
-                    print(f"[setup] staging {pt.name} failed ({exc}); symlinking the mount", flush=True)
-                    os.symlink(pt, dst)
-            found.append(pt.name)
+    mounts = sorted(INPUT.rglob("*.pt")) if INPUT.exists() else []
+    seen: set[str] = set()
+    for pt in mounts:
+        if pt.name in seen:
+            continue
+        seen.add(pt.name)
+        dst = store_dir / pt.name
+        if not dst.exists():
+            staged = SCRATCH / pt.name
+            try:
+                if not staged.exists():
+                    SCRATCH.mkdir(parents=True, exist_ok=True)
+                    t0 = time.time()
+                    shutil.copy2(pt, staged)
+                    print(f"[setup] staged {pt.name} ({pt.stat().st_size / 1e9:.2f} GB) "
+                          f"in {time.time() - t0:.0f}s", flush=True)
+                os.symlink(staged, dst)
+            except Exception as exc:  # noqa: BLE001 - fall back to the mount
+                print(f"[setup] staging {pt.name} failed ({exc}); symlinking the mount", flush=True)
+                os.symlink(pt, dst)
+        found.append(pt.name)
     print(f"[setup] corpus stores: {found or 'none (smoke mode only)'}", flush=True)
     return found
 
