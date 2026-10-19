@@ -302,14 +302,14 @@ superconduct_mika_attack / dvalin_bonk / yelan_clorinde_ororon，seed 2000+）�
 **当前唯一被验证的强度路线**：混合/跨 deck 语料 + 大预算（dvalin +7.1pp；SA 打平）。
 所有「非模仿改进算子」（AWR / Q-DMC / 搜索 / 胜局筛选 / matchup 重加权）全部中性或有害。
 
-### 下一步（按序，2026-10-17 修订）
-1. **H4 v2（正在跑）**：`mixed_four_decks.pt` 上 4 个 run（BC 50ep / BC 150ep / AWR β=1 100ep / Q 100ep，
-   Kaggle 2×T4，会话 11 h 上限）→ 逐 deck 认证，看**混合语料上预算是否继续抬强度**（v1 只用 200k/15ep 就到平手）。
-2. **floor 专项（新主线）**：靶向数据扩到**每 deck 的 8 个 floor 违规 matchup**（现在只覆盖 4 个长尾对手），
-   并试点「按对手公开阵容条件化」的 mixture-of-experts；门禁＝floor 违规数 ≤ 老师自己的 8。
-3. **搜索分支**：**暂时归档**。D23 三条前置里「标定价值头」已达标（ECE 0.027/AUC 0.848）却仍不能让搜索超过不搜索
-   → 剩余缺口在**候选裁剪/覆盖/目标**，不在价值头；重开需新的机制假设，不再投入预算阶梯。
-4. **AWR / Q(DMC) 归档**：证据为「中性→有害」与「灾难性」，不再排产；保留 `--loss {awr,q}` 作为可复现的负结果。
-5. 工程收口：提交本次代码（`kaggle/`、`scripts/{compare_offline_rl,eval_value_calibration}.py`、训练侧 knob、测试）、
-   报告（`reports/explore/plan_strength_2day_kaggle.md`、`reports/search/h3_*.json`、`reports/train/value_calibration_*.json`）
-   与 checkpoint 清单；`data/` 与 checkpoint 不入库（已有 gitignore）。
+### 下一步（2026-10-19 修订）
+
+1. **all-deck 单模型（Kaggle 会话 5，正在跑）**：`all_decks_40s.pt`（20 deck × 20 池 × 40 种子，707k 样本）上
+   BC 150ep / 50ep + 4 层 transformer 80ep（`workers=1` 串行）；产物回流后逐 deck 认证（先 4 个已知 deck，再抽 4 个）。
+2. **铺开已验证配方**：H4 v2 配方（混合 542k + 150ep）在 dvalin 上 +0.071；在 unyielding / double_geo 上复现中
+   （本地正在认证 unyielding），并做 4-deck × 150ep 与 v1 的对照。
+3. **语料构成继续扩（低优先）**：全 deck 语料下一版可混入自博弈对局（8,000 局已有）与 round-2 靶向（5,000 局）；
+   注意自博弈**筛选**路线已否，仅作混入数据才可能有用（未验证）。
+4. **明确归档**：AWR / Q(DMC) / 搜索-as-teacher / 胜局筛选 / matchup 重加权 —— 全部中性或显著负，不再排产；
+   保留 CLI 与报告作为可复现负结果。
+5. **工程收口**：代码/报告已提交至 `9c43095`/`f0a9801`；`data/` 与 checkpoint 不入库（既有 gitignore）。
