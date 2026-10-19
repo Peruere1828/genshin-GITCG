@@ -124,11 +124,18 @@ H4_RUNS = [
 # 707k samples, 12 GB store). The store does not fit twice in Kaggle's 29 GB RAM, so the
 # push pins workers=1 in mode.txt and the session runs one arm at a time.
 ALL_DECKS_RUNS = [
-    # 2026-10-19 session 7: the 4-layer transformer was cut by the 4 h per-run cap at
-    # epoch 43 (val_acc 0.7371) — already better than the mean-pool CVPN's 150-epoch
-    # 0.6932 — so re-run it with an epoch budget that fits the cap.
+    # 2026-10-19 session 7: two follow-ups to the 20-deck model's collapse
+    # (per-deck Δ: SA -0.225, dvalin -0.200, ungeo -0.001, dgeo -0.096), separating
+    # "capacity" from "games per matchup":
+    #  (a) the 4-layer transformer was cut by the 4 h cap at epoch 43 with val_acc
+    #      0.7371 (already above the mean-pool CVPN's 150-epoch 0.6932) -> rerun it
+    #      with an epoch budget that fits;
+    #  (b) the same 4-deck corpus restricted to 40 seeds per matchup (same density as
+    #      the all-deck store) -> if it also collapses, the problem is data density,
+    #      not the number of decks.
     {"name": "alld_transformer_e60", "store": "all_decks_40s.pt", "loss": "ce", "epochs": 60,
      "arch": "transformer", "n_layers": 4, "n_heads": 8},
+    {"name": "ctrl_4deck_40s_e150", "store": "mixed_4deck_40s.pt", "loss": "ce", "epochs": 150},
 ]
 
 SMOKE_RUNS = [
