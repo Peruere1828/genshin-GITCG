@@ -78,12 +78,15 @@ def load_store_any(
     device: str = "cpu",
     progress_every: int = 500,
     min_outcome: float | None = None,
+    max_seed: int | None = None,
 ) -> tuple[Store, Store, dict]:
     """Stream replay dirs (jsonl and/or compact) into compact train/val stores.
 
     ``min_outcome`` keeps only games whose trainee-side episode score is at least
     that value (1.0 = wins only). That is the cheap "filtered self-play" step of the
     expert-iteration loop: BC on the wins of the current policy's own games.
+    ``max_seed`` keeps only games whose seed is below it — the balanced way to size a
+    multi-deck store (every deck/opponent contributes the same seed window).
     """
     empty = lambda: Store([], [], [], [], [], [], [], [], [], [], [])
     train, val = empty(), empty()
@@ -93,6 +96,9 @@ def load_store_any(
     for record in _iter_replay_records(replay_dirs):
         if record.get("error"):
             n_skipped += 1
+            continue
+        if max_seed is not None and int(record.get("seed", 0)) >= max_seed:
+            n_filtered += 1
             continue
         if min_outcome is not None:
             samples = record.get("samples") or ()
@@ -152,6 +158,7 @@ def load_store_any(
         "events": n_events,
         "filtered_games": n_filtered,
         "min_outcome": min_outcome,
+        "max_seed": max_seed,
         "train_samples": len(train),
         "val_samples": len(val),
         "load_seconds": round(time.perf_counter() - t0, 1),
@@ -171,6 +178,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--report", default=None)
     p.add_argument("--min-outcome", type=float, default=None,
                    help="keep only games the trainee scored >= this (1.0 = wins only; filtered self-play)")
+    p.add_argument("--max-seed", type=int, default=None,
+                   help="keep only games with seed < this (balanced sizing for multi-deck stores)")
     return p
 
 
@@ -182,6 +191,7 @@ def main(argv: list[str] | None = None) -> int:
         val_every=args.val_every,
         device=args.device,
         min_outcome=args.min_outcome,
+        max_seed=args.max_seed,
     )
     cache = Path(args.store_cache)
     ensure_dir(cache.parent)

@@ -30,7 +30,7 @@ cd "$REPO"
 if [ "$KAGGLE_MODE" != "auto" ]; then
   REFRESH_CODE=1   # the mode ships inside the code dataset (see train_arm.resolve_pinned_mode)
 fi
-echo "$KAGGLE_MODE" > build/kaggle/bundle-code/mode.txt
+{ echo "$KAGGLE_MODE"; [ -n "${KAGGLE_WORKERS:-}" ] && echo "workers=$KAGGLE_WORKERS"; } > build/kaggle/bundle-code/mode.txt
 if [ "$REFRESH_CODE" = "1" ]; then
   echo "[push] refreshing code dataset $CODE_DS (mode=$KAGGLE_MODE)"
   tar czf build/kaggle/bundle-code/gitcg-code.tar.gz \

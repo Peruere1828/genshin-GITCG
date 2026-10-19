@@ -120,6 +120,16 @@ H4_RUNS = [
     {"name": "h4m_q_disc_e100", "store": "mixed_four_decks.pt", "loss": "q", "q_target": "discount", "epochs": 100},
 ]
 
+# All 20 scripted decks in ONE model (20 decks x 20 opponents x 40 seeds = 15,200 games,
+# 707k samples, 12 GB store). The store does not fit twice in Kaggle's 29 GB RAM, so the
+# push pins workers=1 in mode.txt and the session runs one arm at a time.
+ALL_DECKS_RUNS = [
+    {"name": "alld_bc_d256_e150", "store": "all_decks_40s.pt", "loss": "ce", "epochs": 150},
+    {"name": "alld_bc_d256_e50", "store": "all_decks_40s.pt", "loss": "ce", "epochs": 50},
+    {"name": "alld_transformer_e80", "store": "all_decks_40s.pt", "loss": "ce", "epochs": 80,
+     "arch": "transformer", "n_layers": 4, "n_heads": 8},
+]
+
 SMOKE_RUNS = [
     {"name": "smoke_ce", "store": "smoke.pt", "loss": "ce", "epochs": 2, "d_model": 64, "train_limit": 512},
     {"name": "smoke_awr", "store": "smoke.pt", "loss": "awr", "awr_beta": 1.0, "epochs": 2, "d_model": 64, "train_limit": 512},
@@ -388,13 +398,14 @@ def probe_environment() -> dict:
     return info
 
 
-def resolve_pinned_mode() -> str | None:
-    """The mode pinned by the push script, wherever it can be found.
+def resolve_pinned_mode() -> tuple[str | None, dict[str, str]]:
+    """The mode (and any ``key=value`` overrides) pinned by the push script.
 
     Kaggle script kernels run *only* the code file (other files in the pushed folder
     are not next to ``__file__`` at runtime — verified 2026-10-18: a mode.txt beside
     the script silently fell back to ``auto``), so the mode ships with the *code
     dataset* instead: ``<repo>/mode.txt`` after extraction, or ``<code ds>/mode.txt``.
+    Recognised lines: ``<mode>`` first, then ``workers=N`` / ``max-seconds=N``.
     """
     candidates = [REPO / "mode.txt", CODE_DS / "mode.txt"]
     if CODE_DS.exists():
@@ -402,20 +413,31 @@ def resolve_pinned_mode() -> str | None:
     candidates.append(Path(__file__).parent / "mode.txt")  # local dry-runs
     for path in candidates:
         try:
-            if path.is_file():
-                text = path.read_text(encoding="utf-8").strip().splitlines()[0].strip()
-                if text in ("probe", "smoke", "runs", "h4"):
-                    return text
+            if not path.is_file():
+                continue
+            lines = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
         except Exception:  # noqa: BLE001 - a broken mode file must not kill the run
             continue
-    return None
+        if not lines:
+            continue
+        mode = lines[0]
+        if mode not in ("probe", "smoke", "runs", "h4", "alld"):
+            continue
+        overrides: dict[str, str] = {}
+        for line in lines[1:]:
+            key, _, value = line.partition("=")
+            overrides[key.strip()] = value.strip()
+        return mode, overrides
+    return None, {}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=["auto", "probe", "smoke", "runs", "h4"], default="auto",
+    parser.add_argument("--mode", choices=["auto", "probe", "smoke", "runs", "h4", "alld"], default="auto",
                         help="auto = the real grid when the corpus dataset is mounted, "
                              "otherwise the tiny smoke grid (Kaggle script kernels run with no argv)")
+    parser.add_argument("--workers", type=int, default=None,
+                        help="parallel training workers (default: one per GPU; memory-heavy stores want 1)")
     parser.add_argument("--runs-json", default=os.environ.get("GITCG_RUNS_JSON"))
     parser.add_argument("--max-seconds", type=int,
                         default=int(os.environ.get("GITCG_MAX_SECONDS", 37800)),
@@ -428,14 +450,19 @@ def main(argv: list[str] | None = None) -> int:
     prepare_pylibs()
     stores = link_stores()
     mode = args.mode
+    overrides: dict[str, str] = {}
     if mode == "auto":
-        pinned = resolve_pinned_mode()
+        pinned, overrides = resolve_pinned_mode()
         if pinned:
             mode = pinned
-            print(f"[mode] pinned -> {mode}", flush=True)
+            print(f"[mode] pinned -> {mode} {overrides or ''}", flush=True)
         else:
             mode = "runs" if stores else "smoke"
             print(f"[mode] auto -> {mode} (corpus stores: {len(stores)})", flush=True)
+    if args.workers is None and overrides.get("workers"):
+        args.workers = int(overrides["workers"])
+    if overrides.get("max-seconds"):
+        args.max_seconds = int(overrides["max-seconds"])
     if mode == "probe":
         probe_environment()
         (WORK / "summary.json").write_text(json.dumps({"mode": "probe"}, indent=2), encoding="utf-8")
@@ -444,12 +471,14 @@ def main(argv: list[str] | None = None) -> int:
         build_smoke_store()
         specs = [{**RUN_DEFAULTS, **spec} for spec in SMOKE_RUNS]
     else:
-        base_runs = H4_RUNS if mode == "h4" else DEFAULT_RUNS
+        base_runs = {"h4": H4_RUNS, "alld": ALL_DECKS_RUNS}.get(mode, DEFAULT_RUNS)
         raw = json.loads(args.runs_json) if args.runs_json else base_runs
         specs = [{**RUN_DEFAULTS, **spec} for spec in raw]
 
     labels = gpu_labels()
-    print(f"[gpu] {labels}", flush=True)
+    if args.workers:
+        labels = labels[: max(1, int(args.workers))]
+    print(f"[gpu] {labels} (workers={len(labels)})", flush=True)
     pending: queue.Queue = queue.Queue()
     for spec in specs:
         pending.put(spec)
