@@ -70,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--device", default="cpu")
     p.add_argument("--train-limit", type=int, default=None)
     p.add_argument("--val-limit", type=int, default=8000)
-    p.add_argument("--loss", choices=["ce", "awr", "q"], default="ce",
+    p.add_argument("--loss", choices=["ce", "awr", "q", "pg"], default="ce",
                    help="policy target: ce = BC (default), awr = advantage-weighted CE, q = DouZero-style action value")
     p.add_argument("--awr-beta", type=float, default=1.0, help="advantage temperature for --loss awr")
     p.add_argument("--awr-max-weight", type=float, default=10.0, help="clip for the AWR weight")
@@ -87,6 +87,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "(balance = inverse frequency, deficit = boost matchups below --matchup-floor)")
     p.add_argument("--matchup-weight-strength", type=float, default=1.0)
     p.add_argument("--matchup-floor", type=float, default=0.45)
+    p.add_argument("--pg-entropy", type=float, default=0.01, help="entropy bonus for --loss pg")
+    p.add_argument("--no-pg-advantage-norm", action="store_true",
+                   help="disable per-batch advantage normalisation for --loss pg")
     p.add_argument("--threads", type=int, default=None, help="torch CPU threads")
     p.add_argument("--out", required=True)
     p.add_argument("--report", default=None)
@@ -129,6 +132,8 @@ def main(argv: list[str] | None = None) -> int:
         matchup_weight=args.matchup_weight,
         matchup_weight_strength=args.matchup_weight_strength,
         matchup_floor=args.matchup_floor,
+        pg_entropy=args.pg_entropy,
+        pg_advantage_norm=not args.no_pg_advantage_norm,
     )
     history, train_seconds = train(train_store, val_store, model, config, has_belief)
     out = Path(args.out)

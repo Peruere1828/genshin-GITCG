@@ -1,0 +1,48 @@
+{
+  "kind": "datafirst_bc_store",
+  "generated": "2026-10-19T14:58:34",
+  "store_cache": "data/store/mixed_4deck_40s.pt",
+  "replay_dirs": [
+    "data/replays/dfbc_dvalin_bonk_c80",
+    "data/replays/dfbc_unyielding_geo_c80",
+    "data/replays/dfbc_double_geo_navia_c80",
+    "data/replays/dfbc_natlan_battleship_c80"
+  ],
+  "games": 3200,
+  "skipped_games": 0,
+  "duplicate_games": 0,
+  "events": 166915,
+  "filtered_games": 3200,
+  "min_outcome": null,
+  "max_seed": 40,
+  "train_samples": 155725,
+  "val_samples": 11190,
+  "load_seconds": 314.7,
+  "seed_start": 0,
+  "val_every": 20,
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}

@@ -326,6 +326,43 @@ superconduct_mika_attack / dvalin_bonk / yelan_clorinde_ororon，seed 2000+）�
    在线版本（引擎在环、用真实对局回报更新、带对手池）尚未尝试 —— 这是唯一还没被否定的方向。
 3. 口径教训（写进流程）：**任何 +Δ 必须在选型种子之外复验**；报告里同时给两个种子集的结果。
 
+### 2026-10-20 —— all-deck 稀释证据 + 在线 RL 开工（导师指导落地）
+
+**A. all-deck 单模型（20 deck，707k 样本，d256，150ep）8 deck 认证**：
+
+| deck | pooled | 专家 | Δ | 95% CI |
+|---|---|---|---|---|
+| unyielding_geo | 0.7975 | 0.7987 | −0.0013 | [−0.043,+0.040] |
+| superconduct_mika_attack | 0.5437 | 0.5675 | −0.0238 | [−0.078,+0.031] |
+| aywolfskirk | 0.4550 | 0.5225 | −0.0675 | [−0.120,−0.015] |
+| double_geo_navia | 0.5850 | 0.6813 | −0.0963 | [−0.149,−0.043] |
+| klee_mavuika_mualani | 0.4050 | 0.5312 | −0.1263 | [−0.177,−0.075] |
+| dvalin_bonk | 0.4863 | 0.6863 | −0.2000 | [−0.255,−0.145] |
+| nahida_kokomi_raiden | 0.4313 | 0.6375 | −0.2062 | [−0.258,−0.154] |
+| superconduct_aggro | 0.2838 | 0.5088 | −0.2250 | [−0.280,−0.170] |
+
+→ **朴素「拼 20 deck 数据训一个 d256 池化模型」显著稀释**（8 个里 7 个变差，只有 unyielding 打平）。
+与 4-deck 混合（打平）对比说明：**deck 数量 ↑ 而容量/每 matchup 数据不变 → 负迁移**。
+
+**B. 导师指导 → 落点（按我们已有的证据排序）**：
+
+| 导师方向 | 我们的落点 | 状态 |
+|---|---|---|
+| **(a) 在线 RL / 自博弈（引擎在环）** | 新增 `--loss pg`：REINFORCE + value baseline + entropy（on-policy；数据来自 `neural:<ckpt>#t=1.0` 的自博弈，`teacher_index` 即采样动作）。循环 `kaggle/grids/run_online_rl_round.sh`：采集 4 deck × 20 池 × 25 种子 → PG 2ep → 新种子认证 | **round 1 运行中** |
+| **(d) 剥削 / 最佳响应（脚本是确定性环境）** | 把 PG 的目标从「对池平均」改成「对指定脚本最大化胜率」：先按 matchup 定向采集（已有 `tgt_*` 5k + `tgt2_*` 5k 局），再对最差 matchup 做 PG；若 (a) 有信号再上 best-response shaping | 待 (a) 结果 |
+| **(b) 容量 / 多任务结构** | 证据支持：transformer 43ep 的 val_acc（0.737）已超池化 CNN 150ep（0.693）。落点＝deck-id embedding + 共享 trunk vs 纯混训（等参数量对照）、每 deck 独立策略头/MoE；**需 GPU，等 10-24 额度重置或 A800 窗口** | 待算力 |
+| **(c) 搜索感知训练** | 已归档（标定价值头仍未带来增益）；若重开，按导师意见走 **Gumbel 式探索 + 显式搜索目标进损失**（而非仅把搜索结果当数据源） | 归档 |
+
+**C. 评测纪律（导师意见，已写入所有新实验）**：
+- **预注册**：每轮实验先写死「接受规则」（本次：新种子上配对 Δ 的 CI 下界 ≥ −0.02 且点估计 > 0）；
+- **种子隔离**：第 r 轮采集用 4000+1000r、认证用 60+10r，绝不与历史种子重叠；
+- **功效**：n=20/matchup 需真实胜率 ≥0.668 才过严格 floor → 结论一律看配对 Δ，floor 用「rate<0.45 计数」；
+- **报告回归**：任何 deck 退化 >2pp 一并列出，不做挑选。
+
+**D. Kaggle 额度与流程教训**：本周 **29.24/30 h 已用尽**（会话 7/8 无产出：transformer 再次撞 4h 单 run 上限；
+`mixed_4deck_40s.pt` 因数据集版本未随 kernel 挂载而 skipping）。→ 下个窗口：先 `datasets status` 确认版本 ready
+**再**推 kernel，并在日志里核对 `corpus stores` 列表；transformer 类慢模型按「每 epoch 实测分钟 × 目标 epoch」排，不要按 CNN 估。
+
 ### 下一步（2026-10-19 修订）
 
 1. **all-deck 单模型（Kaggle 会话 5，正在跑）**：`all_decks_40s.pt`（20 deck × 20 池 × 40 种子，707k 样本）上

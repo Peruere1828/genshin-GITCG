@@ -507,6 +507,17 @@ def run_batch(model, store, index, device, value_coef, belief_coef, has_belief,
             # H5: optional matchup reweighting; ``sample_weights=None`` reproduces
             # the historical plain CE mean exactly.
             policy_loss = _apply_sample_weights(raw, index, sample_weights)
+        elif loss_kind == "pg":
+            # Online RL: ``teacher`` is the action the *sampling* policy took.
+            logp = F.log_softmax(logits, dim=-1)
+            chosen = logp.gather(1, teacher.unsqueeze(1)).squeeze(1)
+            adv = values - value.detach()          # terminal return minus baseline
+            if getattr(config, "pg_advantage_norm", True) and adv.numel() > 1:
+                adv = (adv - adv.mean()) / (adv.std() + 1e-6)
+            entropy = -(logp.exp() * logp).sum(dim=-1).mean()
+            policy_loss = -(chosen * adv).mean() - float(config.pg_entropy) * entropy
+            extra["entropy"] = float(entropy.item())
+            extra["adv_mean"] = float(adv.mean().item())
         else:
             raise ValueError(f"unknown loss kind: {loss_kind!r}")
     mse = _value_loss(value, values, config, model)
@@ -580,6 +591,13 @@ class Config:
     matchup_weight: str = "none"
     matchup_weight_strength: float = 1.0
     matchup_floor: float = 0.45
+    # --- online RL (policy gradient on self-play data) -------------------------
+    # ``loss="pg"`` treats the stored ``teacher_index`` as the *action sampled by the
+    # current policy* (collect with ``neural:<ckpt>#t=<temp>``) and does REINFORCE
+    # with the value head as baseline:  -(log pi(a|s) * (G - V(s))) - c * H(pi).
+    # This is on-policy, unlike AWR on expert data (which was neutral-to-harmful).
+    pg_entropy: float = 0.01
+    pg_advantage_norm: bool = True
 
 
 def train(train_store: Store, val_store: Store, model, config: Config, has_belief: bool):
