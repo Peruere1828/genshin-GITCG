@@ -1,0 +1,111 @@
+{
+  "kind": "datafirst_bc",
+  "generated": "2026-10-20T05:27:22",
+  "store_cache": "data/store/rl_r1.pt",
+  "arch": "cvpn",
+  "d_model": 256,
+  "belief_head": false,
+  "config": {
+    "epochs": 2,
+    "lr": 0.0003,
+    "batch_size": 256,
+    "value_coef": 0.5,
+    "belief_coef": 0.5,
+    "weight_decay": 0.0,
+    "seed": 0,
+    "device": "cpu",
+    "log_every": 1,
+    "loss": "pg",
+    "awr_beta": 1.0,
+    "awr_max_weight": 10.0,
+    "q_target": "episode",
+    "q_gamma": 0.97,
+    "value_loss": "mse",
+    "value_smooth": 0.0,
+    "matchup_weight": "none",
+    "matchup_weight_strength": 1.0,
+    "matchup_floor": 0.45,
+    "pg_entropy": 0.01,
+    "pg_advantage_norm": true
+  },
+  "store_meta": {
+    "replay_dirs": [
+      "data/replays/rl_r1_superconduct_aggro",
+      "data/replays/rl_r1_dvalin_bonk",
+      "data/replays/rl_r1_unyielding_geo",
+      "data/replays/rl_r1_double_geo_navia"
+    ],
+    "games": 2000,
+    "skipped_games": 0,
+    "duplicate_games": 0,
+    "events": 98389,
+    "filtered_games": 0,
+    "min_outcome": null,
+    "max_seed": null,
+    "train_samples": 86698,
+    "val_samples": 11691,
+    "load_seconds": 8.4,
+    "seed_start": 0,
+    "val_every": 10
+  },
+  "n_train_full": 86698,
+  "n_val_full": 11691,
+  "n_train": 86698,
+  "n_val": 8000,
+  "train_limit": null,
+  "train_seconds": 206.2,
+  "history": [
+    {
+      "epoch": 0,
+      "loss": NaN,
+      "ce": NaN,
+      "value": NaN,
+      "belief": 0.0,
+      "acc": 0.23361,
+      "val_ce": NaN,
+      "val_acc": 0.2379,
+      "val_value": NaN,
+      "val_belief": 0.0,
+      "val_n": 8000
+    },
+    {
+      "epoch": 1,
+      "loss": NaN,
+      "ce": NaN,
+      "value": NaN,
+      "belief": 0.0,
+      "acc": 0.2338,
+      "val_ce": NaN,
+      "val_acc": 0.2379,
+      "val_value": NaN,
+      "val_belief": 0.0,
+      "val_n": 8000
+    }
+  ],
+  "checkpoint": "data/checkpoints/rl_r1.pt",
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  }
+}

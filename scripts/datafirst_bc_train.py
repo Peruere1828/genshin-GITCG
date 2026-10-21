@@ -88,9 +88,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--matchup-weight-strength", type=float, default=1.0)
     p.add_argument("--matchup-floor", type=float, default=0.45)
     p.add_argument("--pg-entropy", type=float, default=0.01, help="entropy bonus for --loss pg")
+    p.add_argument("--grad-clip", type=float, default=0.0, help="gradient norm clip (PG rounds use 1.0)")
     p.add_argument("--no-pg-advantage-norm", action="store_true",
                    help="disable per-batch advantage normalisation for --loss pg")
     p.add_argument("--threads", type=int, default=None, help="torch CPU threads")
+    p.add_argument("--init-from", default=None,
+                   help="initialize the weights from a checkpoint (continued training / PG rounds); "
+                        "the architecture must match (same --arch / --d-model / head config)")
     p.add_argument("--out", required=True)
     p.add_argument("--report", default=None)
     return p
@@ -123,6 +127,17 @@ def main(argv: list[str] | None = None) -> int:
                                  value_activation=args.value_activation)
         model = CVPN(cfg)
     has_belief = bool(getattr(model, "has_belief", False))
+    if args.init_from:
+        from train.model import load_cvpn_model
+
+        source = load_cvpn_model(args.init_from)
+        try:
+            model.load_state_dict(source.state_dict(), strict=True)
+        except RuntimeError as exc:
+            raise SystemExit(
+                f"--init-from architecture mismatch ({args.init_from}): {exc}"
+            ) from exc
+        print(f"[init] weights <- {args.init_from}", flush=True)
     config = Config(
         epochs=args.epochs, lr=args.lr, batch_size=args.batch_size,
         seed=args.seed, device=args.device, weight_decay=args.weight_decay,
@@ -133,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         matchup_weight_strength=args.matchup_weight_strength,
         matchup_floor=args.matchup_floor,
         pg_entropy=args.pg_entropy,
+        grad_clip=args.grad_clip,
         pg_advantage_norm=not args.no_pg_advantage_norm,
     )
     history, train_seconds = train(train_store, val_store, model, config, has_belief)

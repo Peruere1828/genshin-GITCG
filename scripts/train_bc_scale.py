@@ -512,9 +512,18 @@ def run_batch(model, store, index, device, value_coef, belief_coef, has_belief,
             logp = F.log_softmax(logits, dim=-1)
             chosen = logp.gather(1, teacher.unsqueeze(1)).squeeze(1)
             adv = values - value.detach()          # terminal return minus baseline
+            # Normalise only when there is real spread: a batch drawn from a handful of
+            # games often has a ~0 std, and dividing by it produced NaN/huge gradients
+            # on the first round (2026-10-20). Clamp as a second safety net.
             if getattr(config, "pg_advantage_norm", True) and adv.numel() > 1:
-                adv = (adv - adv.mean()) / (adv.std() + 1e-6)
-            entropy = -(logp.exp() * logp).sum(dim=-1).mean()
+                std = adv.std()
+                if torch.isfinite(std) and float(std) > 1e-3:
+                    adv = (adv - adv.mean()) / (std + 1e-6)
+            adv = adv.clamp(-5.0, 5.0)
+            # Mask padded options: log_softmax gives -inf there and 0 * -inf = NaN
+            # (this is exactly what produced the first-round NaN, 2026-10-20).
+            safe = torch.where(option_mask, logp, torch.zeros_like(logp))
+            entropy = -(safe.exp() * safe).sum(dim=-1).mean()
             policy_loss = -(chosen * adv).mean() - float(config.pg_entropy) * entropy
             extra["entropy"] = float(entropy.item())
             extra["adv_mean"] = float(adv.mean().item())
@@ -598,6 +607,7 @@ class Config:
     # This is on-policy, unlike AWR on expert data (which was neutral-to-harmful).
     pg_entropy: float = 0.01
     pg_advantage_norm: bool = True
+    grad_clip: float = 0.0     # 0 = off; PG rounds use 1.0
 
 
 def train(train_store: Store, val_store: Store, model, config: Config, has_belief: bool):
@@ -639,6 +649,8 @@ def train(train_store: Store, val_store: Store, model, config: Config, has_belie
             opt.zero_grad(set_to_none=True)
             loss, info = run_batch(model, train_store, index, config.device, config.value_coef, config.belief_coef, has_belief, config, q_scale, sample_weights)
             loss.backward()
+            if getattr(config, "grad_clip", 0.0):
+                torch.nn.utils.clip_grad_norm_(model.parameters(), float(config.grad_clip))
             opt.step()
             agg["loss"] += float(loss.item())
             for k in ("ce", "value", "belief", "acc"):

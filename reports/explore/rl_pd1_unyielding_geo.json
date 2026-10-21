@@ -1,0 +1,478 @@
+{
+  "tag": "rl_pd1_unyielding_geo",
+  "generated": "2026-10-20T10:53:38",
+  "protocol": {
+    "contestant": "neural:data/checkpoints/rl_pd1_unyielding_geo.pt",
+    "contestant_deck": "unyielding_geo",
+    "opponents": [
+      "natlan_battleship",
+      "klee_mavuika_mualani",
+      "superconduct_mika_attack",
+      "dual_mualani_stacks",
+      "superconduct_aggro",
+      "mualani_double_pyro",
+      "yelan_clorinde_ororon",
+      "electrocharged_moon",
+      "aywolfskirk",
+      "dvalin_bonk",
+      "shenhe_double_swirl",
+      "electro_manifestation_nuke",
+      "double_geo_navia",
+      "unyielding_geo",
+      "beidou_skirk_ayaka",
+      "skirk_chasca_freeze",
+      "skirk_ayaka_navia",
+      "ice_water_battleship",
+      "nahida_kokomi_raiden",
+      "trial_skirk_ayaka_navia"
+    ],
+    "seeds": [
+      130,
+      131,
+      132,
+      133,
+      134,
+      135,
+      136,
+      137,
+      138,
+      139
+    ],
+    "sides": [
+      0,
+      1
+    ],
+    "mode": "pure",
+    "workers": 12,
+    "base_seed": 130,
+    "pooled_threshold": 0.5,
+    "floor": 0.45,
+    "strict_ci": true
+  },
+  "summary": {
+    "games": 400,
+    "matches": 400,
+    "pooled_rate": 0.82375,
+    "pooled_ci_low": 0.7833797167373524,
+    "pooled_ci_high": 0.8579608484743544,
+    "cluster_mean": 0.8237500000000001,
+    "cluster_ci_low": 0.7448984462808063,
+    "cluster_ci_high": 0.9026015537191939,
+    "cluster_boot_ci_low": 0.74621875,
+    "cluster_boot_ci_high": 0.8949999999999999,
+    "per_opponent": {
+      "aywolfskirk": {
+        "games": 20,
+        "score": 18.0,
+        "rate": 0.9,
+        "ci_low": 0.6989617935882066,
+        "ci_high": 0.9721341060158468,
+        "mean_rounds": 6.65,
+        "mean_rounds_wins": 6.611111111111111,
+        "mean_rounds_losses": 7.0
+      },
+      "beidou_skirk_ayaka": {
+        "games": 20,
+        "score": 20.0,
+        "rate": 1.0,
+        "ci_low": 0.8388698745050668,
+        "ci_high": 0.9999999999999999,
+        "mean_rounds": 6.85,
+        "mean_rounds_wins": 6.85,
+        "mean_rounds_losses": 0.0
+      },
+      "double_geo_navia": {
+        "games": 20,
+        "score": 14.0,
+        "rate": 0.7,
+        "ci_low": 0.4810232237710206,
+        "ci_high": 0.854524726031006,
+        "mean_rounds": 6.95,
+        "mean_rounds_wins": 6.785714285714286,
+        "mean_rounds_losses": 7.333333333333333
+      },
+      "dual_mualani_stacks": {
+        "games": 20,
+        "score": 18.0,
+        "rate": 0.9,
+        "ci_low": 0.6989617935882066,
+        "ci_high": 0.9721341060158468,
+        "mean_rounds": 7.2,
+        "mean_rounds_wins": 7.222222222222222,
+        "mean_rounds_losses": 7.0
+      },
+      "dvalin_bonk": {
+        "games": 20,
+        "score": 11.0,
+        "rate": 0.55,
+        "ci_low": 0.3420820083075997,
+        "ci_high": 0.7418049791429071,
+        "mean_rounds": 6.75,
+        "mean_rounds_wins": 6.909090909090909,
+        "mean_rounds_losses": 6.555555555555555
+      },
+      "electro_manifestation_nuke": {
+        "games": 20,
+        "score": 16.0,
+        "rate": 0.8,
+        "ci_low": 0.5839782779742401,
+        "ci_high": 0.9193436467288,
+        "mean_rounds": 6.2,
+        "mean_rounds_wins": 6.25,
+        "mean_rounds_losses": 6.0
+      },
+      "electrocharged_moon": {
+        "games": 20,
+        "score": 11.0,
+        "rate": 0.55,
+        "ci_low": 0.3420820083075997,
+        "ci_high": 0.7418049791429071,
+        "mean_rounds": 5.75,
+        "mean_rounds_wins": 6.090909090909091,
+        "mean_rounds_losses": 5.333333333333333
+      },
+      "ice_water_battleship": {
+        "games": 20,
+        "score": 19.0,
+        "rate": 0.95,
+        "ci_low": 0.7638641064874331,
+        "ci_high": 0.9911187805671268,
+        "mean_rounds": 6.7,
+        "mean_rounds_wins": 6.7368421052631575,
+        "mean_rounds_losses": 6.0
+      },
+      "klee_mavuika_mualani": {
+        "games": 20,
+        "score": 18.0,
+        "rate": 0.9,
+        "ci_low": 0.6989617935882066,
+        "ci_high": 0.9721341060158468,
+        "mean_rounds": 6.3,
+        "mean_rounds_wins": 6.277777777777778,
+        "mean_rounds_losses": 6.5
+      },
+      "mualani_double_pyro": {
+        "games": 20,
+        "score": 16.0,
+        "rate": 0.8,
+        "ci_low": 0.5839782779742401,
+        "ci_high": 0.9193436467288,
+        "mean_rounds": 6.35,
+        "mean_rounds_wins": 6.5625,
+        "mean_rounds_losses": 5.5
+      },
+      "nahida_kokomi_raiden": {
+        "games": 20,
+        "score": 14.0,
+        "rate": 0.7,
+        "ci_low": 0.4810232237710206,
+        "ci_high": 0.854524726031006,
+        "mean_rounds": 7.45,
+        "mean_rounds_wins": 7.5,
+        "mean_rounds_losses": 7.333333333333333
+      },
+      "natlan_battleship": {
+        "games": 20,
+        "score": 20.0,
+        "rate": 1.0,
+        "ci_low": 0.8388698745050668,
+        "ci_high": 0.9999999999999999,
+        "mean_rounds": 8.8,
+        "mean_rounds_wins": 8.8,
+        "mean_rounds_losses": 0.0
+      },
+      "shenhe_double_swirl": {
+        "games": 20,
+        "score": 9.0,
+        "rate": 0.45,
+        "ci_low": 0.25819502085709295,
+        "ci_high": 0.6579179916924003,
+        "mean_rounds": 6.25,
+        "mean_rounds_wins": 6.0,
+        "mean_rounds_losses": 6.454545454545454
+      },
+      "skirk_ayaka_navia": {
+        "games": 20,
+        "score": 19.5,
+        "rate": 0.975,
+        "ci_low": 0.7995418578360503,
+        "ci_high": 0.9973845229437632,
+        "mean_rounds": 7.65,
+        "mean_rounds_wins": 7.2631578947368425,
+        "mean_rounds_losses": 0.0
+      },
+      "skirk_chasca_freeze": {
+        "games": 20,
+        "score": 20.0,
+        "rate": 1.0,
+        "ci_low": 0.8388698745050668,
+        "ci_high": 0.9999999999999999,
+        "mean_rounds": 6.75,
+        "mean_rounds_wins": 6.75,
+        "mean_rounds_losses": 0.0
+      },
+      "superconduct_aggro": {
+        "games": 20,
+        "score": 19.0,
+        "rate": 0.95,
+        "ci_low": 0.7638641064874331,
+        "ci_high": 0.9911187805671268,
+        "mean_rounds": 7.1,
+        "mean_rounds_wins": 7.157894736842105,
+        "mean_rounds_losses": 6.0
+      },
+      "superconduct_mika_attack": {
+        "games": 20,
+        "score": 17.0,
+        "rate": 0.85,
+        "ci_low": 0.6395767041130426,
+        "ci_high": 0.9476322080405041,
+        "mean_rounds": 6.65,
+        "mean_rounds_wins": 6.294117647058823,
+        "mean_rounds_losses": 8.666666666666666
+      },
+      "trial_skirk_ayaka_navia": {
+        "games": 20,
+        "score": 19.0,
+        "rate": 0.95,
+        "ci_low": 0.7638641064874331,
+        "ci_high": 0.9911187805671268,
+        "mean_rounds": 7.15,
+        "mean_rounds_wins": 7.105263157894737,
+        "mean_rounds_losses": 8.0
+      },
+      "unyielding_geo": {
+        "games": 20,
+        "score": 13.0,
+        "rate": 0.65,
+        "ci_low": 0.43285051021946463,
+        "ci_high": 0.8188104521320554,
+        "mean_rounds": 8.6,
+        "mean_rounds_wins": 8.384615384615385,
+        "mean_rounds_losses": 9.0
+      },
+      "yelan_clorinde_ororon": {
+        "games": 20,
+        "score": 18.0,
+        "rate": 0.9,
+        "ci_low": 0.6989617935882066,
+        "ci_high": 0.9721341060158468,
+        "mean_rounds": 6.6,
+        "mean_rounds_wins": 6.611111111111111,
+        "mean_rounds_losses": 6.5
+      }
+    },
+    "quality": {
+      "decisions": 19632,
+      "fallbacks": 0,
+      "fallback_rate": 0.0,
+      "illegal_rate": 0.0,
+      "mean_rounds": 6.935,
+      "mean_decisions_per_round": 7.077144917087239,
+      "draws": 1,
+      "draw_rate": 0.0025,
+      "errors": 0,
+      "truncated": 0,
+      "invalid": 0,
+      "error_rate": 0.0,
+      "opponents_covered": 20
+    },
+    "floor": 0.45,
+    "floor_violations": []
+  },
+  "gates": {
+    "pooled_threshold": 0.5,
+    "pooled_pass": true,
+    "strict_ci": true,
+    "floor": 0.45,
+    "floor_mode": "wilson_low",
+    "floor_pass": false,
+    "floor_violations": [
+      "dvalin_bonk",
+      "electrocharged_moon",
+      "shenhe_double_swirl",
+      "unyielding_geo"
+    ],
+    "clean_pass": true,
+    "pass": false
+  },
+  "rating_anchored": {
+    "rating": 1843.9953360212462,
+    "ci_low": 1796.9273934215691,
+    "ci_high": 1896.713605532641,
+    "n_games": 400,
+    "mean_expected_score": 0.82375
+  },
+  "anchors_source": "/home/ubuntuaaa/projects/genshin-GITCG/reports/arena/20261008T163940_full_matrix_20x20.json",
+  "elo_online": {
+    "neural:data/checkpoints/rl_pd1_unyielding_geo.pt": 1814.5545106370746,
+    "pool:natlan_battleship": 1391.0530350585846,
+    "pool:klee_mavuika_mualani": 1441.7297926273407,
+    "pool:superconduct_mika_attack": 1471.2155105227682,
+    "pool:dual_mualani_stacks": 1464.441589815976,
+    "pool:superconduct_aggro": 1461.9937565277214,
+    "pool:mualani_double_pyro": 1513.438853934576,
+    "pool:yelan_clorinde_ororon": 1480.6846719155387,
+    "pool:electrocharged_moon": 1566.3292397721154,
+    "pool:aywolfskirk": 1470.3063001367161,
+    "pool:dvalin_bonk": 1555.9336956992558,
+    "pool:shenhe_double_swirl": 1554.5260009552915,
+    "pool:electro_manifestation_nuke": 1477.698772340752,
+    "pool:double_geo_navia": 1494.333052690931,
+    "pool:unyielding_geo": 1510.4736405868898,
+    "pool:beidou_skirk_ayaka": 1429.034738659244,
+    "pool:skirk_chasca_freeze": 1444.753692043543,
+    "pool:skirk_ayaka_navia": 1462.3536574509062,
+    "pool:ice_water_battleship": 1476.4313780848595,
+    "pool:nahida_kokomi_raiden": 1546.1518301239498,
+    "pool:trial_skirk_ayaka_navia": 1472.5622804159657
+  },
+  "best_response": {
+    "worst_opponent": "shenhe_double_swirl",
+    "worst_rate": 0.45,
+    "pool_mean_rate": 0.8237500000000001,
+    "exploitability_lower_bound": 0.55,
+    "matchup_gap": 0.3737500000000001,
+    "floor": 0.45,
+    "floor_gap": 0.0,
+    "worst_clear_floor": true
+  },
+  "n_matches": 400,
+  "engine_lock": {
+    "engine": {
+      "repo": "https://github.com/piovium/genius-invokation",
+      "commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21",
+      "pybinding_version": "0.21.0"
+    },
+    "cards": {
+      "data_version": "v4-latest-CHS@2026-10-07",
+      "pool_note": "跟随最新卡池；升级按大版本显式迁移，不追中间小版本"
+    },
+    "reference": {
+      "rebel_base_rl_commit": "b211b031cbfaa1117a60290b32c102fa166a9517"
+    },
+    "runtime": {
+      "python": "3.12",
+      "platform": "linux",
+      "shuffle": "python_seeded_no_shuffle"
+    }
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "gitcg_version": "0.21.0",
+    "engine_ref_commit": "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
+  },
+  "paired_vs_baseline": {
+    "n_pairs": 400,
+    "n_shared": 400,
+    "n_pairs_dropped": 0,
+    "invalid_a": 0,
+    "invalid_b": 0,
+    "delta": -0.00875,
+    "se": 0.021709429796870832,
+    "ci_low": -0.05130048240186683,
+    "ci_high": 0.03380048240186683,
+    "rate_a": 0.82375,
+    "rate_b": 0.8325,
+    "opponent_cluster_ci_low": -0.059292437597261036,
+    "opponent_cluster_ci_high": 0.041792437597261034,
+    "cluster_boot_ci_low": -0.05375,
+    "cluster_boot_ci_high": 0.0375,
+    "per_opponent": {
+      "aywolfskirk": {
+        "n": 20,
+        "delta": 0.15
+      },
+      "beidou_skirk_ayaka": {
+        "n": 20,
+        "delta": 0.0
+      },
+      "double_geo_navia": {
+        "n": 20,
+        "delta": -0.15
+      },
+      "dual_mualani_stacks": {
+        "n": 20,
+        "delta": 0.05
+      },
+      "dvalin_bonk": {
+        "n": 20,
+        "delta": -0.05
+      },
+      "electro_manifestation_nuke": {
+        "n": 20,
+        "delta": 0.15
+      },
+      "electrocharged_moon": {
+        "n": 20,
+        "delta": 0.2
+      },
+      "ice_water_battleship": {
+        "n": 20,
+        "delta": -0.05
+      },
+      "klee_mavuika_mualani": {
+        "n": 20,
+        "delta": -0.1
+      },
+      "mualani_double_pyro": {
+        "n": 20,
+        "delta": -0.15
+      },
+      "nahida_kokomi_raiden": {
+        "n": 20,
+        "delta": -0.05
+      },
+      "natlan_battleship": {
+        "n": 20,
+        "delta": 0.0
+      },
+      "shenhe_double_swirl": {
+        "n": 20,
+        "delta": -0.2
+      },
+      "skirk_ayaka_navia": {
+        "n": 20,
+        "delta": -0.025
+      },
+      "skirk_chasca_freeze": {
+        "n": 20,
+        "delta": 0.0
+      },
+      "superconduct_aggro": {
+        "n": 20,
+        "delta": -0.05
+      },
+      "superconduct_mika_attack": {
+        "n": 20,
+        "delta": 0.05
+      },
+      "trial_skirk_ayaka_navia": {
+        "n": 20,
+        "delta": -0.05
+      },
+      "unyielding_geo": {
+        "n": 20,
+        "delta": 0.15
+      },
+      "yelan_clorinde_ororon": {
+        "n": 20,
+        "delta": -0.05
+      }
+    },
+    "significant_positive": false
+  },
+  "noninferiority": {
+    "tolerance": 0.02,
+    "ci_low": -0.05130048240186683,
+    "accept": false
+  },
+  "merge_gate": {
+    "available": true,
+    "tolerance": 0.02,
+    "noninferior": false,
+    "clean": true,
+    "accept": false
+  }
+}
