@@ -363,6 +363,28 @@ superconduct_mika_attack / dvalin_bonk / yelan_clorinde_ororon，seed 2000+）�
 `mixed_4deck_40s.pt` 因数据集版本未随 kernel 挂载而 skipping）。→ 下个窗口：先 `datasets status` 确认版本 ready
 **再**推 kernel，并在日志里核对 `corpus stores` 列表；transformer 类慢模型按「每 epoch 实测分钟 × 目标 epoch」排，不要按 CNN 估。
 
+### 2026-10-21 —— 在线 RL 三轮：**double_geo 的剥削增益三次复现**，其余 deck 退化
+
+按导师 (a)/(d) 落地的 on-policy 策略梯度，三轮全部在**互不重叠的新种子**上认证：
+
+| deck | r1e 共享策略（110–119） | rl_pd1 按 deck（130–139） | r2 按 deck + 4× 数据（140–149） | 结论 |
+|---|---|---|---|---|
+| superconduct_aggro | −0.146 | −0.058 | −0.078 | 退化（与老师有差距，PG 只放大噪声） |
+| dvalin_bonk | −0.063 | −0.063 | **−0.128** | 迭代反而更差 → 停止对落后 deck 做 PG |
+| unyielding_geo | +0.003 | −0.009 | −0.010 | 打平（floor 违规 0–2，最干净） |
+| **double_geo_navia** | **+0.100** [+0.047,+0.153] | **+0.058** [+0.008,+0.107] | **+0.070** [+0.019,+0.121] | **三次复现的显著正增益** |
+
+**判定与规则（写死）**：
+1. **double_geo 的 +5.8~10pp 是本项目第一个可复现的「超过脚本专家」**（三个独立新种子集、CIs 全部排除 0）。
+2. **PG 只在「BC 已经 ≥ 老师」的 deck 上有效**；对落后 deck（SA、dvalin）会把策略推离模仿目标、显著退化
+   （dvalin 连续两轮：−0.063 → −0.128）。→ **默认流程：per-deck 评估基线强度，只在 parity+ 的 deck 上开 PG**。
+3. 因此模型主线的交付形态改为「**按 deck 的 specialist 集合**」：每个 deck 用其认证最优臂（BC v1/v2 / PG 微调），
+   而不是追求一个全 deck 单模型（后者已证 7/8 退化）。
+
+**进行中**：double_geo 第三轮（种子 150–159，预注册同规则）→ 判断增益是否继续增长或饱和。
+**待 GPU（10-24）**：(b) 容量/多任务——deck-id embedding / 独立策略头 / MoE 的等参数对照；
+transformer 长训练（43ep val_acc 0.737 已超池化 CNN 150ep 0.693，容量是明确瓶颈）。
+
 ### 下一步（2026-10-19 修订）
 
 1. **all-deck 单模型（Kaggle 会话 5，正在跑）**：`all_decks_40s.pt`（20 deck × 20 池 × 40 种子，707k 样本）上
