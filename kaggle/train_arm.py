@@ -138,6 +138,27 @@ ALL_DECKS_RUNS = [
     {"name": "ctrl_4deck_40s_e150", "store": "mixed_4deck_40s.pt", "loss": "ce", "epochs": 150},
 ]
 
+CAPACITY_RUNS = [
+    # 2026-10-24 (quota reset, 30 h): decide why the 20-deck model loses to the 4-deck
+    # model. Two factors are confounded today -- *how many decks* share the trunk, and
+    # *how many games per matchup* the corpus carries (the all-deck store has 40 seeds
+    # per matchup, the 4-deck store ~250). This grid separates them:
+    #   (1) four decks at the *same* 40-seed density -> density-only control;
+    #   (2) bigger trunks on both corpora -> capacity-only control;
+    #   (3) transformer on the all-deck corpus -> architecture at low density.
+    # If (1) collapses like the 20-deck model, the fix is data per matchup, not
+    # task conditioning; if (1) holds up, the fix is conditioning (deck embedding /
+    # per-deck heads), which is the next grid.
+    {"name": "cap_4deck40s_cvpn_d256_e150", "store": "mixed_4deck_40s.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 14400},
+    {"name": "cap_h4m_cvpn_d384_e120", "store": "mixed_four_decks.pt", "loss": "ce",
+     "d_model": 384, "epochs": 120, "run_timeout": 14400},
+    {"name": "cap_alld_cvpn_d512_e100", "store": "all_decks_40s.pt", "loss": "ce",
+     "d_model": 512, "epochs": 100, "run_timeout": 14400},
+    {"name": "cap_alld_transformer_d256_l4_e60", "store": "all_decks_40s.pt", "loss": "ce",
+     "arch": "transformer", "n_layers": 4, "n_heads": 8, "epochs": 60, "run_timeout": 16200},
+]
+
 SMOKE_RUNS = [
     {"name": "smoke_ce", "store": "smoke.pt", "loss": "ce", "epochs": 2, "d_model": 64, "train_limit": 512},
     {"name": "smoke_awr", "store": "smoke.pt", "loss": "awr", "awr_beta": 1.0, "epochs": 2, "d_model": 64, "train_limit": 512},
@@ -488,7 +509,7 @@ def main(argv: list[str] | None = None) -> int:
         build_smoke_store()
         specs = [{**RUN_DEFAULTS, **spec} for spec in SMOKE_RUNS]
     else:
-        base_runs = {"h4": H4_RUNS, "alld": ALL_DECKS_RUNS}.get(mode, DEFAULT_RUNS)
+        base_runs = {"h4": H4_RUNS, "alld": ALL_DECKS_RUNS, "cap": CAPACITY_RUNS}.get(mode, DEFAULT_RUNS)
         raw = json.loads(args.runs_json) if args.runs_json else base_runs
         specs = [{**RUN_DEFAULTS, **spec} for spec in raw]
 

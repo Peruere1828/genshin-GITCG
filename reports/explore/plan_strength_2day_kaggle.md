@@ -404,6 +404,36 @@ transformer 长训练（43ep val_acc 0.737 已超池化 CNN 150ep 0.693，容量
 **进行中（链式）**：dgeo 第 4 轮（170–179，看是否饱和或继续爬升）+ **unyielding 第 1/2 轮（180–189 / 190–199）**
 ——检验该配方能否迁移到另一个 parity 的 deck。
 
+### 2026-10-24 —— dgeo 饱和（0.870 / 0 个 floor 违规）、unyielding 转正、dvalin 归因
+
+| 检查 | 种子 | pooled | 专家 | Δ | 95% CI | rate<.45 | merge |
+|---|---|---|---|---|---|---|---|
+| dgeo r4 | 170–179 | **0.870** | 0.685 | **+0.185** | [+0.135,+0.235] | **0** | ✓ |
+| unyielding r1 | 180–189 | 0.8275 | 0.8675 | −0.040 | [−0.081,+0.001] | 1 | ✗ |
+| unyielding r2 | 190–199 | **0.8625** | 0.820 | **+0.0425** | [−0.001,+0.086] | **0** | ✓ |
+
+**结论**：
+1. **dgeo 已饱和**：r3 0.890/0.882 → r4 0.870（同一水平），且 r4 的 **floor 违规为 0**（20 个 matchup 全部 ≥45%）。
+   dgeo specialist 冻结为交付件：**pooled ~0.87–0.89，比脚本专家高 16–19pp，无 floor 违规**。
+2. **unyielding 需要两轮才转正**（r1 −0.040 → r2 +0.0425），说明 parity 附近的 deck 第一轮基本是噪声，
+   要看第二轮趋势；r3 在跑。
+3. **dvalin 的退化是「选错底座」而非「PG 有害」**：`h4m_bc_d256_e150`（h4m 4-deck 语料）在 dvalin 上是
+   **+0.0712 [+0.028,+0.115]**，而此前 PG 用的是共享 `h4_mixed` 锚（在 dvalin 上本来就 −0.043）。
+   → 流程修正：**每个 deck 的阶梯从该 deck 认证最优的臂起步**，不是从一个共享锚起步。
+
+**Kaggle 额度已重置（30 h）**。已推 `cap` 网格（`kaggle/train_arm.py` 的 `CAPACITY_RUNS`），
+用 4-deck/40s 密度对照 + 更大主干 + transformer 分离「deck 数量」与「每对手对局密度」两个混淆因素：
+| run | 语料 | 主干 | epochs |
+|---|---|---|---|
+| cap_4deck40s_cvpn_d256_e150 | mixed_4deck_40s（4 deck，40 seeds/matchup） | cvpn d256 | 150 |
+| cap_h4m_cvpn_d384_e120 | mixed_four_decks（4 deck，~250 seeds/matchup） | cvpn d384 | 120 |
+| cap_alld_cvpn_d512_e100 | all_decks_40s（20 deck，40 seeds/matchup） | cvpn d512 | 100 |
+| cap_alld_transformer_d256_l4_e60 | all_decks_40s | transformer 4L | 60 |
+
+**排队中（本机）**：链条结束后自动跑 Group B——给最接近 parity 的四个 deck（SA −0.001、mika −0.024、
+aywolfskirk −0.068、natlan −0.085）各采 2,000 局专家对局（密度对齐 Group A），再用 `alld_bc` 补认证
+其余 12 个从未认证的 deck，把 specialist 集合补齐。
+
 ### 下一步（2026-10-19 修订）
 
 1. **all-deck 单模型（Kaggle 会话 5，正在跑）**：`all_decks_40s.pt`（20 deck × 20 池 × 40 种子，707k 样本）上

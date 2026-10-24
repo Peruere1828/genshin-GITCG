@@ -47,7 +47,8 @@ if [ "$REFRESH_CODE" = "1" ]; then
   fi
   # the kernel must not be pushed against a dataset version still processing
   for _ in $(seq 1 40); do
-    state="$("$KAGGLE_BIN" datasets status "$CODE_DS" 2>/dev/null | head -1)"
+    # the CLI prints an "outdated version" warning on stdout; drop it before comparing
+    state="$("$KAGGLE_BIN" datasets status "$CODE_DS" 2>/dev/null | grep -v 'outdated' | head -1 | tr -d '[:space:]')"
     [ "$state" = "ready" ] && break
     echo "[push] waiting for $CODE_DS ($state)"; sleep 15
   done
