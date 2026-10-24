@@ -159,6 +159,33 @@ CAPACITY_RUNS = [
      "arch": "transformer", "n_layers": 4, "n_heads": 8, "epochs": 60, "run_timeout": 16200},
 ]
 
+GROUP_B_RUNS = [
+    # Group B (2026-10-24): four decks that sit closest to the scripted expert but had
+    # no dense corpus (SA -0.001, mika -0.024, aywolfskirk -0.068, natlan -0.085 on the
+    # all-deck base). Each store is 2,000 expert games (100 seeds x 20 opponents, the
+    # same density as the 4-deck corpus) at ~85-98k samples, so 150 epochs is ~25 min
+    # per deck. These become the per-deck bases the exploitation ladder starts from --
+    # the ladder needs a parity-or-better base, and the dense corpus is what produces one.
+    {"name": "gb_sa_bc_d256_e150", "store": "gb_superconduct_aggro.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 7200},
+    {"name": "gb_mika_bc_d256_e150", "store": "gb_superconduct_mika_attack.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 7200},
+    {"name": "gb_aywolf_bc_d256_e150", "store": "gb_aywolfskirk.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 7200},
+    {"name": "gb_natlan_bc_d256_e150", "store": "gb_natlan_battleship.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 7200},
+]
+
+MODE_RUNS = {
+    "h4": H4_RUNS,
+    "alld": ALL_DECKS_RUNS,
+    "cap": CAPACITY_RUNS,
+    "gb": GROUP_B_RUNS,
+    # one session: cheap per-deck bases first (they unblock local ladders), then the
+    # density/capacity controls.
+    "wave1": GROUP_B_RUNS + CAPACITY_RUNS,
+}
+
 SMOKE_RUNS = [
     {"name": "smoke_ce", "store": "smoke.pt", "loss": "ce", "epochs": 2, "d_model": 64, "train_limit": 512},
     {"name": "smoke_awr", "store": "smoke.pt", "loss": "awr", "awr_beta": 1.0, "epochs": 2, "d_model": 64, "train_limit": 512},
@@ -459,7 +486,7 @@ def resolve_pinned_mode() -> tuple[str | None, dict[str, str]]:
         if not lines:
             continue
         mode = lines[0]
-        if mode not in ("probe", "smoke", "runs", "h4", "alld"):
+        if mode not in ("probe", "smoke", *MODE_RUNS):
             continue
         overrides: dict[str, str] = {}
         for line in lines[1:]:
@@ -509,7 +536,7 @@ def main(argv: list[str] | None = None) -> int:
         build_smoke_store()
         specs = [{**RUN_DEFAULTS, **spec} for spec in SMOKE_RUNS]
     else:
-        base_runs = {"h4": H4_RUNS, "alld": ALL_DECKS_RUNS, "cap": CAPACITY_RUNS}.get(mode, DEFAULT_RUNS)
+        base_runs = MODE_RUNS.get(mode, DEFAULT_RUNS)
         raw = json.loads(args.runs_json) if args.runs_json else base_runs
         specs = [{**RUN_DEFAULTS, **spec} for spec in raw]
 
