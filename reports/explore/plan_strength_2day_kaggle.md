@@ -471,6 +471,30 @@ aywolfskirk −0.068、natlan −0.085）各采 2,000 局专家对局（密度�
 **本机排队**：`run_ladder_wave2.sh` —— SA/mika/aywolfskirk/natlan 各从专用底座起一轮 + dvalin r3，
 全部用新种子（采集 9500–9800/8700，认证 520–569）。
 
+### 2026-10-25 —— SA 阶梯即使换稠密底座也失败；dvalin 确认平台期；12 deck 摸底完成
+
+| 检查 | 种子 | pooled | 专家 | Δ | 95% CI | merge |
+|---|---|---|---|---|---|---|
+| SA r1（底座 `sa_bc_d256_e150`，val_acc 0.886） | 520–529 | 0.4200 | 0.5050 | **−0.085** | [−0.140,−0.030] | ✗ |
+| dvalin r3 | 560–569 | 0.7650 | 0.7325 | +0.033 | [−0.015,+0.080] | ✓ |
+
+**SA 是唯一「换稠密底座也不行」的 deck**：底座模仿精度 0.886，但 SA 的脚本专家本身只有 ~0.50，
+且 SA 在多组对局里是天然劣势方；PG 在胜率目标上只会把这些劣势放大。→ **SA 不做 PG 阶梯**，
+留给「搜索/更优模仿」或直接放弃（记录为负结果）。
+**dvalin 确认平台期**：+0.0375 / +0.030 / +0.033（三轮几乎不动）→ 阶梯机制在 dvalin 上饱和于 +3pp。
+
+**12 个未认证 deck 摸底（`alld_bc_d256_e150` 底座，新种子 400–519）**：平均 Δ **−0.145**，无一可用。
+其中 Skirk 系（`skirk_chasca_freeze` 0.085、`beidou_skirk_ayaka` 0.124、`ice_water_battleship` 0.148、
+`skirk_ayaka_navia` 0.228）**连脚本专家自己都只有 0.19–0.38**——这些 deck 对全池是结构性劣势，
+拿它们算「强度」没有意义，先排除在 specialist 目标之外。
+
+**本轮决策**：
+1. specialist 目标限定在**脚本专家 ≥0.55** 的 deck（有真实可赢的对局）：已覆盖 dgeo/unyielding/dvalin、
+   Group B（SA 除外）/Group C 六个（klee 0.55、nahida 0.65、shenhe 0.72、electro_manifestation 0.66、
+   mualani_double_pyro 0.56、dual_mualani 0.56）。
+2. **SA 从阶梯名单剔除**（负结果，已记录）；dvalin 保持 +3pp 的 specialist，不再加轮次。
+3. Group C 采集已启动（6 deck × 2,000 局，种子 11000–11599），随后 GPU 出底座 → 逐 deck 一轮阶梯。
+
 ### 下一步（2026-10-19 修订）
 
 1. **all-deck 单模型（Kaggle 会话 5，正在跑）**：`all_decks_40s.pt`（20 deck × 20 池 × 40 种子，707k 样本）上
