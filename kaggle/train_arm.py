@@ -176,14 +176,33 @@ GROUP_B_RUNS = [
      "epochs": 150, "run_timeout": 7200},
 ]
 
+GROUP_C_RUNS = [
+    # Group C (2026-10-25): the uncovered decks whose scripted expert is actually strong
+    # (0.55-0.72 pooled). Same density as A/B: 2,000 expert games per deck.
+    {"name": "gc_klee_bc_d256_e150", "store": "gc_klee_mavuika_mualani.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 7200},
+    {"name": "gc_nahida_bc_d256_e150", "store": "gc_nahida_kokomi_raiden.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 7200},
+    {"name": "gc_shenhe_bc_d256_e150", "store": "gc_shenhe_double_swirl.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 7200},
+    {"name": "gc_electro_bc_d256_e150", "store": "gc_electro_manifestation_nuke.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 7200},
+    {"name": "gc_mualani_bc_d256_e150", "store": "gc_mualani_double_pyro.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 7200},
+    {"name": "gc_dual_bc_d256_e150", "store": "gc_dual_mualani_stacks.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 7200},
+]
+
 MODE_RUNS = {
     "h4": H4_RUNS,
     "alld": ALL_DECKS_RUNS,
     "cap": CAPACITY_RUNS,
     "gb": GROUP_B_RUNS,
+    "gc": GROUP_C_RUNS,
     # one session: cheap per-deck bases first (they unblock local ladders), then the
     # density/capacity controls.
     "wave1": GROUP_B_RUNS + CAPACITY_RUNS,
+    "wave2": GROUP_C_RUNS + GROUP_B_RUNS + CAPACITY_RUNS,
 }
 
 SMOKE_RUNS = [
@@ -333,10 +352,13 @@ def build_smoke_store() -> None:
 
 
 # ------------------------------------------------------------------------ running
+KERNEL_ONLY_KEYS = {"name", "store", "run_timeout"}
+
+
 def spec_to_argv(spec: dict) -> list[str]:
     argv: list[str] = []
     for key, value in spec.items():
-        if key in ("name", "store") or value is None:
+        if key in KERNEL_ONLY_KEYS or value is None:
             continue
         flag = f"--{key.replace('_', '-')}"
         if value is True:

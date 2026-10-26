@@ -1,0 +1,21 @@
+{
+  "id": "fmyh1828/gitcg-train-arm-c",
+  "title": "gitcg train arm c",
+  "code_file": "train_arm.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": false,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "fmyh1828/genshin-gitcg-code",
+    "fmyh1828/genshin-gitcg-corpus",
+    "fmyh1828/genshin-gitcg-corpus-alld",
+    "fmyh1828/genshin-gitcg-corpus-gb",
+    "fmyh1828/genshin-gitcg-corpus-gc"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

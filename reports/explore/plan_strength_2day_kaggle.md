@@ -495,6 +495,22 @@ aywolfskirk −0.068、natlan −0.085）各采 2,000 局专家对局（密度�
 2. **SA 从阶梯名单剔除**（负结果，已记录）；dvalin 保持 +3pp 的 specialist，不再加轮次。
 3. Group C 采集已启动（6 deck × 2,000 局，种子 11000–11599），随后 GPU 出底座 → 逐 deck 一轮阶梯。
 
+### 2026-10-26 —— wave1 空跑事故（`--run-timeout` 漏进训练器）+ Group C 采集完成
+
+`wave1` 网格 8 个 run **全部在 1 秒内失败**：`spec_to_argv()` 把 `run_timeout`（kernel 侧的
+per-run 超时）当成训练器参数转发，`datafirst_bc_train` 报 `unrecognized arguments: --run-timeout`。
+GPU 只花了 ~0.1h（不是大损失），但整晚没有产出。修复：`KERNEL_ONLY_KEYS = {"name","store","run_timeout"}`，
+并加了本地断言（生成 argv 里不得出现 `run_timeout`）。
+
+**Group C 采集完成**：klee / nahida / shenhe / electro_manifestation / mualani_double_pyro /
+dual_mualani_stacks 各 **2,000 局**（种子 11000–11599），store 72k–102k 样本/deck。
+
+**重排 `wave2` 网格**（一个 session，14 run，~7.6h）：Group C 6 个底座 + Group B 4 个底座
+（上一轮没跑成）+ 4 个密度/容量对照；便宜的底座排前面，先解锁本机阶梯。
+
+**同时本机补强**：对两个已达标的 specialist 在**全新种子**上做 20-seed 复验（dgeo 600–619、
+unyielding 620–639，各 800 配对局），把交付件的置信区间收窄。
+
 ### 下一步（2026-10-19 修订）
 
 1. **all-deck 单模型（Kaggle 会话 5，正在跑）**：`all_decks_40s.pt`（20 deck × 20 池 × 40 种子，707k 样本）上
