@@ -68,7 +68,8 @@ if [ "$PROBE" = "1" ]; then
   echo "probe" > "$KERNEL_DIR/mode.txt"
 else
   KERNEL_REF="${KERNEL:-fmyh1828/gitcg-train-arm}"
-  cp kaggle/train_arm.py "${META:-kaggle/kernel-metadata.json}" "$KERNEL_DIR/kernel-metadata.json"
+  cp kaggle/train_arm.py "$KERNEL_DIR/train_arm.py"
+  cp "${META:-kaggle/kernel-metadata.json}" "$KERNEL_DIR/kernel-metadata.json"
   echo "$KAGGLE_MODE" > "$KERNEL_DIR/mode.txt"   # staging copy, not the tracked folder
 fi
 if [ -n "$ACCEL" ]; then
