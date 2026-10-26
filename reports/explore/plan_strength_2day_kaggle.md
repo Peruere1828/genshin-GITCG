@@ -511,6 +511,17 @@ dual_mualani_stacks 各 **2,000 局**（种子 11000–11599），store 72k–10
 **同时本机补强**：对两个已达标的 specialist 在**全新种子**上做 20-seed 复验（dgeo 600–619、
 unyielding 620–639，各 800 配对局），把交付件的置信区间收窄。
 
+### 2026-10-26（续）—— **两个 specialist 在 20 seeds 上通过完整门禁**
+
+| deck | 种子 | pooled | 专家 | Δ | 95% CI | 样本 | gates |
+|---|---|---|---|---|---|---|---|
+| **double_geo_navia** (rl_dgeo3) | 600–619 | **0.880** | 0.712 | **+0.168** | [+0.134,+0.201] | 800 配对 | pooled✓ floor✓ clean✓ **PASS** |
+| **unyielding_geo** (rl_ungeo3) | 620–639 | **0.909** | 0.854 | **+0.055** | [+0.027,+0.083] | 800 配对 | pooled✓ floor✓ clean✓ **PASS** |
+
+这是第一次有策略在**完整验收门禁**（pooled + 严格 Wilson floor + clean）上通过——10 seeds 时
+floor 门槛因样本量不足必然标红（n=20 时 rate 0.5 的 Wilson 下界只有 ~0.30），20 seeds 后统计功效够了。
+**交付件定稿**：dgeo 0.880（+16.8pp）、unyielding 0.909（+5.5pp，且专家在本种子集上高达 0.854）。
+
 ### 下一步（2026-10-19 修订）
 
 1. **all-deck 单模型（Kaggle 会话 5，正在跑）**：`all_decks_40s.pt`（20 deck × 20 池 × 40 种子，707k 样本）上
