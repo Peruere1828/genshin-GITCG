@@ -1,6 +1,6 @@
 {
   "tag": "base_gc_klee",
-  "generated": "2026-10-26T19:51:03",
+  "generated": "2026-10-27T01:38:20",
   "protocol": {
     "contestant": "neural:data/checkpoints/kaggle/gc_klee_bc_d256_e150.pt",
     "contestant_deck": "klee_mavuika_mualani",

@@ -1,6 +1,6 @@
 {
   "tag": "base_gc_dual",
-  "generated": "2026-10-26T20:51:29",
+  "generated": "2026-10-27T01:39:20",
   "protocol": {
     "contestant": "neural:data/checkpoints/kaggle/gc_dual_bc_d256_e150.pt",
     "contestant_deck": "dual_mualani_stacks",

@@ -9,22 +9,22 @@ One row per deck: the best certified arm (highest paired delta, then pooled rate
 | unyielding_geo | 0.9087 | 0.8538 | +0.0550 | [+0.027,+0.083] | 800 | 0 | PASS | `final20_ungeo` |
 | skirk_ayaka_navia | 0.2275 | 0.1875 | +0.0400 | [-0.011,+0.091] | 400 | 16 | fail | `screen_alld_skirk_ayaka_navia` |
 | dvalin_bonk | 0.7800 | 0.7425 | +0.0375 | [-0.009,+0.084] | 400 | 1 | fail | `rl_dvalin1_dvalin_bonk` |
-| electro_manifestation_nuke | 0.6600 | 0.6575 | +0.0025 | [-0.051,+0.056] | 400 | 2 | fail | `base_gc_electro` |
+| shenhe_double_swirl | 0.7025 | 0.6650 | +0.0375 | [-0.014,+0.089] | 400 | 2 | fail | `rl_shenhe1_shenhe_double_swirl` |
+| electro_manifestation_nuke | 0.6850 | 0.6550 | +0.0300 | [-0.025,+0.085] | 400 | 2 | fail | `rl_electro1_electro_manifestation_nuke` |
 | superconduct_aggro | 0.5050 | 0.5088 | -0.0037 | [-0.057,+0.050] | 400 | 11 | fail | `h4v2_h4m_e150_superconduct_aggro` |
-| shenhe_double_swirl | 0.6675 | 0.6825 | -0.0150 | [-0.069,+0.039] | 400 | 4 | fail | `base_gc_shenhe` |
 | superconduct_mika_attack | 0.5437 | 0.5675 | -0.0238 | [-0.078,+0.031] | 400 | 8 | fail | `alld_e150_superconduct_mika_attack` |
+| natlan_battleship | 0.2562 | 0.2850 | -0.0288 | [-0.077,+0.020] | 400 | 15 | fail | `base_gb_natlan` |
+| aywolfskirk | 0.4825 | 0.5162 | -0.0338 | [-0.083,+0.016] | 400 | 9 | fail | `base_gb_aywolf` |
 | mualani_double_pyro | 0.5425 | 0.5775 | -0.0350 | [-0.091,+0.021] | 400 | 6 | fail | `base_gc_mualani` |
 | ice_water_battleship | 0.1475 | 0.1825 | -0.0350 | [-0.082,+0.012] | 400 | 19 | fail | `screen_alld_ice_water_battleship` |
 | klee_mavuika_mualani | 0.4575 | 0.5250 | -0.0675 | [-0.122,-0.013] | 400 | 10 | fail | `base_gc_klee` |
-| aywolfskirk | 0.4550 | 0.5225 | -0.0675 | [-0.120,-0.015] | 400 | 9 | fail | `alld_e150_aywolfskirk` |
 | dual_mualani_stacks | 0.4850 | 0.5550 | -0.0700 | [-0.127,-0.013] | 400 | 9 | fail | `base_gc_dual` |
 | trial_skirk_ayaka_navia | 0.3075 | 0.3775 | -0.0700 | [-0.120,-0.020] | 400 | 15 | fail | `screen_alld_trial_skirk_ayaka_navia` |
 | nahida_kokomi_raiden | 0.5325 | 0.6125 | -0.0800 | [-0.135,-0.025] | 400 | 8 | fail | `base_gc_nahida` |
-| natlan_battleship | 0.1400 | 0.2250 | -0.0850 | [-0.127,-0.043] | 400 | 19 | fail | `dfbc_cert_natlan_battleship` |
 | beidou_skirk_ayaka | 0.1237 | 0.2188 | -0.0950 | [-0.136,-0.054] | 400 | 19 | fail | `screen_alld_beidou_skirk_ayaka` |
 | skirk_chasca_freeze | 0.0850 | 0.1975 | -0.1125 | [-0.154,-0.071] | 400 | 19 | fail | `screen_alld_skirk_chasca_freeze` |
 | yelan_clorinde_ororon | 0.2700 | 0.4475 | -0.1775 | [-0.230,-0.125] | 400 | 15 | fail | `screen_alld_yelan_clorinde_ororon` |
 
-Decks with a certified arm: **19**  |  full gate PASS: **2**  |  absolute parity or better vs the scripted expert: **5**
+Decks with a certified arm: **19**  |  full gate PASS: **2**  |  absolute parity or better vs the scripted expert: **6**
 
 Note: the strict Wilson floor needs ~20 seeds per deck to be informative (at 10 seeds a true 0.50 matchup rate has a Wilson lower bound near 0.30, so the floor check fails on statistical power alone).

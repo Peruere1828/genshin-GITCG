@@ -193,6 +193,19 @@ GROUP_C_RUNS = [
      "epochs": 150, "run_timeout": 7200},
 ]
 
+GB2_RUNS = [
+    # Round 2 data for the three nearest-parity Group B decks (4,000 games each after
+    # merging both collection batches). BC's ceiling is the scripted expert, so more
+    # games per matchup is the sanctioned way to close the last ~3pp of imitation gap
+    # before the exploitation ladder is allowed to start.
+    {"name": "gb2_mika_bc_d256_e150", "store": "gbm_superconduct_mika_attack.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 10800},
+    {"name": "gb2_natlan_bc_d256_e150", "store": "gbm_natlan_battleship.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 10800},
+    {"name": "gb2_aywolf_bc_d256_e150", "store": "gbm_aywolfskirk.pt", "loss": "ce",
+     "epochs": 150, "run_timeout": 10800},
+]
+
 MODE_RUNS = {
     "h4": H4_RUNS,
     "alld": ALL_DECKS_RUNS,
@@ -203,6 +216,7 @@ MODE_RUNS = {
     # density/capacity controls.
     "wave1": GROUP_B_RUNS + CAPACITY_RUNS,
     "wave2": GROUP_C_RUNS + GROUP_B_RUNS + CAPACITY_RUNS,
+    "gb2": GB2_RUNS,
 }
 
 SMOKE_RUNS = [
