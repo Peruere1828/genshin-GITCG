@@ -44,6 +44,37 @@ _OPPONENT_TAGS = opponent_tags()
 _AURA_TYPES = (0, 1, 2, 3, 4, 5, 6)
 _SCALAR_DIM = 24
 
+# Every entity definition id is squashed into one scalar feature as ``id / SCALE``
+# (see ``FeatureEncoder._normalize_definition`` and ``_build_token``), which is
+# exactly invertible: float32 keeps ~7 significant digits, so ``round(x * SCALE)``
+# recovers the id for every id <= SCALE. That is what makes learned card/entity
+# embeddings possible on corpora collected *before* the embeddings existed -- no
+# re-collection, the identity is already in the features, just not usable as a
+# category (a monotone number is not "Klee's burst").
+DEFINITION_SCALE = 400000.0
+
+
+def definition_feature_indices(*, include_opponent_tag: bool = True) -> tuple[int, int]:
+    """Column indices holding the definition id, ``(token_index, option_index)``.
+
+    Both vectors are concatenations of one-hot blocks followed by scalars, so the
+    position is fixed by the vocabulary sizes. Deriving it here (instead of
+    hard-coding 42/30) keeps it in sync if a block ever changes.
+    """
+    token_index = (
+        len(_TOKEN_TYPES)
+        + len(_OWNER_TYPES)
+        + len(_PHASES)
+        + len(tuple(DecisionType))
+        + len(tuple(OptionKind))
+        + (len(opponent_tags()) if include_opponent_tag else 0)
+        + 1                     # round_number comes before definition_id
+    )
+    from .features import _DICE_TYPES
+
+    option_index = len(tuple(OptionKind)) + 2 * len(_DICE_TYPES) + 5
+    return token_index, option_index
+
 
 @dataclass(frozen=True)
 class TokenObservationEncoderConfig:
@@ -503,7 +534,7 @@ class TokenObservationEncoder:
             features.extend(1.0 if opponent_tag == value else 0.0 for value in _OPPONENT_TAGS)
         scalar_values = [
             self._safe_ratio(round_number, 15.0),
-            self._safe_ratio(definition_id or 0, 400000.0),
+            self._safe_ratio(definition_id or 0, DEFINITION_SCALE),
             1.0 if current_turn == 0 else 0.0,
             1.0 if current_turn == 1 else 0.0,
             1.0 if acting_player == 0 else 0.0,

@@ -89,7 +89,7 @@ os.environ.setdefault("GITCG_ASSETS_OFFLINE", "1")
 # Shared defaults for every run; a run spec overrides individual keys.
 RUN_DEFAULTS = {
     "arch": "cvpn", "d_model": 256, "n_layers": 2, "n_heads": 4,
-    "belief": False, "epochs": 100, "lr": 1e-3, "batch_size": 512,
+    "belief": False, "epochs": 100, "lr": 1e-3, "batch_size": 512, "id_buckets": 0,
     "train_limit": None, "val_limit": 8000, "seed": 0,
     "loss": "ce", "awr_beta": 1.0, "awr_max_weight": 10.0,
     "q_target": "episode", "q_gamma": 0.97, "threads": 3,

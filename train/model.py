@@ -42,6 +42,14 @@ class CVPNConfig:
     # runs and the search frontier want. Recorded in the checkpoint, so consumers
     # always receive a probability either way.
     value_activation: str = "identity"
+    # A2 (2026-10-27): learned card/entity identity. The encoder squashes a definition
+    # id into one scalar (``id / 400000``), which is exactly invertible, so the model
+    # can bucket it and look it up in an embedding table. ``id_buckets = 0`` keeps the
+    # historical architecture and makes every pre-A2 checkpoint load unchanged.
+    id_buckets: int = 0
+    id_emb_dim: int = 32
+    token_def_index: int = -1     # < 0 -> resolve from the encoder layout
+    option_def_index: int = -1
 
 
 def activate_value(value: torch.Tensor, config) -> torch.Tensor:
@@ -85,6 +93,33 @@ class CVPN(nn.Module):
                 card_dim=config.belief_card_dim,
                 hidden=config.belief_hidden,
             )
+        self.has_ids = bool(config.id_buckets and config.id_buckets > 1)
+        if self.has_ids:
+            from reps.observation_encoder import definition_feature_indices
+
+            default_token, default_option = definition_feature_indices()
+            self.token_def_index = (
+                config.token_def_index if config.token_def_index >= 0 else default_token
+            )
+            self.option_def_index = (
+                config.option_def_index if config.option_def_index >= 0 else default_option
+            )
+            self.token_id_emb = nn.Embedding(config.id_buckets, config.id_emb_dim, padding_idx=0)
+            self.option_id_emb = nn.Embedding(config.id_buckets, config.id_emb_dim, padding_idx=0)
+            self.id_proj = nn.Sequential(nn.Linear(config.id_emb_dim, d), nn.SiLU())
+            self.option_id_proj = nn.Sequential(nn.Linear(config.id_emb_dim, d), nn.SiLU())
+
+    def _with_ids(self, projected: torch.Tensor, raw: torch.Tensor, *, option: bool) -> torch.Tensor:
+        """Add the learned identity embedding of each token/option to its projection."""
+        from reps.id_features import option_definition_ids, token_definition_ids
+
+        if not self.has_ids:
+            return projected
+        if option:
+            ids = option_definition_ids(raw, self.option_def_index, self.config.id_buckets)
+            return projected + self.option_id_proj(self.option_id_emb(ids))
+        ids = token_definition_ids(raw, self.token_def_index, self.config.id_buckets)
+        return projected + self.id_proj(self.token_id_emb(ids))
 
     def forward_all(
         self,
@@ -94,12 +129,12 @@ class CVPN(nn.Module):
         option_mask: torch.Tensor,     # (B, K) bool
     ) -> tuple[torch.Tensor, torch.Tensor, BeliefOutput | None]:
         """Policy logits, value, and the (optional) belief prediction in one pass."""
-        projected = self.token_proj(tokens)
+        projected = self._with_ids(self.token_proj(tokens), tokens, option=False)
         mask = token_mask.unsqueeze(-1).to(projected.dtype)
         denom = mask.sum(dim=1).clamp(min=1.0)
         global_vec = (projected * mask).sum(dim=1) / denom  # (B, d)
 
-        option_vec = self.option_proj(options)  # (B, K, d)
+        option_vec = self._with_ids(self.option_proj(options), options, option=True)  # (B, K, d)
         repeated = global_vec.unsqueeze(1).expand(-1, option_vec.size(1), -1)
         logits = self.option_scorer(torch.cat([repeated, option_vec], dim=-1)).squeeze(-1)
         logits = logits.masked_fill(~option_mask, float("-inf"))
@@ -203,6 +238,11 @@ class TransformerCVPNConfig:
     belief_card_dim: int = 0
     belief_hidden: int = 128
     value_activation: str = "identity"
+    # A2: learned card/entity identity (see CVPNConfig).
+    id_buckets: int = 0
+    id_emb_dim: int = 32
+    token_def_index: int = -1
+    option_def_index: int = -1
 
 
 class TransformerCVPN(nn.Module):
@@ -251,6 +291,33 @@ class TransformerCVPN(nn.Module):
                 card_dim=config.belief_card_dim,
                 hidden=config.belief_hidden,
             )
+        self.has_ids = bool(config.id_buckets and config.id_buckets > 1)
+        if self.has_ids:
+            from reps.observation_encoder import definition_feature_indices
+
+            default_token, default_option = definition_feature_indices()
+            self.token_def_index = (
+                config.token_def_index if config.token_def_index >= 0 else default_token
+            )
+            self.option_def_index = (
+                config.option_def_index if config.option_def_index >= 0 else default_option
+            )
+            self.token_id_emb = nn.Embedding(config.id_buckets, config.id_emb_dim, padding_idx=0)
+            self.option_id_emb = nn.Embedding(config.id_buckets, config.id_emb_dim, padding_idx=0)
+            self.id_proj = nn.Sequential(nn.Linear(config.id_emb_dim, d), nn.SiLU())
+            self.option_id_proj = nn.Sequential(nn.Linear(config.id_emb_dim, d), nn.SiLU())
+
+    def _with_ids(self, projected: torch.Tensor, raw: torch.Tensor, *, option: bool) -> torch.Tensor:
+        """Add the learned identity embedding of each token/option to its projection."""
+        from reps.id_features import option_definition_ids, token_definition_ids
+
+        if not self.has_ids:
+            return projected
+        if option:
+            ids = option_definition_ids(raw, self.option_def_index, self.config.id_buckets)
+            return projected + self.option_id_proj(self.option_id_emb(ids))
+        ids = token_definition_ids(raw, self.token_def_index, self.config.id_buckets)
+        return projected + self.id_proj(self.token_id_emb(ids))
 
     def forward_all(
         self,
@@ -260,13 +327,14 @@ class TransformerCVPN(nn.Module):
         option_mask: torch.Tensor,     # (B, K) bool
     ) -> tuple[torch.Tensor, torch.Tensor, BeliefOutput | None]:
         pad = ~token_mask  # True = ignore in attention
-        encoded = self.encoder(self.token_proj(tokens), src_key_padding_mask=pad)  # (B,T,d)
+        embedded = self._with_ids(self.token_proj(tokens), tokens, option=False)
+        encoded = self.encoder(embedded, src_key_padding_mask=pad)  # (B,T,d)
 
         mask = token_mask.unsqueeze(-1).to(encoded.dtype)
         denom = mask.sum(dim=1).clamp(min=1.0)
         pooled = (encoded * mask).sum(dim=1) / denom  # (B, d)
 
-        option_vec = self.option_proj(options)  # (B, K, d)
+        option_vec = self._with_ids(self.option_proj(options), options, option=True)  # (B, K, d)
         attended, _ = self.cross_attn(
             query=option_vec, key=encoded, value=encoded, key_padding_mask=pad
         )  # (B, K, d)

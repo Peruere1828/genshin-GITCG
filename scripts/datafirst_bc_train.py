@@ -61,6 +61,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--d-model", type=int, default=256)
     p.add_argument("--n-layers", type=int, default=2)
     p.add_argument("--n-heads", type=int, default=4)
+    p.add_argument("--id-buckets", type=int, default=0,
+                   help="A2: learned card/entity identity embeddings (0 = historical "
+                        "architecture, which is what every pre-A2 checkpoint expects)")
+    p.add_argument("--id-emb-dim", type=int, default=32)
     p.add_argument("--belief", action="store_true")
     p.add_argument("--epochs", type=int, default=15)
     p.add_argument("--lr", type=float, default=1e-3)
@@ -120,11 +124,13 @@ def main(argv: list[str] | None = None) -> int:
             encoder, belief=args.belief, d_model=args.d_model,
             n_layers=args.n_layers, n_heads=args.n_heads,
             value_activation=args.value_activation,
+            id_buckets=args.id_buckets, id_emb_dim=args.id_emb_dim,
         )
         model = TransformerCVPN(cfg)
     else:
         cfg = config_for_encoder(encoder, belief=args.belief, d_model=args.d_model,
-                                 value_activation=args.value_activation)
+                                 value_activation=args.value_activation,
+                                 id_buckets=args.id_buckets, id_emb_dim=args.id_emb_dim)
         model = CVPN(cfg)
     has_belief = bool(getattr(model, "has_belief", False))
     if args.init_from:
