@@ -14,6 +14,8 @@ PY="${PY:-/home/ubuntuaaa/miniconda3/envs/gitcg/bin/python}"
 DECK="${1:?deck}"; TAG="${2:?tag}"; TEACHER="${3:?teacher}"; SEED_START="${4:?seed start}"
 SEED_COUNT="${5:?seed count}"; EVAL_SEED_START="${6:?eval seed start}"
 WORKERS="${WORKERS:-10}"; EPOCHS="${EPOCHS:-1}"; LR="${LR:-3e-5}"
+# A2: keep the identity branch when the teacher/base checkpoint has it (0 = legacy).
+ID_BUCKETS="${ID_BUCKETS:-0}"; ID_EMB_DIM="${ID_EMB_DIM:-32}"
 
 echo "=== $(date -Is) collect $DECK ($SEED_COUNT seeds, teacher=$TEACHER)"
 "$PY" -m train.collect --deck "$DECK" --all-opponents \
@@ -26,6 +28,7 @@ echo "=== $(date -Is) store + PG for $DECK"
   --report "reports/train/${TAG}_${DECK}_store.json"
 "$PY" -m scripts.datafirst_bc_train --store-cache "data/store/${TAG}_${DECK}.pt" --init-from "$TEACHER" \
   --d-model 256 --epochs "$EPOCHS" --lr "$LR" --batch-size 256 --threads 10 --seed 0 \
+  --id-buckets "$ID_BUCKETS" --id-emb-dim "$ID_EMB_DIM" \
   --loss pg --pg-entropy 0.01 --grad-clip 1.0 \
   --out "data/checkpoints/${TAG}_${DECK}.pt" --report "reports/train/${TAG}_${DECK}.json"
 

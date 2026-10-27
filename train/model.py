@@ -13,7 +13,7 @@ the process-global low-level action codes (see AGENTS.md "重放确定性坑").
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Sequence
+from typing import Mapping, Sequence
 
 import torch
 from torch import nn
@@ -212,6 +212,52 @@ def load_cvpn_model(path: str) -> nn.Module:
     model.load_state_dict(payload["state_dict"])
     model.eval()
     return model
+
+
+ID_PARAM_PREFIXES = ("token_id_emb.", "option_id_emb.", "id_proj.", "option_id_proj.")
+
+
+def zero_init_identity_branch(model: nn.Module) -> bool:
+    """Make the A2 identity branch a no-op at initialisation.
+
+    Used when a pre-A2 checkpoint is upgraded to ``id_buckets > 0``: the source
+    has no identity parameters, so the new branch must contribute exactly zero
+    until it is trained.  The last linear layer of both projections is zeroed
+    (SiLU(0) == 0); the embedding tables stay randomly initialised and start
+    receiving gradients once the projection moves off zero.
+    """
+    if not getattr(model, "has_ids", False):
+        return False
+    for name in ("id_proj", "option_id_proj"):
+        proj = getattr(model, name, None)
+        if proj is None:
+            continue
+        linears = [m for m in proj.modules() if isinstance(m, nn.Linear)]
+        if not linears:
+            raise ValueError(f"{name} has no Linear layer")
+        nn.init.zeros_(linears[-1].weight)
+        nn.init.zeros_(linears[-1].bias)
+    return True
+
+
+def load_state_dict_compatible(
+    model: nn.Module, state_dict: Mapping[str, torch.Tensor]
+) -> list[str]:
+    """Load a pre-A2 checkpoint into an identity-enabled model.
+
+    Missing keys are allowed only for the A2 identity parameters; any other
+    mismatch is an architecture error.  Returns the missing identity keys so
+    callers can report what was newly initialised.
+    """
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    allowed = [key for key in missing if key.startswith(ID_PARAM_PREFIXES)]
+    disallowed = [key for key in missing if key not in allowed]
+    if disallowed or unexpected:
+        raise RuntimeError(
+            "state_dict mismatch: "
+            f"missing={sorted(disallowed)} unexpected={sorted(unexpected)}"
+        )
+    return allowed
 
 
 @dataclass(frozen=True)

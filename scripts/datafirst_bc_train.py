@@ -42,7 +42,14 @@ import torch
 from common.lock import load_engine_lock, runtime_metadata
 from common.paths import ensure_dir
 from envs.observation import default_encoder
-from train.model import CVPN, TransformerCVPN, config_for_encoder, transformer_config_for_encoder
+from train.model import (
+    CVPN,
+    TransformerCVPN,
+    config_for_encoder,
+    load_state_dict_compatible,
+    transformer_config_for_encoder,
+    zero_init_identity_branch,
+)
 from scripts.train_bc_scale import Config, train
 
 
@@ -65,6 +72,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="A2: learned card/entity identity embeddings (0 = historical "
                         "architecture, which is what every pre-A2 checkpoint expects)")
     p.add_argument("--id-emb-dim", type=int, default=32)
+    p.add_argument("--id-zero-init", action="store_true",
+                   help="A2 fine-tune: start the identity branch as a no-op so a pre-A2 "
+                        "--init-from checkpoint begins bit-identical to its old outputs")
     p.add_argument("--belief", action="store_true")
     p.add_argument("--epochs", type=int, default=15)
     p.add_argument("--lr", type=float, default=1e-3)
@@ -133,17 +143,20 @@ def main(argv: list[str] | None = None) -> int:
                                  id_buckets=args.id_buckets, id_emb_dim=args.id_emb_dim)
         model = CVPN(cfg)
     has_belief = bool(getattr(model, "has_belief", False))
+    if args.id_zero_init and zero_init_identity_branch(model):
+        print("[init] identity branch zero-initialised (no-op at step 0)", flush=True)
     if args.init_from:
         from train.model import load_cvpn_model
 
         source = load_cvpn_model(args.init_from)
         try:
-            model.load_state_dict(source.state_dict(), strict=True)
+            missing_ids = load_state_dict_compatible(model, source.state_dict())
         except RuntimeError as exc:
             raise SystemExit(
                 f"--init-from architecture mismatch ({args.init_from}): {exc}"
             ) from exc
-        print(f"[init] weights <- {args.init_from}", flush=True)
+        note = f" ({len(missing_ids)} new identity tensors)" if missing_ids else ""
+        print(f"[init] weights <- {args.init_from}{note}", flush=True)
     config = Config(
         epochs=args.epochs, lr=args.lr, batch_size=args.batch_size,
         seed=args.seed, device=args.device, weight_decay=args.weight_decay,

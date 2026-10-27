@@ -17,7 +17,14 @@ from reps.observation_encoder import (
     TokenObservationEncoderConfig,
     definition_feature_indices,
 )
-from train.model import CVPN, CVPNConfig, TransformerCVPN, TransformerCVPNConfig
+from train.model import (
+    CVPN,
+    CVPNConfig,
+    TransformerCVPN,
+    TransformerCVPNConfig,
+    load_state_dict_compatible,
+    zero_init_identity_branch,
+)
 
 
 def _encoder() -> TokenObservationEncoder:
@@ -144,3 +151,41 @@ def test_token_and_option_id_helpers_agree_with_the_models_view():
     assert token_ids[0, 0].item() == bucket_ids(torch.tensor([311328]), 512)[0].item()
     assert option_ids[0, 0].item() == bucket_ids(torch.tensor([332031]), 512)[0].item()
     assert token_ids[0, 1].item() == 0        # no definition -> padding bucket
+
+
+def test_legacy_checkpoint_upgrades_to_identity_model_as_a_noop():
+    """A2 fine-tune path: old weights load unchanged, id branch contributes 0."""
+    torch.manual_seed(0)
+    legacy = CVPN(CVPNConfig(token_dim=65, option_dim=68, d_model=64))
+    model = CVPN(CVPNConfig(token_dim=65, option_dim=68, d_model=64, id_buckets=512))
+    assert zero_init_identity_branch(model)
+    missing = load_state_dict_compatible(model, legacy.state_dict())
+    assert missing
+    assert all(
+        key.startswith(("token_id_emb.", "option_id_emb.", "id_proj.", "option_id_proj."))
+        for key in missing
+    )
+
+    legacy.eval()
+    model.eval()
+    tokens, token_mask, options, option_mask = _batch()
+    index, option_index = definition_feature_indices()
+    tokens[:, :, index] = 311328 / DEFINITION_SCALE
+    options[:, :, option_index] = 332031 / DEFINITION_SCALE
+    with torch.no_grad():
+        before, _ = legacy(tokens, token_mask, options, option_mask)
+        after, _ = model(tokens, token_mask, options, option_mask)
+    assert torch.allclose(before, after, atol=1e-6), "zero-init identity branch is not a no-op"
+
+
+def test_id_compatible_load_rejects_non_id_gaps():
+    legacy = CVPN(CVPNConfig(token_dim=65, option_dim=68, d_model=64))
+    model = CVPN(CVPNConfig(token_dim=65, option_dim=68, d_model=64, id_buckets=512))
+    state = dict(legacy.state_dict())
+    state.pop("token_proj.0.weight")
+    try:
+        load_state_dict_compatible(model, state)
+    except RuntimeError as exc:
+        assert "token_proj.0.weight" in str(exc)
+    else:
+        raise AssertionError("a non-identity missing tensor must be rejected")

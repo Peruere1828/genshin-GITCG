@@ -1,0 +1,106 @@
+{
+  "a": "a0_double_geo_navia_s900",
+  "b": "a0i_double_geo_navia_s900",
+  "n_a": 400,
+  "n_b": 400,
+  "paired": {
+    "n_pairs": 400,
+    "n_shared": 400,
+    "n_pairs_dropped": 0,
+    "invalid_a": 0,
+    "invalid_b": 0,
+    "delta": 0.45375,
+    "se": 0.0275224190911987,
+    "ci_low": 0.3998060585812505,
+    "ci_high": 0.5076939414187495,
+    "rate_a": 0.72,
+    "rate_b": 0.26625,
+    "opponent_cluster_ci_low": 0.36121070918972986,
+    "opponent_cluster_ci_high": 0.5462892908102702,
+    "cluster_boot_ci_low": 0.375,
+    "cluster_boot_ci_high": 0.5375,
+    "per_opponent": {
+      "aywolfskirk": {
+        "n": 20,
+        "delta": 0.8
+      },
+      "beidou_skirk_ayaka": {
+        "n": 20,
+        "delta": 0.375
+      },
+      "double_geo_navia": {
+        "n": 20,
+        "delta": 0.6
+      },
+      "dual_mualani_stacks": {
+        "n": 20,
+        "delta": 0.5
+      },
+      "dvalin_bonk": {
+        "n": 20,
+        "delta": 0.35
+      },
+      "electro_manifestation_nuke": {
+        "n": 20,
+        "delta": 0.1
+      },
+      "electrocharged_moon": {
+        "n": 20,
+        "delta": 0.2
+      },
+      "ice_water_battleship": {
+        "n": 20,
+        "delta": 0.3
+      },
+      "klee_mavuika_mualani": {
+        "n": 20,
+        "delta": 0.3
+      },
+      "mualani_double_pyro": {
+        "n": 20,
+        "delta": 0.45
+      },
+      "nahida_kokomi_raiden": {
+        "n": 20,
+        "delta": 0.45
+      },
+      "natlan_battleship": {
+        "n": 20,
+        "delta": 0.65
+      },
+      "shenhe_double_swirl": {
+        "n": 20,
+        "delta": 0.55
+      },
+      "skirk_ayaka_navia": {
+        "n": 20,
+        "delta": 0.4
+      },
+      "skirk_chasca_freeze": {
+        "n": 20,
+        "delta": 0.25
+      },
+      "superconduct_aggro": {
+        "n": 20,
+        "delta": 0.65
+      },
+      "superconduct_mika_attack": {
+        "n": 20,
+        "delta": 0.55
+      },
+      "trial_skirk_ayaka_navia": {
+        "n": 20,
+        "delta": 0.6
+      },
+      "unyielding_geo": {
+        "n": 20,
+        "delta": 0.2
+      },
+      "yelan_clorinde_ororon": {
+        "n": 20,
+        "delta": 0.8
+      }
+    },
+    "significant_positive": true
+  }
+}
