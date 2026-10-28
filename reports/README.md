@@ -1,28 +1,45 @@
-# reports — 评测曲线、复盘报告、hypothesis 台账（小体积文件入库）
+# reports — 一次性实验证据
 
-## 结构
+> **这里不是当前状态**。当前基线/排产见 [`docs/STATUS.md`](../docs/STATUS.md)；
+> 有效方法见 [`docs/PLAYBOOK.md`](../docs/PLAYBOOK.md)；失败/重开见 [`docs/failures/`](../docs/failures/)。
+> 报告只放聚合证据、命令、产物路径；原始逐局/逐事件数据在 `data/`（gitignore）。
 
-- `reports/arena/<run_id>.json`：一次 arena 运行的汇总（contestant 总胜率 + 每对局矩阵 + Elo + 元数据）。
-- `reports/arena/<run_id>.pairings.csv`：每对局一行（含 Wilson CI），便于画图/导入表格。
-- `reports/benchmarks/bench_<ts>.json`：吞吐基准（games/h/core、decisions/s/core、engine.lock 元数据）。
-- `reports/engine/probe_snapshot_<ts>.json`：引擎桥快照实测（往返无损/克隆确定/活体复现率；L5.4）。
-- `reports/llm/matrix_<ts>_<tag>.json`：LLM 辅助 vs 纯策略胜率矩阵聚合（纯策略/LLM 分开报分，§6.3；L5.2）。
-- `reports/train/learning_curve_<ts>.json/.csv`：CVPN 学习曲线（数据量×网络规模 → 损失/一致率；L5.3）。
-- `reports/search/<tag>_<ts>.json`：fork 搜索 resolver 对池评测聚合（配对种子 search vs expert 消融 + Wilson CI；L5.4）。
-- `reports/explore/deck_corpus.md` + `.json`：公开七圣召唤卡组语料（探索任务 1）——分享码、验证结果、
-  体系标签、核心卡与来源；`.json` 为紧凑机器可读副本（loader 见 `decklab/corpus.py`）。原始数据在
-  `data/deck_corpus/`（gitignore）。
-- `reports/explore/eval_protocol.md`：**强度评测协议**（定义/公式/样本量/门禁映射/局限）。
-- `reports/explore/<tag>.json`（+ 时间戳副本）：跑分板聚合（逐对手 + 汇总胜率、聚类 CI、锚定评级、最优反应探针、门禁）。
-- `reports/LOCAL_BASELINE.md`：本地先行（L0/L1）实测基线与验收换算。
+## 当前最重要
 
-原始逐局记录（大体积）写入 `data/arena/<run_id>.jsonl`、`data/llm/<tag>.jsonl`、`data/search/<tag>.jsonl`、`data/eval/<tag>.jsonl`、`data/replays/<tag>/`（gitignore，不入库）；
-逐干预明细（LLM probe 日志）同样不入库，`reports/` 只保留聚合摘要。
+| 文件 | 内容 | 状态 |
+|---|---|---|
+| [`EXPLOIT_LADDER.md`](./EXPLOIT_LADDER.md) | 逐 deck PG 剥削阶梯：dgeo 0.880 / ungeo 0.909 | valid |
+| [`SPECIALISTS.md`](./SPECIALISTS.md) | 19 个 deck 的认证最优臂（自动生成） | generated |
+| [`explore/p0_parity_20261027.md`](./explore/p0_parity_20261027.md) | P0 parity / exact id / 干净语料 / A2 复核 | valid |
+| [`explore/literature_review.md`](./explore/literature_review.md) | 7 条文献线 + D25/D26 提案 | valid |
+| [`explore/docs_audit.md`](./explore/docs_audit.md) | 63 份文档盘点 + 整理方案 | valid |
+| [`explore/a2_id_screening.md`](./explore/a2_id_screening.md) | A2 原始数字（**结论无效**） | invalid |
+| [`explore/eval_protocol.md`](./explore/eval_protocol.md) | 已迁到 `docs/EVAL_PROTOCOL.md` 的 stub | stub |
 
-命令：
+## 分类
+
+- **训练/数据**：`train/*.json`、`train/*.md`、`datafirst_bc.md`、`train/bc_scale_datafirst.md`。
+- **搜索/自博弈**：`search/*.md`、`train/a3_m3_cpu_screening.md`、`EXPLOIT_LADDER.md`。
+- **评测**：`explore/*.json`、`arena/*.json`、`eval_protocol_smoke.json`。
+- **NPC PvE**：`npc/pve_v1_gate.md`（当前）、`npc/npc_pve_smoke_v1.md`（superseded）。
+- **Web**：`web_standalone_start.md`（superseded）、`web/`。
+- **LLM**：`llm/*.json`。
+- **引擎/基准**：`engine/*.json`、`benchmarks/*.json`、`LOCAL_BASELINE.md`。
+- **文献/审计**：`explore/lit/`、`explore/literature_review.md`、`explore/docs_audit.md`。
+
+## 规则
+
+1. **报告是证据，不是状态**：不要把“下一步”写进报告；状态进 `docs/STATUS.md`。
+2. **数字带口径**：deck / policy / seeds / n / gate / date；禁止只写 pooled。
+3. **生成文档勿手改**：`SPECIALISTS.md` 等由 `python -m scripts.specialist_table` 生成。
+4. **失效不删除**：顶部加 `status: invalid|superseded|archived` + 原因 + 链接；原文保留。
+5. **路径保留**：移动 canonical 文档时在原位置留 stub（如 `explore/eval_protocol.md`），避免断链。
+
+## 常用命令
+
 ```bash
 python -m eval.arena --smoke --seeds 3 --workers 12
-python -m eval.arena --seeds 50 --workers 12          # 全 20 套对手矩阵，隔夜
-python -m envs.benchmark --games 12 --workers 1       # 单核吞吐基线
-python -m scripts.run_search_agent --smoke --max-searches 3 --workers 8   # fork 搜索消融
+python -m scripts.eval_protocol --sample-sizes
+python -m scripts.specialist_table                 # 生成 SPECIALISTS.md
+python -m scripts.compare_eval_runs <tag_a> <tag_b>
 ```

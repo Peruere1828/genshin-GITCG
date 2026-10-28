@@ -2,9 +2,22 @@
 
 信息泄漏测试（两份只差对手隐藏信息的 state，编码必须一致）、action_adapter 往返、同种子重放一致性、非法动作回退。
 
-## 现状（2026-10-07）
+> 当前测试数量以 `python -m pytest --collect-only -q` 为准（本文件不写死数字）。
+> 当前状态/门禁见 [`docs/STATUS.md`](../docs/STATUS.md)；评测口径见 [`docs/EVAL_PROTOCOL.md`](../docs/EVAL_PROTOCOL.md)。
+
+## 运行
 
 `python -m pytest`（从仓库根跑）；`python -m pytest -m "not slow"` 跳过慢测。
+
+## P0（2026-10-27）新增
+
+- `test_feature_parity.py`：compact exact definition id、`repair_observation_payload`、`compare_observations`（definition 列按 int 比）、store builder 记录 `definition_ids_present`、`include_training_targets` 不改变策略输入。
+- `test_eval_seed.py`：`--seed-start` 只加一次；`match_seed` 落盘。
+- `test_neural_policy_seed.py`：`#t>0` 采样同 seed 可复现。
+- `test_belief_dice.py`：hidden dice 是 i.i.d. 采样，不再是确定性轮转。
+- `test_cfr_probe_value.py`：identity 价值头→概率；acting-player→player-0。
+
+## 主要测试（历史清单，持续更新）
 
 - `test_info_hiding.py`：`public_state.mask_state_for_player` 隐藏对手手牌/骰子/牌堆、保留己方与公开信息、幂等。
 - `test_info_leak.py`（slow，**WS1 硬门禁**）：只改对手隐藏信息的两份 context，编码器**输入**（token/option/mask/opponent id）

@@ -32,6 +32,8 @@
 | D22 | M3-CPU 首次认证结果与下一步（2026-10-12，A3，`reports/train/a3_m3_cpu_screening.md`） | **M3-CPU 未通过认证**（pooled ~0.50 压线，但 strict-CI / Wilson 下界 / M4 floor 全 FAIL）；**关键负面发现：搜索蒸馏 ≈ 冷启动 BC，无可测正增益**（当前 teacher 预算太弱）。**结论：不满足"放大规模"前置**——单纯丢 A800 只放大算力、不改 ~0.50 的结构瓶颈。**下一步**：先做 teacher 预算阶梯 + 搜索智能体直接强度评测，判定"搜索能否显著强于 expert/BC"；认证级评测需 ≥50 seeds/对手（1000+ 局/组）+ `--strict-ci` |
 | D23 | 搜索路线判定与改排产（2026-10-12，A4，`reports/search/a4_search_budget_ladder.md`） | **搜索 teacher 无可测增益，且在可行预算下显著有害**（全池配对 Δ 显著为负；搜索覆盖 ~87–89% 专家动作但净负、根价值区分度 ≈0）。**基线校准**：池内最强脚本专家 ≫ 我们的 BC/蒸馏网 ~0.50（网络尚未追上专家）。**决策**：① **改排产＝数据先行**（先规模化 BC/自博弈数据 + 更大网络顶过专家基线）；② **不把搜索蒸馏放量到 A800**（软目标劣于硬标签，放量只放大有害信号）；③ 重开搜索的前置＝**校准的公共信念价值头 + 非任意候选裁剪 + 门控式覆盖**，三者达标后再跑阶梯 |
 | D24 | 数据先行结论与下一杠杆（2026-10-12，A5/A7，`reports/train/bc_scale_datafirst.md`、`reports/datafirst_bc.md`） | **BC 撞到 teacher 天花板**：规模化 BC **从未显著超过同 deck 专家**（最优仅统计打平）；**真正的杠杆是训练时长/优化，不是数据量**。**deck 混淆极大**：同一策略在强 deck 上 pooled ≥0.50 达 strict-CI PASS、弱 deck 显著拖累 → **验收门禁必须固定 deck 集、逐 deck 报**。**M4 floor 结构性 FAIL**（长尾岩/雷/草系）。**下一杠杆＝策略改进（自博弈/RL 或修好的搜索），不是更多 BC 数据**。工程：`train.collect` 内存 bug 已修（`reports/train/a8_collect_streaming_memory.md`）；compact 载荷体积见 `reports/datafirst_bc.md`。|
+| D25 | A2 复核与 P0 一致性门禁（2026-10-27，`reports/explore/literature_review.md`、`reports/explore/p0_parity_20261027.md`） | **A2 判负无效**：compact 语料默认 fp16，把 `definition_id/400000` 压成不可逆假 id（152 张卡只剩 28 个不同 id；真实 bucket 142、与 store bucket 交集仅 4）；A2 的 id 分支训练/推理读两套索引。另叠加 p0-only/双边评测、模型 init 不受 seed 控制、val_acc 跨语料横比、只保存 final epoch（best 是 ep70）、eval seed 双倍偏移。**决策**：① A2 改判“无效，待 exact id + parity 后重做”；A0（h4m e150）仍为 4-deck 通用 BC 基线，id 路线暂停不关闭；② **parity 未 PASS 前冻结所有新结构训练**（A3/A4/A5/id/FiLM）；③ P0 修复：parity harness（`envs/parity.py` + `scripts/parity_store_live.py`）、compact exact int definition id、`--save-best`（默认 `val_ce`）、init/eval seed 修复、`neural:` 强制 `--contestant-deck`；④ M4 floor 双口径：绝对 floor + 相对同 deck 脚本专家的配对 Δ，teacher-limited matchup（expert Wilson low <45%）不要求绝对 45%；⑤ 评测功效：400 局筛选、800 局判 ≥6pp、1,400–1,600 非劣/4–5pp、3pp 需 2,000–3,000 局。证据：旧 fp16 replay 2 个决策即 10 token/15 option id 失配、同 argmax 下最大 logit drift 13.9；新采 4-deck 干净语料 1,600 局 / 85,573 决策全部带 exact id，dgeo/dvalin parity 各 5/5 决策 PASS（`reports/explore/p0_parity_20261027.md`）。 |
+| D26 | 搜索因果结论限定与价值语义修复（2026-10-27，`reports/explore/lit/f01_selfplay_value.md`、`reports/explore/lit/f07_code_audit.md`） | `envs/cfr_probe.py` 把 identity 价值头的负值当概率截断到 `[0,1]`，且把 acting-player 视角当 player-0；`reps/belief._sample_hidden_dice` 是确定性轮转而非采样。这三处足以单独制造 A4/D23 的“根价值区分度≈0 / 搜索覆盖专家却更常输”的测量结果。P0 已修：`PriorResolver.value_probability()`（identity→`(v+1)/2`、sigmoid 原值）、acting→p0 转换、dice i.i.d. 采样。**决策**：D23 的因果结论降级为“**在当前测量/预算下无增益**”；“不把搜索蒸馏放量到 A800”的排产不变；重开搜索仍需 D23 的三前置（校准价值头 + 非任意候选裁剪 + 门控覆盖）+ parity PASS + value AUC/within-matchup 门禁。 |
 
 ### 0.1 工程约定（现行做法，2026-10-10 正向化整理；证据指向脚本/测试）
 
@@ -304,11 +306,25 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 
 ## 6. 关键设计决策与备选分支
 
-1. **SoG 为主线，DMC 为备线**：直接上 SoG 的前提是 M1 的观测/动作/信念三件套质量过硬。若 M3 处训练长期不涨，启用备线：先 DMC-Q（piovium/AI 思路）验证管线 → 产出 BC 数据 → 回灌 SoG。切换判据：M3 冒烟后阶梯 2 周量级无上升趋势。**搜索引擎受阻不触发备线切换**（D12/D13）：分叉能力已由边界快照解锁；fork 桥出问题时 teacher 切 replay-branch MC 离线标注，主线仍为 SoG。
-2. **动作抽象是硬前置**（不是优化项）：没有它 CVPN 的动作头不可训练，M1 的"抽象动作覆盖全部合法动作"测试是 go/no-go。
-3. **纯策略模式为强度验收口径**：LLM 辅助可以更强，但 G1 的验收、训练门禁、阶梯全部以纯策略模式计，避免"LLM 掩盖策略缺陷"。
-4. **跟随最新卡池的代价控制**：不追新卡池的中间小版本；卡池升级作为一次显式迁移（更新 engine.lock + 数据重标注策略 + 迁移评测），频率 ≤ 每大版本一次。
-5. **逐模块移植 Rebel_base_RL + 自写测试**：参考仓是打补丁式实验分支，只当代码库抄、不当可运行基线——逐模块搬代码 + 自己写测试，不整仓 apply 补丁（C1）。
+### 6.1 SoG 为主线，DMC 为备线
+
+直接上 SoG 的前提是 M1 的观测/动作/信念三件套质量过硬。若 M3 处训练长期不涨，启用备线：先 DMC-Q（piovium/AI 思路）验证管线 → 产出 BC 数据 → 回灌 SoG。切换判据：M3 冒烟后阶梯 2 周量级无上升趋势。**搜索引擎受阻不触发备线切换**（D12/D13）：分叉能力已由边界快照解锁；fork 桥出问题时 teacher 切 replay-branch MC 离线标注，主线仍为 SoG。
+
+### 6.2 动作抽象是硬前置
+
+不是优化项：没有它 CVPN 的动作头不可训练，M1 的"抽象动作覆盖全部合法动作"测试是 go/no-go。
+
+### 6.3 纯策略模式为强度验收口径
+
+LLM 辅助可以更强，但 G1 的验收、训练门禁、阶梯全部以纯策略模式计，避免"LLM 掩盖策略缺陷"。
+
+### 6.4 跟随最新卡池的代价控制
+
+不追新卡池的中间小版本；卡池升级作为一次显式迁移（更新 engine.lock + 数据重标注策略 + 迁移评测），频率 ≤ 每大版本一次。
+
+### 6.5 逐模块移植 Rebel_base_RL + 自写测试
+
+参考仓是打补丁式实验分支，只当代码库抄、不当可运行基线——逐模块搬代码 + 自己写测试，不整仓 apply 补丁（C1）。
 
 ## 7. 风险与缓解
 
@@ -333,36 +349,51 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 - play.piovium.org 数据使用前过一遍平台条款（人机混用限制、数据授权）。
 - 机会算力使用遵守学校收费/作业规范（公共队列按申请使用，长跑作业用海量作业模式）。
 
-## 9. 目录结构（工程仓 `~/projects/genshin-GITCG`，参考仓 `refs/` 只读不修改）
+## 9. 目录结构（工程仓 `$REPO`，参考仓 `refs/` 只读不修改）
 
 ```
-genshin-GITCG/          # = ~/projects/genshin-GITCG
-├── PLAN.md                    # 本文档
-├── envs/                      # WS0: gitcg 封装、Player 子类、rollout runner
+genshin-GITCG/
+├── PLAN.md                    # 本文档（需求/验收唯一权威）
+├── AGENTS.md                  # Agent 入口 + 通用硬约束 + 文档地图
+├── README.md                  # 项目简介 + 三条入口 + quickstart
+├── docs/                      # 状态/方法/失败/机器/评测/howto（见 docs/README.md）
+│   ├── STATUS.md              # 当前基线、在跑实验、下一步、阻塞
+│   ├── PLAYBOOK.md            # 已认证有效方法
+│   ├── EVAL_PROTOCOL.md       # 强度评测唯一协议
+│   ├── failures/              # 负结果 + 重开条件
+│   ├── environments/          # 本机/WSL/A800/NJU/Kaggle
+│   ├── decisions/             # D 编号索引
+│   └── howto/                 # 采集训练/引擎/Web/NPC
+├── envs/                      # WS0: gitcg 封装、Player、rollout、快照/分叉
 ├── reps/                      # WS1: observation_encoder / action_hierarchy / adapter / belief
-├── agents/                    # WS4: resolving_agent（纯策略）、llm_assist（局内）、脚本对手适配
-├── train/                     # WS3: cvpn_model / cvpn_training / sog_pipeline / batched_inference
-├── eval/                      # WS2: arena、阶梯、对手池注册表（20 套，D11）、报表
+├── agents/                    # WS4: resolving_agent（纯策略）、llm_assist、脚本对手适配
+├── train/                     # WS3: CVPN、采集/训练/蒸馏、batched inference
+├── eval/                      # WS2: arena、阶梯、20 套对手池、报表
 ├── coach/                     # WS4: 复盘归因、课程建议、BC 标签
-├── decklab/                   # WS4: 卡组构筑 Agent（模板内 flex）
-├── orchestrator/              # WS5: 自迭代循环 + 护栏门禁
-├── engine-overlay/            # WS7/WS8: 我们的引擎 overlay 源（敌人 .gts + standalone 改动 + apply 脚本，入库）
-├── build/                     # D20: 引擎构建工作区（refs 副本 + V8 workspace + .so，内容不入库）
-├── data/                      # 回放池、日志（内容 gitignore，只存 schema 与清单）
-├── tests/                     # 信息泄漏测试、adapter 往返、重放一致性等
-├── configs/                   # run 配置 + engine.lock + 卡池版本（npc/ 关卡与敌人数据，pools/ 卡池清单）
-└── reports/                   # 评测曲线、复盘报告、hypothesis 台账
+├── decklab/                   # WS4: 卡组构筑（模板内 flex）
+├── npc/                       # WS7: NPC PvE 调试系统
+├── web/                       # WS8: 人机调试接口（standalone + HTTP 桥）
+├── orchestrator/              # WS5: 自迭代循环（占位，未实现）
+├── engine-overlay/            # WS7/WS8: 引擎 overlay 源（敌人 .gts + standalone 改动，入库）
+├── build/                     # D20: 引擎构建工作区（gitignore）
+├── data/                      # 回放池、日志、checkpoint（gitignore）
+├── tests/                     # 信息泄漏、adapter 往返、重放一致性、parity 等
+├── configs/                   # run 配置 + engine.lock + 卡池/关卡
+├── kaggle/                    # Kaggle 训练节点（只训练）
+├── scripts/                   # 采集/训练/评测/认证/运维脚本
+├── common/                    # 路径/种子/LLM/JSONL/锁等公共设施
+└── reports/                   # 一次性实验证据（聚合摘要入库）
 ```
 
-## 10. 路线与状态（三线并行，2026-10-12；D14–D20）
+## 10. 路线与状态（2026-10-27；当前细节见 `docs/STATUS.md`）
 
 模型主线（A）维持 §4.3（M3-CPU）；NPC（B）与 Web（C）为并行线（D16–D20）。各线当前状态与下一步：
 
 | 线 | 已完成 | 下一步 |
 |----|--------|--------|
-| **A 模型主线** | 表示层 + 信念根化 + MCCFR 脚手架 + search-as-teacher（S-A/S-B/S-C，§4.3）；数据先行 A5–A8（结论见 §0 D22–D24） | **策略改进**（自博弈/RL 或修好的搜索）——待选向；GPU 档放大约束见 §5.1 |
+| **A 模型主线** | 表示层/信念/MCCFR/search-as-teacher（S-A–S-C）；数据先行 A5–A8；逐 deck specialist/PG（dgeo 0.880 / ungeo 0.909，2 个 full PASS）；P0 parity + A2 复核（D25/D26） | A2 重做（A800，`scripts/p0_a2_rerun.sh`）→ P1 DAgger 诊断 / 可修 matchup 靶向 / specialist 扩张 / router；P2 league/value/belief；P3 候选集。详见 `docs/STATUS.md` |
 | **B NPC PvE** | B0 构建链（`engine-overlay/README.md`）、B1–B5（敌人/策略/规格/关卡）+ PvE-v1 门禁（§4.4，`reports/npc/`） | 无（门禁已 PASS） |
-| **C Web 调试接口** | C0 standalone 起局 + 浏览器↔Python 桥（`reports/web_standalone_start.md`）；C2 模型桥（`web/ai_rpc_server.py` 加 `--policy`，接 `build_policy` 全 spec——`neural:<ckpt>[#t=]` / `heuristic` / `legal_random` / `expert:<slug>`）；调试底座 **T1**（`(session, who)` 隔离掩码状态/策略实例）、**T2**（`/notify` seq 护栏 + 浏览器 notify 队列）、**T3**（`--ai-deck` + `/ai-deck` 牌组对齐）、**C4 日志底座**（逐决策 JSONL `data/web/` + `/session` `/game-end` `/game-log` `/results`）；**C1 反选**（`POST /choose-deck`＝对位矩阵 + decklab 兜底，`web/counterpick.py`，未手改时开局自动反选，并按各座位实际牌组改派策略）、**C3 NPC 阵容**（`GET /npc-decks`＝16 关原样、人数不为 3 也给；**支援区/多轮挑战与游戏内机制不一致，差异记在 `web/README.md` C3 表 + `semantics`，TODO＝探索替代描述方式**，`web/npc_decks.py`）、**先手三选**（人类 / AI / 随机 → `humanSeat` 派生座位）；NPC 牌组 `cards=[]`（无手牌＝空牌堆）+ NPC 静态数据接通（`/npc-decks` 带 `assets`＝从 `.gts` 解析的 CustomData，`web/npc_assets.py`，前端喂给 `AssetsManager`，实时与历史棋盘都传）+ `card-data-viewer` 两处描述护栏（`undefined.matchAll` / `e.playCost is not iterable`）+ **续局 seq 基线**（`/session` `resume` → `seq_base`，浏览器从基线继续数，否则新局通知全判过期）+ **故障局归档**（`/game-end` `aborted` → `io_error`，可改判 `/notify` 的假 winner）+ **弹窗座位**（`#opponent=`，不再写死 seat0）；**NPC 牌组的骰子**（持 NPC 牌组的座位置引擎 `alwaysOmni`→每轮 8 个万能元素骰；按阵容角色列表判座位，不能按「命中 NPC 角色 id」，官方 `share_id` 里也有敌人角色 2202/2301）；终端人机 `q`/Ctrl-C 走 `HumanQuit`（跳出对局且不计胜负）。协议与口径见 `web/README.md` | 组牌器直通回填 / LLM 辅助档 / `/notify` 降流量 / e2e 固化 / 支援区·多轮的替代描述方式 |
+| **C Web 调试接口** | C0 standalone + 浏览器↔Python 桥；C1 反选；C2 模型桥；C3 NPC 阵容；C4 逐决策日志；T1–T3 `(session, who)` 隔离/`seq`/牌组对齐；续局、故障局归档、弹窗座位；终端 `HumanQuit`。协议细节见 `web/README.md` | 组牌器直通回填 / LLM 辅助档 / `/notify` 降流量 / e2e 固化 / 支援区·多轮的替代描述方式 |
 
 **并行收尾**（不阻塞主线）：WSL/MX550 小网络训练试验（结论写回 §5.2）；L5.2 全池 LLM 矩阵放量；L5.3 学习曲线留档；L5.5（可选）评测池扩容。机会算力窗口到手 → 按 §5.1 本地采集 / 传入 / GPU 放大 / 回流认证（M3 GPU → M4）。
 

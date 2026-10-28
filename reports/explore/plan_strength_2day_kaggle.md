@@ -1,5 +1,9 @@
 # 2 天高强度实验计划：从 0.46 到「顶过专家 + 修 floor」（含 Kaggle GPU）
 
+> **status: historical campaign log（2026-10-27）**：本文是 10-16 至 10-27 的执行日志/时间线，
+> 混有当时的“下一步”。**当前状态以 `docs/STATUS.md` 为准**；失败结论已提炼到 `docs/failures/`；
+> 成功方法已提炼到 `docs/PLAYBOOK.md`。原文保留，勿把文末旧“下一步”当现行排产。
+
 > 2026-10-16。排序原则（用户指定）：**效果优先，运行时长次要（上限 ≈2 天）**。
 > 依据：`reports/datafirst_bc.md`、`reports/train/bc_scale_datafirst.md`、`reports/search/a4_search_budget_ladder.md`、PLAN §0 D22–D24。
 > 结论前置：**真正能抬强度的是两件事**——① 在现有语料上引入**非模仿的改进算子**（Q/DMC 或优势重加权）；

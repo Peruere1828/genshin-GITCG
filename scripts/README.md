@@ -1,8 +1,20 @@
-# scripts — 一键脚本（PLAN.md §5.1 机会窗口零看管）
+# scripts — 采集/训练/评测/运维脚本
 
-`run_iteration`：采集→训练→评测→落盘，可断点续跑、可重提；窗口内优先级 训练 > 评测 > 采集 > LLM 分析。
+> 当前状态与排产见 [`docs/STATUS.md`](../docs/STATUS.md)；评测协议见 [`docs/EVAL_PROTOCOL.md`](../docs/EVAL_PROTOCOL.md)。
+> 本文件是脚本索引，不写“当前基线”；`ls scripts/` 是权威列表。
+> 注意：早期文档里的 `run_iteration` **不存在**；采集→训练→评测请按 `docs/PLAYBOOK.md` 分步跑。
 
-## 现状（2026-10-07）
+## 当前常用
+
+- `p0_clean_corpus.sh`：4-deck × 20 对手 × 20 seeds 干净语料 + store（exact id）。
+- `p0_a2_rerun.sh`：A800 上 A0/A0i 重训 + 回流认证命令。
+- `parity_store_live.py`：store↔engine 逐元素 parity。
+- `datafirst_bc_store.py` / `datafirst_bc_train.py`：compact store + BC/RL 训练（`--save-best`）。
+- `eval_protocol.py`：纯策略配对认证（见 `docs/EVAL_PROTOCOL.md`）。
+- `specialist_table.py`：生成 `reports/SPECIALISTS.md`。
+- `compare_eval_runs.py`：两组 eval raw 的配对 Δ/CI。
+
+## 历史脚本索引（2026-10-07 起，持续更新）
 
 - `run_llm_agent.py`：固定对局下「纯策略 vs LLM 辅助」小样本对比，产出
   `reports/llm/*.json`（含 Wilson CI、调用量、干预记录）。用法：
@@ -49,7 +61,7 @@
 - `eval_protocol.py`（WS2，2026-10-11）：**强度评测跑分板**——任意 `build_policy` spec 对固定脚本池、
   双侧同种子，逐对手 + 汇总胜率（Wilson + 对手聚类 CI）、固定锚点 Bradley-Terry/Elo 评级、最优反应探针、
   门禁判定；逐局流式落 `data/eval/<tag>.jsonl`（按 `task_index` 断点续跑 + spec 指纹护栏），聚合落
-  `reports/explore/`。协议全文见 `reports/explore/eval_protocol.md`。
+  `reports/explore/`。协议全文见 `docs/EVAL_PROTOCOL.md`。
   ```bash
   python -m scripts.eval_protocol --sample-sizes                 # 样本量规划表（无需引擎）
   python -m scripts.eval_protocol --contestant expert:superconduct_aggro \
@@ -57,4 +69,4 @@
   python -m scripts.eval_protocol --contestant neural:<new> --baseline neural:<old> --seeds 20  # 配对门禁
   ```
 
-待办：`run_iteration`（采集→训练→评测→落盘，断点续跑）。依赖 `train/` 落地。
+说明：`run_iteration` 未实现（旧文档误写）；请用 `train.collect` → `datafirst_bc_store/train` → `eval_protocol` 分步执行，长任务用 `setsid/tmux` + 断点续跑。

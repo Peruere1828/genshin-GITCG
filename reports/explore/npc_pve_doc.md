@@ -1,5 +1,8 @@
 # PvE NPC 复刻文档（路线 2）
 
+> **status: superseded（2026-10-27）**：数据/实现权威已迁到 `configs/npc/README.md`、
+> `npc/README.md`、`engine-overlay/overlay/README.md`。当前门禁见 `docs/PLAYBOOK.md` §6。
+
 > 状态：**现行**（取代 `npc_pve_research.md`、`npc_route2_plan.md`）。
 > 原则：只保留正确做法，用"应该…"式肯定表述；已删除错误/过时/踩坑内容。
 

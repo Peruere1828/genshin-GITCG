@@ -1,5 +1,8 @@
 # 强度提升杠杆 + MX550 可训性（研究备忘，2026-10-16）
 
+> **status: superseded（2026-10-27）**：文中把 AWR/Q 当“最便宜杠杆”，10-17 后已被证否；
+> 见 `docs/failures/002-awr-q-dmc.md`。当前方法见 `docs/PLAYBOOK.md`。
+
 > 口径：**纯策略**（PLAN §6.3）。本文只做两件事：① 依据现有实测（D22–D24 + `reports/train/`、`reports/search/`）
 > 排出「提升 AI 博弈水平」的杠杆次序与验收；② 回答「MX550 能否训模型」并给出可复现的 WSL 命令。
 > **未在本机复跑 MX550**（本机为 12 逻辑核 / 30 G / `torch 2.14.1+cpu`，无 CUDA）；MX550 结论来自

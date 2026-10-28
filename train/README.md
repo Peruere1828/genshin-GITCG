@@ -1,9 +1,12 @@
 # train — SoG/ReBeL 训练内核（PLAN.md WS3 / M3）
 
+> 当前状态/排产见 [`docs/STATUS.md`](../docs/STATUS.md)；有效训练方法见 [`docs/PLAYBOOK.md`](../docs/PLAYBOOK.md)。
+> 本文件保留接口、命令与历史设计；不要把其中的“下一步”当当前排产。
+
 cvpn_model（bf16 小网络 + deck-id 条件化）、continual_resolving + resolving_agent（公共信念搜索，先实用采样 resolver）、
 cvpn_training + sog_pipeline（搜索蒸馏外环 + 门禁）、batched_inference（按作业拉起的 GPU 批推理，无常驻服务）。
 
-## 已实现（L4 玩具验证，2026-10-07）
+## 历史实现（L4 玩具验证，2026-10-07；当前接口以代码为准）
 
 - `model.py`：`CVPN`（小网络，CPU 可训）= token 平均池化 → 每个合法 option 打分 + 价值头。**按 option 特征打分**，
   与进程全局 low-level action code 解耦（见 AGENTS.md 工程约定）。

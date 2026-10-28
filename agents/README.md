@@ -1,9 +1,11 @@
 # agents — 对局 Agent（PLAN.md WS4 / M5）
 
+> 状态见 [`docs/STATUS.md`](../docs/STATUS.md)；有效方法见 [`docs/PLAYBOOK.md`](../docs/PLAYBOOK.md)。
+
 ResolvingAgent（纯策略模式，G1 验收口径）、llm_assist（LLM 辅助模式：候选校验/重排/兜底，延迟预算内，干预全量记录）、
 脚本对手适配层。客户端强制降级链：本地 LLM → API → 纯策略。
 
-## 已实现（2026-10-07）
+## 历史实现（2026-10-07；当前接口以代码为准）
 
 - `scripted/`：从 `refs/Rebel_base_RL/.../gitcg_expert_system` 逐模块移植的脚本对手
   （`ExpertRuleAgent` + `deck_rules/` 20 套 + `registry`/`profiles`/`codec`/`assets`/`models`），AGPL-3.0，见 `NOTICE.md`。

@@ -1,5 +1,9 @@
 # 实用 resolver → GT-CFR continual resolving：差距清单（M3 输入）
 
+> **2026-10-27 状态**：search-as-teacher 当前**不放大**（D23/D26）；本文件是设计差距清单，
+> 不是当前排产。搜索重开条件见 `docs/failures/001-search-as-teacher.md`；
+> 当前有效方法见 `docs/PLAYBOOK.md`。
+
 > 来源：`refs/Rebel_base_RL/docs/SOG_GT_CFR_CONTINUAL_RESOLVING_CHARTER.md`（目标架构）
 > 与 `refs/Rebel_base_RL/research/world_model/src/gitcg_world_model/continual_resolving.py`
 > （参考实现，含 `_LocalSampledGTCFRSolver`）。本文是 PLAN.md §10「实用 resolver → GT-CFR

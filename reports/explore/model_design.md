@@ -1,5 +1,8 @@
 # 七圣召唤打牌 AI 的「大模型」设计与本机小规模验证（M3 探索）
 
+> **status: superseded（2026-10-27）**：早期 design/小规模验证；后续 Transformer/BC/specialist 结论已变化。
+> 当前状态见 `docs/STATUS.md`，有效方法见 `docs/PLAYBOOK.md`。
+
 > 2026-10-11，WSL MX550（fp32，2 GB）。代码：`train/model.py`（`TransformerCVPN`）、
 > `scripts/bench_model.py`、`tests/test_model_transformer.py`。
 > 原始数据：`reports/explore/model_compare_20261011T13*.json`。

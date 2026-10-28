@@ -1,5 +1,8 @@
 # PvE-B2/B3 交付：`NpcPolicy` + `NpcSpec`/三星判定 + 评测入口
 
+> **status: superseded（2026-10-27）**：被 `reports/npc/pve_v1_gate.md`（PvE-v1）取代；
+> 本文保留为 B2/B3 历史证据。
+
 > 里程碑：PLAN §4.4 `PvE-B2`（策略）+ `PvE-B3`（规格与判定 + 评测入口），D17。
 > 定位：PvE 调试/训练辅助（确定性假想敌池 + 三星门禁），纯策略口径。
 > 日期：2026-10-12。引擎：`gitcg` 0.21.0 + B1 overlay（17 敌人 `.gts`）。
