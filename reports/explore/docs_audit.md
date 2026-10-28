@@ -7,7 +7,10 @@
 > **执行状态（2026-10-27）**：部分 P0/P1 已落地——`docs/` 骨架、`AGENTS.md`/`README.md` 重写、
 > `PLAN.md §9/§10` 更新、A2 更正头、D25/D26、`docs/EVAL_PROTOCOL.md` 迁移、`docs/failures/` 与
 > `docs/environments/` 初版。仍待人工审阅：模块 README 的状态剥离、全部报告的 front-matter、
-> `docs/PLAYBOOK.md` 的门禁措辞。以下保留审计快照。
+> `docs/PLAYBOOK.md` 的门禁措辞。**2026-10-28 追加清理**：删除已迁移/无唯一信息的
+> `model_design.md`、`strength_levers_and_mx550.md`、`web_standalone_start.md`、
+> `npc/npc_pve_smoke_v1.md`；A2 报告保留为事故证据（`invalid`），`npc_pve_doc.md` 保留为
+> 特殊规则 legacy 来源。以下保留审计快照。
 
 ---
 

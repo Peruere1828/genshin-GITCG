@@ -149,7 +149,7 @@ bash engine-overlay/scripts/standalone.sh dev     # http://localhost:5173/
 静态数据/素材走本机可达镜像 `https://gi-tcg-assets-api-hf.guyutongxue.site/`
 （上游默认 `static-data.piovium.org` 在本网络不可达），`GI_TCG_ASSETS_BASE_URL` 可覆盖。
 另有 HTTP 桥原型（浏览器引擎 ↔ Python）见 `web/ai_rpc_server.py` 与
-`overlay/packages/standalone/README.md`；阶段小结见 `reports/web_standalone_start.md`。
+`overlay/packages/standalone/README.md`；协议/状态见 `web/README.md`。
 
 ## 构建记录（PvE-B0，2026-10-12）
 

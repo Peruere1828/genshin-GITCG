@@ -249,7 +249,7 @@ NPC 系统是**新增并行线**（D16），验收为**独立门禁点**，与�
 | PvE-B0 构建链 **✅ 2026-10-12** | Docker 内重建 `libgitcg.so`（D20） | `pytest -m "not slow"` 全绿 + 同种子重放一致 + 跑通一局；provenance 见 `engine-overlay/README.md` |
 | PvE-B1 敌人移植 **✅ 2026-10-12** | 约 13 类敌人 `.gts`（技能/被动/HP/充能；蒙德/璃月全量，从蒂玛乌斯 3 只起步） | 可组牌、跑满、无错误；数据见 `engine-overlay/overlay/packages/data/src/characters/` |
 | PvE-B2 策略 **✅ 2026-10-12** | `NpcPolicy`（greedy + rotation，确定性、可复现） | 同种子可复现：`npc/policy.py` |
-| PvE-B3 规格与判定 **✅ 2026-10-12** | `NpcSpec` + 挑战目标三星判定 + 评测入口（可续跑/子进程并行） | 输出胜率 + 三星达成率：`npc/{spec,policy,objectives,eval}.py`；冒烟见 `reports/npc/npc_pve_smoke_v1.md` |
+| PvE-B3 规格与判定 **✅ 2026-10-12** | `NpcSpec` + 挑战目标三星判定 + 评测入口（可续跑/子进程并行） | 输出胜率 + 三星达成率：`npc/{spec,policy,objectives,eval}.py`；冒烟聚合见 `reports/npc/npc_pve_smoke_v1.json`，门禁见 `reports/npc/pve_v1_gate.md` |
 | PvE-B4 关卡数据 **✅ 2026-10-12** | 蒙德/璃月 16 关规格 + 挑战目标原文 | 16 关规格齐全：`configs/npc/npc_stages_mond_liyue.json`（未核验项标 `verified:false`）|
 | **PvE-v1 门禁 ✅ 2026-10-12** | decklab 组牌（池 C）× 16 关 × 多种子；**三星达成率 ≥ 60%** | ✅ PASS（74.7%，Wilson CI 下界 ≥ 60%）；一键可续跑 `scripts/run_npc_gate.py`；报表见 `reports/npc/pve_v1_gate.md` |
 

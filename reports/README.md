@@ -21,8 +21,8 @@
 - **训练/数据**：`train/*.json`、`train/*.md`、`datafirst_bc.md`、`train/bc_scale_datafirst.md`。
 - **搜索/自博弈**：`search/*.md`、`train/a3_m3_cpu_screening.md`、`EXPLOIT_LADDER.md`。
 - **评测**：`explore/*.json`、`arena/*.json`、`eval_protocol_smoke.json`。
-- **NPC PvE**：`npc/pve_v1_gate.md`（当前）、`npc/npc_pve_smoke_v1.md`（superseded）。
-- **Web**：`web_standalone_start.md`（superseded）、`web/`。
+- **NPC PvE**：`npc/pve_v1_gate.md`（当前）；B2/B3 冒烟聚合 `npc/npc_pve_smoke_v1.json` 保留为证据。
+- **Web**：`web/`（当前协议/状态）；C0 起步报告已删除，内容并入 `web/README.md`。
 - **LLM**：`llm/*.json`。
 - **引擎/基准**：`engine/*.json`、`benchmarks/*.json`、`LOCAL_BASELINE.md`。
 - **文献/审计**：`explore/lit/`、`explore/literature_review.md`、`explore/docs_audit.md`。

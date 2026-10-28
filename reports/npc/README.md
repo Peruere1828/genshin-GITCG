@@ -6,8 +6,7 @@
 |---|---|
 | `npc_pve_smoke_v1.json` | 冒烟评测聚合摘要（`npc.eval` 输出）：全 16 关 × 3 种子，胜率 + 三星达成率 + 逐目标达成率 |
 | `npc_pve_smoke_v1.stages.csv` | 逐关一行的紧凑表（胜率 / 三星率 / 平均星数 / 平均回合） |
-| `npc_pve_smoke_v1.md` | B2/B3 交付说明（本文件） |
-| `pve_v1_gate.json` / `pve_v1_gate.md` | **PvE-v1 门禁（B5）**：decklab 池 C 组牌 × 16 关 × 24 种子（384 局）+ 组牌/打牌消融 + 门禁判定 |
+| `pve_v1_gate.json` / `pve_v1_gate.md` | **PvE-v1 门禁（B5，当前）**：decklab 池 C 组牌 × 16 关 × 24 种子（384 局）+ 组牌/打牌消融 + 门禁判定 |
 
 复现（冒烟）：
 
