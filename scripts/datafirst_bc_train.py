@@ -42,6 +42,7 @@ import torch
 from common.lock import load_engine_lock, runtime_metadata
 from common.paths import ensure_dir
 from envs.observation import default_encoder
+from reps.observation_encoder import TokenObservationEncoder, definition_feature_indices
 from train.model import (
     CVPN,
     TransformerCVPN,
@@ -106,6 +107,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-pg-advantage-norm", action="store_true",
                    help="disable per-batch advantage normalisation for --loss pg")
     p.add_argument("--threads", type=int, default=None, help="torch CPU threads")
+    p.add_argument("--save-best", action="store_true",
+                   help="save the best-validation checkpoint in addition to the last epoch")
+    p.add_argument("--select-metric", choices=["val_ce", "val_acc"], default="val_ce",
+                   help="validation metric for --save-best (lower val_ce / higher val_acc)")
+    p.add_argument("--best-out", default=None,
+                   help="best checkpoint path (default: <out>.best.pt)")
     p.add_argument("--init-from", default=None,
                    help="initialize the weights from a checkpoint (continued training / PG rounds); "
                         "the architecture must match (same --arch / --d-model / head config)")
@@ -118,10 +125,53 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.threads:
         torch.set_num_threads(int(args.threads))
-    encoder = default_encoder()
+    # P0: seed *before* constructing the model. Historically the model was built
+    # here and train() seeded torch only afterwards, so two runs with the same
+    # --seed started from different random weights (A2/A0 comparisons were
+    # contaminated by init variance).
+    torch.manual_seed(int(args.seed))
     t0 = time.perf_counter()
     payload = torch.load(args.store_cache, map_location="cpu", weights_only=False)
     train_full, val_full, meta = payload["train"], payload["val"], payload["meta"]
+
+    # P0 parity: prefer the encoder pinned in the store meta, and refuse an
+    # identity-embedding run over a corpus whose definition ids were lost to
+    # float16 (the A2 failure mode).
+    encoder = default_encoder()
+    if meta.get("encoder_config"):
+        encoder = TokenObservationEncoder.from_dict(meta["encoder_config"])
+    expected_indices = [int(v) for v in definition_feature_indices()]
+    stored_indices = meta.get("definition_indices")
+    if stored_indices is not None and [int(v) for v in stored_indices] != expected_indices:
+        raise SystemExit(
+            f"store definition columns {stored_indices} do not match the current encoder "
+            f"{expected_indices}; rebuild the store or pin the old encoder layout"
+        )
+    if len(train_full) and train_full.tokens[0].shape[-1] != encoder.token_dim:
+        raise SystemExit(
+            f"store token_dim={train_full.tokens[0].shape[-1]} != encoder.token_dim="
+            f"{encoder.token_dim}; wrong encoder/config or store"
+        )
+    if len(train_full) and train_full.options[0].shape[-1] != encoder.option_dim:
+        raise SystemExit(
+            f"store option_dim={train_full.options[0].shape[-1]} != encoder.option_dim="
+            f"{encoder.option_dim}; wrong encoder/config or store"
+        )
+    n_events = int(meta.get("events", len(train_full) + len(val_full)))
+    n_definition_ids = int(meta.get("definition_ids_present", 0))
+    if args.id_buckets > 1 and n_definition_ids < n_events:
+        raise SystemExit(
+            f"--id-buckets={args.id_buckets} needs lossless definition ids, but only "
+            f"{n_definition_ids}/{n_events} samples carry them (legacy fp16 corpus). "
+            "Re-collect with --format compact (current collector writes integer ids) "
+            "or use --compact-dtype float32; see reports/explore/literature_review.md §1."
+        )
+    if n_events and n_definition_ids < n_events:
+        print(
+            f"[warn] {n_events - n_definition_ids}/{n_events} samples lack exact definition "
+            "ids (legacy fp16 corpus); identity features are unreliable for this run",
+            flush=True,
+        )
     train_store, n_train = _subsample(train_full, args.train_limit, args.seed)
     val_store, n_val = _subsample(val_full, args.val_limit, args.seed + 1)
     print(
@@ -156,7 +206,18 @@ def main(argv: list[str] | None = None) -> int:
                 f"--init-from architecture mismatch ({args.init_from}): {exc}"
             ) from exc
         note = f" ({len(missing_ids)} new identity tensors)" if missing_ids else ""
+        if missing_ids and not args.id_zero_init:
+            # Missing id tensors are randomly initialised by load_state_dict;
+            # make the new branch a no-op instead of silently perturbing a
+            # pre-A2 trunk (A2 post-mortem, P0).
+            zero_init_identity_branch(model)
+            note += " zero-initialised (no-op)"
         print(f"[init] weights <- {args.init_from}{note}", flush=True)
+    out = Path(args.out)
+    ensure_dir(out.parent)
+    best_out = Path(args.best_out) if args.best_out else out.with_name(
+        f"{out.stem}.best{out.suffix or '.pt'}"
+    )
     config = Config(
         epochs=args.epochs, lr=args.lr, batch_size=args.batch_size,
         seed=args.seed, device=args.device, weight_decay=args.weight_decay,
@@ -169,10 +230,14 @@ def main(argv: list[str] | None = None) -> int:
         pg_entropy=args.pg_entropy,
         grad_clip=args.grad_clip,
         pg_advantage_norm=not args.no_pg_advantage_norm,
+        save_best=args.save_best,
+        select_metric=args.select_metric,
+        best_path=str(best_out) if args.save_best else None,
     )
-    history, train_seconds = train(train_store, val_store, model, config, has_belief)
-    out = Path(args.out)
-    ensure_dir(out.parent)
+    history, train_seconds = train(
+        train_store, val_store, model, config, has_belief,
+        encoder_config=encoder.to_dict(),
+    )
     model.save(str(out), encoder_config=encoder.to_dict())
     report = {
         "kind": "datafirst_bc",
@@ -191,6 +256,11 @@ def main(argv: list[str] | None = None) -> int:
         "train_seconds": train_seconds,
         "history": history,
         "checkpoint": str(out),
+        "best_checkpoint": str(best_out) if args.save_best else None,
+        "best_epoch": config.best_epoch,
+        "best_metric": config.best_metric,
+        "n_definition_ids": n_definition_ids,
+        "n_events": n_events,
         "engine_lock": load_engine_lock(),
         "runtime": runtime_metadata(),
     }

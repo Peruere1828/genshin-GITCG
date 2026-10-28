@@ -104,6 +104,24 @@ class PriorResolver:
             _logits, value = self.model(tokens, token_mask, options, option_mask)
         return float(value[0])
 
+    def value_probability(self, built: BuiltDecisionContext) -> float:
+        """P(acting player wins) in [0, 1], applying the checkpoint's head activation.
+
+        ``value()`` returns the raw head output. Historical ``identity`` heads
+        regress the centred episode score in [-1, 1], so treating a negative raw
+        value as a probability (and clamping it to 0) erased the ordering between
+        losing leaves -- the A4/H3b "root value spread ≈ 0" measurement bug.
+        """
+        raw = float(self.value(built))
+        activation = getattr(getattr(self.model, "config", None), "value_activation", "identity")
+        if activation == "sigmoid":
+            probability = raw
+        elif activation in ("identity", "", None):
+            probability = (raw + 1.0) / 2.0
+        else:
+            raise ValueError(f"unknown value activation {activation!r}")
+        return min(1.0, max(0.0, probability))
+
 
 def require_search_available(bridge: Any | None = None) -> None:
     """Raise unless a subprocess fork bridge is available for online search."""

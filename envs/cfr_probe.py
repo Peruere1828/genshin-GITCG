@@ -88,8 +88,12 @@ def _frontier_probability(built: Any, *, value_spec: str) -> float:
 
                 resolver = prior_resolver_from_checkpoint(value_spec)
                 _VALUE_CACHE[value_spec] = resolver
-            value = float(resolver.value(built))
-            return min(1.0, max(0.0, value))
+            probability = float(resolver.value_probability(built))
+            # ``PriorResolver`` scores the *acting* player's view; the probe field
+            # is player-0 relative. Flipping only when the acting player is 1 fixes
+            # the sign at turn hand-offs without changing same-player leaves.
+            acting = int(getattr(built.context, "acting_player", 0) or 0)
+            return probability if acting == 0 else 1.0 - probability
         except Exception:
             # A missing/incompatible checkpoint must not break the search: fall
             # back to the documented public heuristic.

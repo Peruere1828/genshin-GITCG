@@ -1,5 +1,13 @@
 # A2 identity embeddings：全量训练与胜率认证（2026-10-27）
 
+> **2026-10-27 复核更正（status: invalid）**：本文的负结果**不能采信**。compact 语料默认 `float16`，
+> 把 `definition_id / 400000` 压成不可逆假 id：152 张卡只剩 28 个不同 id，真实 bucket 142 个、
+> 与 store bucket **交集仅 4 个**；A2 的 id 分支训练/推理读的是两套索引。另叠加 p0-only/双边评测、
+> 模型 init 不受 `--seed` 控制、val_acc 跨语料横比、只保存 final epoch（best 是 ep70）、
+> eval seed 双倍偏移。**A2 应改判“无效，待 exact id + parity 后重做”**，不能作为“id embedding 有害”的证据。
+> 证据与修复：`reports/explore/literature_review.md` §1、`reports/explore/lit/f07_code_audit.md`、
+> `reports/explore/p0_parity_20261027.md`。原始数字与结论保留在下方，仅作历史记录。
+
 > 口径：**纯策略**（PLAN §6.3），seed 900–909（全新），20 套脚本对手双向，400 局/deck/模型。
 > 预注册判据：A0i 对 A0 的配对 Δ 的下界 > 0，且没有 deck 显著变差；**val_acc 只作参考**。
 

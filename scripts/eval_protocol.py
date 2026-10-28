@@ -28,7 +28,8 @@ Usage::
 
     python -m scripts.eval_protocol --contestant expert:superconduct_aggro \\
         --opponents superconduct_aggro natlan_battleship --seeds 2 --workers 4
-    python -m scripts.eval_protocol --contestant neural:<ckpt>#t=0 --seeds 50 --workers 12
+    python -m scripts.eval_protocol --contestant neural:<ckpt>#t=0 \\
+        --contestant-deck superconduct_aggro --seeds 50 --workers 12
     python -m scripts.eval_protocol --contestant expert:superconduct_aggro \\
         --baseline neural:<old_ckpt> --seeds 20          # paired non-inferiority
     python -m scripts.eval_protocol --sample-sizes       # print planning tables
@@ -175,8 +176,10 @@ class _Stream:
                         "contestant_deck": spec.contestant_deck,
                         "opponents": list(spec.opponents),
                         "seeds": list(spec.seeds),
+                        "match_seeds": [spec.base_seed + int(s) for s in spec.seeds],
                         "sides": list(spec.sides),
                         "mode": spec.mode,
+                        "base_seed": spec.base_seed,
                     },
                     ensure_ascii=False,
                 ),
@@ -207,6 +210,7 @@ def _enrich(row: dict[str, Any], task: ProtocolTask, spec: ProtocolSpec) -> dict
             "opponent": task.opponent,
             "side": side,
             "protocol_seed": task.seed,
+            "match_seed": spec.base_seed + int(task.seed),
             "score": score,
             "decisions": int(row.get(f"decisions{side}", 0)),
             "fallbacks": int(row.get(f"fallbacks{side}", 0)),
@@ -418,6 +422,15 @@ def _default_deck(contestant: str) -> str:
     return "superconduct_aggro"
 
 
+def _protocol_seeds(n: int) -> tuple[int, ...]:
+    """Relative task seeds; ``ProtocolSpec.base_seed`` is the engine seed start.
+
+    Keeping this in one place prevents the old double-offset bug where ``main``
+    passed ``range(seed_start, seed_start + n)`` *and* ``base_seed=seed_start``.
+    """
+    return tuple(range(max(0, int(n))))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -511,12 +524,23 @@ def main(argv: list[str] | None = None) -> int:
         _print_sample_sizes()
         return 0
 
+    # A neural checkpoint does not carry the deck it was trained for; defaulting
+    # to superconduct_aggro silently evaluates the wrong deck (A2 post-mortem).
+    if args.contestant.startswith("neural:") and not args.contestant_deck:
+        raise SystemExit("--contestant-deck is required when --contestant is neural:<ckpt>")
+    if args.baseline and args.baseline.startswith("neural:") and not args.baseline_deck:
+        raise SystemExit("--baseline-deck is required when --baseline is neural:<ckpt>")
+
     if args.smoke:
         opponents = ("superconduct_aggro", "natlan_battleship")
         seeds = tuple(range(min(args.seeds, 2)))
     else:
         opponents = _select_opponents(args.opponents)
-        seeds = tuple(range(args.seed_start, args.seed_start + args.seeds))
+        # ``base_seed`` is the first *engine* seed; ProtocolTask.seed is the
+        # relative offset (0..n-1) and to_match() adds it. Passing absolute seeds
+        # here as well double-offset every run after --seed-start 0 (e.g.
+        # --seed-start 900 --seeds 10 actually played 1800..1809).
+        seeds = _protocol_seeds(args.seeds)
 
     contestant_deck = args.contestant_deck or _default_deck(args.contestant)
     try:
@@ -560,6 +584,7 @@ def main(argv: list[str] | None = None) -> int:
             "contestant_deck": spec.contestant_deck,
             "opponents": list(spec.opponents),
             "seeds": list(spec.seeds),
+            "match_seeds": [spec.base_seed + int(s) for s in spec.seeds],
             "sides": list(spec.sides),
             "mode": spec.mode,
             "workers": spec.workers,

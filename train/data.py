@@ -23,9 +23,11 @@ from envs.match import run_match
 from envs.policy import Policy, build_policy
 from eval.stats import outcome_score
 from reps.observation_encoder import (
+    DEFINITION_SCALE,
     BeliefTarget,
     EncodedObservation,
     TokenObservationEncoder,
+    definition_feature_indices,
 )
 
 
@@ -427,12 +429,93 @@ def _as_float_2d(value: Any) -> tuple[tuple[float, ...], ...]:
     return tuple(tuple(float(v) for v in row) for row in value)
 
 
+def definition_ids_for_features(
+    features: Sequence[Sequence[float]], index: int
+) -> list[int]:
+    """Recover exact integer definition ids from one feature column.
+
+    The encoder writes ``definition_id / 400000``; in float32 (or in the
+    float64 Python lists produced by the encoder) ``round(x * SCALE)`` is
+    lossless for every id the game currently uses. These ids are stored beside
+    compact float16 payloads because fp16 quantisation is **not** reversible for
+    six-digit card ids (A2 post-mortem, 2026-10-27).
+    """
+    ids: list[int] = []
+    for row in features:
+        if 0 <= int(index) < len(row):
+            value = float(row[int(index)])
+            ids.append(int(round(value * DEFINITION_SCALE)) if value > 0.0 else 0)
+        else:
+            ids.append(0)
+    return ids
+
+
+def _definition_indices(payload: dict[str, Any]) -> tuple[int, int]:
+    stored = payload.get("definition_indices")
+    if isinstance(stored, (list, tuple)) and len(stored) == 2:
+        return int(stored[0]), int(stored[1])
+    return definition_feature_indices()
+
+
+def _apply_definition_ids(
+    rows: Sequence[Sequence[float]], ids: Sequence[int], index: int
+) -> tuple[tuple[float, ...], ...]:
+    """Overwrite one column with ``id / SCALE`` reconstructed from exact ids."""
+    repaired = [list(row) for row in rows]
+    for row, definition_id in zip(repaired, ids):
+        if 0 <= int(index) < len(row):
+            row[int(index)] = float(int(definition_id)) / DEFINITION_SCALE
+    return tuple(tuple(row) for row in repaired)
+
+
+def _apply_definition_ids_array(array: np.ndarray, ids: Sequence[int], index: int) -> np.ndarray:
+    """In-place integer-id repair for a 2D numpy feature matrix."""
+    if array.ndim != 2 or not 0 <= int(index) < array.shape[1]:
+        return array
+    for row, definition_id in zip(array, ids):
+        row[int(index)] = float(int(definition_id)) / DEFINITION_SCALE
+    return array
+
+
+def repair_observation_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return a feature payload whose definition columns are exact integers.
+
+    New compact payloads carry ``token_definition_ids``/``option_definition_ids``
+    (int lists) beside the fp16 buffers. Store builders that bypass
+    ``observation_from_payload`` can call this to repair those columns without
+    materialising the full dataclass. Legacy payloads (no id fields) pass
+    through unchanged.
+    """
+    if not payload.get("token_definition_ids") and not payload.get("option_definition_ids"):
+        return payload
+    token_index, option_index = _definition_indices(payload)
+    repaired = dict(payload)
+    if payload.get("token_definition_ids") is not None:
+        if is_dense_payload(payload["token_features"]):
+            tokens = _unpack_dense(payload["token_features"]).astype(np.float32)
+        else:
+            tokens = np.asarray(payload["token_features"], dtype=np.float32)
+        repaired["token_features"] = _apply_definition_ids_array(
+            tokens, payload["token_definition_ids"], token_index
+        )
+    if payload.get("option_definition_ids") is not None:
+        if is_dense_payload(payload["option_features"]):
+            options = _unpack_dense(payload["option_features"]).astype(np.float32)
+        else:
+            options = np.asarray(payload["option_features"], dtype=np.float32)
+        repaired["option_features"] = _apply_definition_ids_array(
+            options, payload["option_definition_ids"], option_index
+        )
+    return repaired
+
+
 def observation_to_payload(
     observation: EncodedObservation,
     *,
     format: str = "jsonl",
     compact_dtype: str = DEFAULT_COMPACT_DTYPE,
     include_privileged_state: bool = True,
+    include_definition_ids: bool = True,
 ) -> dict[str, Any]:
     """JSON-serializable payload for an ``EncodedObservation``.
 
@@ -442,6 +525,12 @@ def observation_to_payload(
     ``option_features``, the belief histograms and, unless disabled,
     ``privileged_state``) with base64 fp16/fp32 buffers. Int/bool fields and the
     record envelope are unchanged, so the game is still one JSONL line.
+
+    Compact payloads also carry exact integer definition ids (and the resolved
+    column indices) beside the fp16 buffers. fp16 cannot represent
+    ``definition_id / 400000`` reversibly for six-digit card ids, which silently
+    corrupted the A2 identity-embedding corpus; the int columns make the
+    identity recoverable without switching the whole payload to fp32.
     """
     belief = observation.belief_target
     payload: dict[str, Any] = {
@@ -473,6 +562,15 @@ def observation_to_payload(
 
     payload["token_features"] = _encode_2d(observation.token_features, compact_dtype)
     payload["option_features"] = _encode_2d(observation.option_features, compact_dtype)
+    if include_definition_ids:
+        token_index, option_index = definition_feature_indices()
+        payload["token_definition_ids"] = definition_ids_for_features(
+            observation.token_features, token_index
+        )
+        payload["option_definition_ids"] = definition_ids_for_features(
+            observation.option_features, option_index
+        )
+        payload["definition_indices"] = [int(token_index), int(option_index)]
     if include_privileged_state:
         payload["privileged_state"] = _encode_1d(observation.privileged_state, compact_dtype)
     else:
@@ -491,13 +589,30 @@ def observation_to_payload(
 
 
 def observation_from_payload(payload: dict[str, Any]) -> EncodedObservation:
-    """Rebuild an ``EncodedObservation`` from either format (auto-detected)."""
+    """Rebuild an ``EncodedObservation`` from either format (auto-detected).
+
+    Compact payloads written by the current collector carry exact integer
+    definition ids; they overwrite the fp16-quantised definition columns so the
+    identity is recovered losslessly. Legacy payloads without those fields pass
+    through unchanged (and remain subject to fp16 id loss).
+    """
     belief = payload["belief_target"]
+    token_features = _as_float_2d(payload["token_features"])
+    option_features = _as_float_2d(payload["option_features"])
+    token_index, option_index = _definition_indices(payload)
+    if payload.get("token_definition_ids") is not None:
+        token_features = _apply_definition_ids(
+            token_features, payload["token_definition_ids"], token_index
+        )
+    if payload.get("option_definition_ids") is not None:
+        option_features = _apply_definition_ids(
+            option_features, payload["option_definition_ids"], option_index
+        )
     return EncodedObservation(
-        token_features=_as_float_2d(payload["token_features"]),
+        token_features=token_features,
         token_mask=tuple(bool(v) for v in payload["token_mask"]),
         opponent_token_mask=tuple(bool(v) for v in payload["opponent_token_mask"]),
-        option_features=_as_float_2d(payload["option_features"]),
+        option_features=option_features,
         option_mask=tuple(bool(v) for v in payload["option_mask"]),
         low_level_action_codes=tuple(int(v) for v in payload["low_level_action_codes"]),
         low_to_high_codes=tuple(int(v) for v in payload["low_to_high_codes"]),
@@ -525,6 +640,7 @@ def sample_to_payload(
     format: str = "jsonl",
     compact_dtype: str = DEFAULT_COMPACT_DTYPE,
     include_privileged_state: bool = True,
+    include_definition_ids: bool = True,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "observation": observation_to_payload(
@@ -532,6 +648,7 @@ def sample_to_payload(
             format=format,
             compact_dtype=compact_dtype,
             include_privileged_state=include_privileged_state,
+            include_definition_ids=include_definition_ids,
         ),
         "teacher_index": int(sample.teacher_index),
         "value_target": float(sample.value_target),

@@ -30,6 +30,12 @@ class NeuralPolicy:
         self._torch = torch
         self.model.to(self.device)
         self.model.eval()
+        # P0: temperature sampling must be reproducible under paired seeds. The
+        # historical implementation used the process-global torch RNG, so two
+        # workers / reruns with the same task seed did not sample the same game.
+        self._generator = torch.Generator(device=self.device)
+        if self.seed is not None:
+            self._generator.manual_seed(int(self.seed))
 
     def choose(self, built: BuiltDecisionContext) -> int:
         codes = list(int(c) for c in built.context.legal_low_level_codes)
@@ -52,7 +58,9 @@ class NeuralPolicy:
         self.calls += 1
         if self.temperature and self.temperature > 0:
             probs = self._torch.softmax(logits / self.temperature, dim=-1)
-            index = int(self._torch.multinomial(probs, 1).item())
+            index = int(
+                self._torch.multinomial(probs, 1, generator=self._generator).item()
+            )
         else:
             index = int(self._torch.argmax(logits, dim=-1).item())
         index = max(0, min(index, len(codes) - 1))
@@ -66,6 +74,7 @@ def load_neural_policy(
     name: str | None = None,
     temperature: float = 0.0,
     device: str = "cpu",
+    seed: int | None = None,
 ) -> NeuralPolicy:
     from train.model import load_cvpn_model
 
@@ -76,4 +85,5 @@ def load_neural_policy(
         name=name or f"neural:{checkpoint_path}",
         device=device,
         temperature=temperature,
+        seed=seed,
     )

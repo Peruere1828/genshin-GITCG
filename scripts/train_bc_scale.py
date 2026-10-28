@@ -569,6 +569,14 @@ class Config:
     seed: int = 0
     device: str = "cpu"
     log_every: int = 1
+    # P0: save the best-validation checkpoint, not only the last epoch. Selection
+    # defaults to val_ce (lower is better); val_acc is available for diagnostics
+    # but is *not* a strength signal (A2: 0.866 val_acc / 0.266 engine).
+    save_best: bool = False
+    select_metric: str = "val_ce"
+    best_path: str | None = None
+    best_epoch: int = -1
+    best_metric: float | None = None
     # --- offline-RL policy targets (H2 of the 2-day strength plan) ----------
     # "ce"  = behaviour cloning (default, unchanged);
     # "awr" = advantage-weighted CE: w = exp(beta * (G - V(s))) from the model's
@@ -610,7 +618,15 @@ class Config:
     grad_clip: float = 0.0     # 0 = off; PG rounds use 1.0
 
 
-def train(train_store: Store, val_store: Store, model, config: Config, has_belief: bool):
+def train(
+    train_store: Store,
+    val_store: Store,
+    model,
+    config: Config,
+    has_belief: bool,
+    *,
+    encoder_config: dict[str, Any] | None = None,
+):
     torch.manual_seed(config.seed)
     model.to(config.device)
     model.train()
@@ -636,6 +652,8 @@ def train(train_store: Store, val_store: Store, model, config: Config, has_belie
 
     rng = _random.Random(config.seed)
     history: list[dict[str, Any]] = []
+    best_state: dict[str, torch.Tensor] | None = None
+    best_score: float | None = None
     t0 = time.perf_counter()
     for epoch in range(config.epochs):
         order = list(order0)
@@ -669,9 +687,38 @@ def train(train_store: Store, val_store: Store, model, config: Config, has_belie
             for extra in ("q_mse", "w_mean", "w_max"):
                 if extra in v:
                     row[f"val_{extra}"] = round(float(v[extra]), 5)
+            metric = row.get(config.select_metric)
+            if metric is not None:
+                lower_is_better = config.select_metric == "val_ce"
+                improved = best_score is None or (
+                    float(metric) < best_score if lower_is_better else float(metric) > best_score
+                )
+                if improved:
+                    best_score = float(metric)
+                    config.best_epoch = int(epoch)
+                    config.best_metric = float(metric)
+                    best_state = {
+                        key: value.detach().cpu().clone()
+                        for key, value in model.state_dict().items()
+                    }
         history.append(row)
         if config.log_every and (epoch % config.log_every == 0 or epoch == config.epochs - 1):
             print(f"[train] {json.dumps(row)}", flush=True)
+    if config.save_best and best_state is not None and config.best_path:
+        # Preserve the last-epoch weights, save the best snapshot, then restore
+        # the last-epoch weights so the caller's normal "save final" path is
+        # unchanged.
+        last_state = {
+            key: value.detach().cpu().clone()
+            for key, value in model.state_dict().items()
+        }
+        try:
+            model.load_state_dict(best_state)
+            ensure_dir(Path(config.best_path).parent)
+            model.save(config.best_path, encoder_config=encoder_config)
+        finally:
+            model.load_state_dict(last_state)
+            model.train()
     return history, round(time.perf_counter() - t0, 1)
 
 
@@ -697,6 +744,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--device", default="cpu")
     p.add_argument("--out", default=None, help="checkpoint .pt path")
     p.add_argument("--report", default=None, help="aggregate report .json path")
+    p.add_argument("--save-best", action="store_true",
+                   help="save the best-validation checkpoint in addition to the last epoch")
+    p.add_argument("--select-metric", choices=["val_ce", "val_acc"], default="val_ce",
+                   help="validation metric for --save-best (lower val_ce / higher val_acc)")
+    p.add_argument("--best-out", default=None,
+                   help="best checkpoint path (default: <out>.best.pt)")
     p.add_argument(
         "--store-cache",
         default=None,
@@ -737,6 +790,9 @@ def load_or_build_store(args):
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    # P0: seed before constructing the model (the historical order let the model
+    # initialise from the process RNG, so same --seed meant different weights).
+    torch.manual_seed(int(args.seed))
     encoder = default_encoder()
     train_store, val_store, meta, _cached = load_or_build_store(args)
     if args.build_only:
@@ -747,6 +803,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.max_val is not None and len(val_store) > args.max_val:
         val_store = val_store.subset(list(range(args.max_val)))
     print(f"[store] train={len(train_store)} val={len(val_store)} meta={meta}", flush=True)
+    stamp = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+    if args.out:
+        out = Path(args.out)
+        ensure_dir(out.parent)
+    else:
+        out = Path("data/checkpoints") / f"{stamp}_bc_scale.pt"
+        ensure_dir(out.parent)
+    best_out = Path(args.best_out) if args.best_out else out.with_name(
+        f"{out.stem}.best{out.suffix or '.pt'}"
+    )
     if args.arch == "transformer":
         cfg = transformer_config_for_encoder(
             encoder, belief=args.belief, d_model=args.d_model,
@@ -760,15 +826,14 @@ def main(argv: list[str] | None = None) -> int:
     config = Config(
         epochs=args.epochs, lr=args.lr, batch_size=args.batch_size,
         seed=args.seed, device=args.device, weight_decay=args.weight_decay,
+        save_best=args.save_best,
+        select_metric=args.select_metric,
+        best_path=str(best_out) if args.save_best else None,
     )
-    history, train_seconds = train(train_store, val_store, model, config, has_belief)
-    stamp = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
-    if args.out:
-        out = Path(args.out)
-        ensure_dir(out.parent)
-    else:
-        out = Path("data/checkpoints") / f"{stamp}_bc_scale.pt"
-        ensure_dir(out.parent)
+    history, train_seconds = train(
+        train_store, val_store, model, config, has_belief,
+        encoder_config=encoder.to_dict(),
+    )
     model.save(str(out), encoder_config=encoder.to_dict())
     report = {
         "kind": "bc_scale",
@@ -783,6 +848,9 @@ def main(argv: list[str] | None = None) -> int:
         "train_seconds": train_seconds,
         "history": history,
         "checkpoint": str(out),
+        "best_checkpoint": str(best_out) if args.save_best else None,
+        "best_epoch": config.best_epoch,
+        "best_metric": config.best_metric,
         "engine_lock": load_engine_lock(),
         "runtime": runtime_metadata(),
     }

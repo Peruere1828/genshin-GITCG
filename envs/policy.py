@@ -148,7 +148,9 @@ def _neural_policy(spec: str, *, seed: int) -> Policy:
         from envs.observation import default_encoder
 
         encoder = default_encoder()
-    return load_neural_policy(path, encoder, temperature=temperature, device=device)
+    return load_neural_policy(
+        path, encoder, temperature=temperature, device=device, seed=seed
+    )
 
 
 def build_policy(spec: str, *, seed: int, role: str) -> Policy:

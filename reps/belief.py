@@ -95,9 +95,19 @@ def _stable_public_seed(*, prefix: str = "belief", **payload: Any) -> int:
 
 
 def _sample_hidden_dice(*, sample_index: int, count: int) -> tuple[int, ...]:
+    """I.i.d. dice sample for one public-belief particle.
+
+    The historical implementation was a deterministic rotation
+    ``(sample_index + offset) % 8``, which forces every particle to contain eight
+    *distinct* dice. Real dice pools are drawn with replacement, so the rotation
+    systematically misrepresented the opponent's legal actions (a hidden dice
+    type is often duplicated). Seed from the particle index only: the sample must
+    stay a function of public fields, never of the true hidden state.
+    """
     if count <= 0:
         return ()
-    return tuple(_DICE_TYPES[(sample_index + offset) % len(_DICE_TYPES)] for offset in range(count))
+    rng = random.Random(_stable_public_seed(prefix="hidden_dice", sample_index=int(sample_index)))
+    return tuple(int(rng.choice(_DICE_TYPES)) for _ in range(int(count)))
 
 
 def _belief_score_lookup(*, vocabulary: Sequence[int], scores: Sequence[float]) -> dict[int, float]:

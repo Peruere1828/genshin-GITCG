@@ -13,7 +13,7 @@ the process-global low-level action codes (see AGENTS.md "重放确定性坑").
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import torch
 from torch import nn
@@ -161,6 +161,14 @@ class CVPN(nn.Module):
                 "arch": "cvpn",
                 "state_dict": self.state_dict(),
                 "encoder_config": encoder_config,
+                # Store the *resolved* identity columns, not the -1 "resolve at
+                # load time" sentinel: a future layout change must fail loudly
+                # instead of silently reading a different column.
+                "definition_indices": (
+                    [int(self.token_def_index), int(self.option_def_index)]
+                    if getattr(self, "has_ids", False)
+                    else None
+                ),
             },
             path,
         )
@@ -193,6 +201,31 @@ def config_for_encoder(encoder, *, belief: bool = False, **overrides) -> CVPNCon
     return CVPNConfig(**base)
 
 
+def _validate_checkpoint_definition_indices(payload: Mapping[str, Any], path: str) -> None:
+    """Fail loudly when an id-enabled checkpoint was trained on another layout.
+
+    Checkpoints written by the current trainer store the resolved token/option
+    definition columns. Older checkpoints have no field (skip); new checkpoints
+    must match ``definition_feature_indices()`` or the id branch would silently
+    read a different column after an encoder layout change.
+    """
+    config = payload.get("config") or {}
+    if int(config.get("id_buckets", 0) or 0) <= 1:
+        return
+    stored = payload.get("definition_indices")
+    if not stored:
+        return
+    from reps.observation_encoder import definition_feature_indices
+
+    current = [int(v) for v in definition_feature_indices()]
+    if [int(v) for v in stored] != current:
+        raise ValueError(
+            f"checkpoint {path} was trained with definition columns {list(stored)}, "
+            f"but the current encoder uses {current}; refusing to load a misaligned "
+            "identity branch"
+        )
+
+
 def load_cvpn_model(path: str) -> nn.Module:
     """Load any CVPN-interface checkpoint, dispatching on its ``arch`` field.
 
@@ -202,6 +235,7 @@ def load_cvpn_model(path: str) -> nn.Module:
     before the ``arch`` field existed default to the mean-pool ``CVPN``.
     """
     payload = torch.load(path, map_location="cpu", weights_only=False)
+    _validate_checkpoint_definition_indices(payload, path)
     arch = payload.get("arch")
     if arch == "transformer_cvpn":
         model: nn.Module = TransformerCVPN(TransformerCVPNConfig(**payload["config"]))
@@ -407,6 +441,11 @@ class TransformerCVPN(nn.Module):
                 "arch": "transformer_cvpn",
                 "state_dict": self.state_dict(),
                 "encoder_config": encoder_config,
+                "definition_indices": (
+                    [int(self.token_def_index), int(self.option_def_index)]
+                    if getattr(self, "has_ids", False)
+                    else None
+                ),
             },
             path,
         )

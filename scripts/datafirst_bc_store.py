@@ -38,7 +38,9 @@ import torch
 
 from common.lock import load_engine_lock, runtime_metadata
 from common.paths import ensure_dir
-from train.data import _unpack_dense, is_dense_payload
+from envs.observation import default_encoder
+from reps.observation_encoder import definition_feature_indices
+from train.data import _unpack_dense, is_dense_payload, repair_observation_payload
 from scripts.train_bc_scale import Store, _game_key, _iter_replay_records
 
 
@@ -91,6 +93,7 @@ def load_store_any(
     empty = lambda: Store([], [], [], [], [], [], [], [], [], [], [])
     train, val = empty(), empty()
     n_games = n_skipped = n_dup = n_events = n_filtered = 0
+    n_definition_ids = 0
     seen: set[tuple[str, str, int]] = set()
     t0 = time.perf_counter()
     for record in _iter_replay_records(replay_dirs):
@@ -114,7 +117,12 @@ def load_store_any(
         dest = val if is_val else train
         deck, opponent, seed = key
         for payload in record.get("samples", ()):
-            obs = payload["observation"]
+            obs = repair_observation_payload(payload["observation"])
+            if (
+                obs.get("token_definition_ids") is not None
+                and obs.get("option_definition_ids") is not None
+            ):
+                n_definition_ids += 1
             dest.tokens.append(_tensor(obs["token_features"]).to(device))
             dest.options.append(_tensor(obs["option_features"]).to(device))
             dest.teacher.append(int(payload["teacher_index"]))
@@ -164,6 +172,13 @@ def load_store_any(
         "load_seconds": round(time.perf_counter() - t0, 1),
         "seed_start": int(seed_start),
         "val_every": int(val_every),
+        # P0 parity: pin the exact encoder layout and record whether the corpus
+        # carries lossless integer definition ids. Identity-embedding runs must
+        # refuse a corpus with `definition_ids_present < events`.
+        "encoder_config": default_encoder().to_dict(),
+        "definition_indices": [int(v) for v in definition_feature_indices()],
+        "definition_ids_present": n_definition_ids,
+        "definition_ids_required": False,
     }
     return train, val, meta
 
