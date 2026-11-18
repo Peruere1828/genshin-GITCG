@@ -39,8 +39,13 @@ import { IS_BETA, SERVER_HOST, WEB_CLIENT_BASE_PATH } from "@gi-tcg/config";
 import { DeckBuilder } from "@gi-tcg/deck-builder";
 import "@gi-tcg/deck-builder/style.css";
 import "@gi-tcg/state-editor/style.css";
-import { DEFAULT_ASSETS_MANAGER, type CustomData } from "@gi-tcg/assets-manager";
+import {
+  AssetsManager,
+  DEFAULT_ASSETS_MANAGER,
+  type CustomData,
+} from "@gi-tcg/assets-manager";
 import { GameStateEditor } from "@gi-tcg/state-editor";
+import { DeckPreview } from "./DeckPreview";
 
 enum GameMode {
   NotStarted = 0,
@@ -134,9 +139,14 @@ export function App() {
   const [counterPick, setCounterPick] = createSignal<CounterPick | null>(null);
   // 先手三选：人类 / AI / 随机
   const [firstTurn, setFirstTurn] = createSignal<FirstTurn>("random");
-  // WS8/D18 overlay：AI 对手（HTTP 桥）开关与地址
+  // WS8/D18 overlay：AI 对手（HTTP 桥）开关与地址。
+  // 默认走**同源** `/bridge`（vite 反代到本机 Python 桥）：局域网另一台机器访问
+  // 本页面时，`127.0.0.1` 指向的是那台机器；同源相对路径才能落到这个前端所在的
+  // 主机上，也省掉 CORS。
   const [aiOpponent, setAiOpponent] = createSignal(false);
-  const [aiServerUrl, setAiServerUrl] = createSignal("http://127.0.0.1:8770");
+  const [aiServerUrl, setAiServerUrl] = createSignal(
+    `${window.location.origin}/bridge`,
+  );
   const [aiSelfPlay, setAiSelfPlay] = createSignal(false);
   // T3：桥声明的 AI 座位牌组 slug（拿到后回填到「AI 牌组」）
   const [aiDeckSlug, setAiDeckSlug] = createSignal<string | null>(null);
@@ -151,6 +161,17 @@ export function App() {
   const npcLineups = createMemo(
     () => (npcList()?.decks ?? []).map((d) => d.characters ?? []),
   );
+
+  // C3/P5：NPC/引擎数据的 AssetsManager。组牌器和牌组预览原本回退官方镜像，
+  // 换成它以后静态详情走引擎 overlay 数据：NPC 敌人用 .gts 血量，PvE 变体
+  // 9301/9202 是独立角色（本仓库 PvE 血量 9/10），官方卡 2301/2202 保持 11/10。
+  const npcAssetsManager = createMemo(() => {
+    const assets = npcList()?.assets;
+    if (!assets?.characters?.length) {
+      return DEFAULT_ASSETS_MANAGER;
+    }
+    return new AssetsManager({ language: "CHS", customData: [assets] });
+  });
 
   const deckOrEmpty = (code: string): Deck => {
     try {
@@ -216,7 +237,9 @@ export function App() {
       const code = encodeDeck({ characters: data.characters, cards: data.cards });
       if (code) {
         setOtherDeckCode(code);
-        setOtherDeckEdited(false);
+        // 桥声明的牌组是**显式选择**：标记手改过，开局时不再被自动反选覆盖
+        // （否则 expert:<slug> 的牌组会被反选成别的池内套，脚本专家被改派）。
+        setOtherDeckEdited(true);
       }
       setAiDeckSlug(data.slug);
     } catch (e) {
@@ -583,7 +606,7 @@ export function App() {
                   disabled={!aiOpponent()}
                   value={aiServerUrl()}
                   onInput={(e) => setAiServerUrl(e.currentTarget.value)}
-                  placeholder="http://127.0.0.1:8770"
+                  placeholder={`${window.location.origin}/bridge`}
                 />
                 <label>
                   <input
@@ -642,6 +665,31 @@ export function App() {
                     请注意：本页面包含未发布的测试版卡牌；包含这些卡牌的分享码仅限在本页面内使用，它们可能是无效的正式版分享码。
                   </strong>
                 </Show>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "0.75rem",
+                  "align-items": "flex-start",
+                  "margin-bottom": "1rem",
+                }}
+              >
+                <div style={{ flex: "1 1 0", "min-width": "0" }}>
+                  <DeckPreview
+                    title="我的牌组"
+                    deck={npcPick() ?? deckOrEmpty(myDeckCode())}
+                    npcAssets={npcList()?.assets}
+                    assetsManager={npcAssetsManager()}
+                  />
+                </div>
+                <div style={{ flex: "1 1 0", "min-width": "0" }}>
+                  <DeckPreview
+                    title={aiOpponent() ? "AI 牌组" : "对面牌组"}
+                    deck={deckOrEmpty(otherDeckCode())}
+                    npcAssets={npcList()?.assets}
+                    assetsManager={npcAssetsManager()}
+                  />
+                </div>
               </div>
               <div class="config-panel__button-group">
                 <button onClick={() => void startGame()}>开始对局</button>
@@ -797,6 +845,7 @@ export function App() {
           <DeckBuilder
             class="deck-builder"
             deck={deckBuilderValue()}
+            assetsManager={npcAssetsManager()}
             onChangeDeck={setDeckBuilderValue}
           />
         </Show>

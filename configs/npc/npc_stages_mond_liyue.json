@@ -21,7 +21,7 @@
     "lineups": "GameWith NPC Challengers (article/show/37530)",
     "objectives": "eurogamer.net adventure-challenge reward table; BWIKI cross-check for Marjorie & Chef Mao",
     "enemy_stats": "genshin-db (theBowja/genshin-db) — see configs/npc/npc_enemies_all.json",
-    "special_rules": "BWIKI 卯师傅 (Chef Mao); npc_pve_doc.md §6 (Timaeus, HoYoWiki/2547)"
+    "special_rules": "BWIKI 卯师傅 (Chef Mao); npc_pve_doc.md §6 (Timaeus, HoYoWiki/196)"
   },
   "discrepancies_with_npc_spec_example": {
     "note": "npc_spec_example_timaeus.json 保持不变（占位/参考）；下列以本文件为准。",
@@ -90,7 +90,7 @@
       "stage_title": {
         "text": "A Tale of Two Hilichurls",
         "verified": true,
-        "source": "HoYoWiki entry/2492"
+        "source": "HoYoWiki entry/1335"
       }
     },
     {
@@ -132,7 +132,12 @@
         "special_rules": null
       },
       "objectives_verified": false,
-      "objectives_unverified_reason": "eurogamer 仅列 1 条目标（其余 NPC 均 3 条），疑为缺失，待核实"
+      "objectives_unverified_reason": "eurogamer 仅列 1 条目标（其余 NPC 均 3 条），疑为缺失，待核实",
+      "stage_title": {
+        "text": "一切冒险的开始",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     },
     {
       "name": "wagner",
@@ -194,7 +199,12 @@
         "objectives": "eurogamer.net/genius-invokation-card-adventure-challenge-npcs",
         "special_rules": null
       },
-      "objectives_verified": true
+      "objectives_verified": true,
+      "stage_title": {
+        "text": "紧急修理",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     },
     {
       "name": "marjorie",
@@ -311,7 +321,12 @@
         "objectives": "eurogamer.net/genius-invokation-card-adventure-challenge-npcs",
         "special_rules": null
       },
-      "objectives_verified": true
+      "objectives_verified": true,
+      "stage_title": {
+        "text": "火与冰的传说",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     },
     {
       "name": "timaeus",
@@ -372,14 +387,19 @@
       "sources": {
         "lineup": "gamewith/37530 (Adventure Challenge) via reports/explore/npc_lineups_mond_liyue.md",
         "objectives": "eurogamer.net/genius-invokation-card-adventure-challenge-npcs",
-        "special_rules": "reports/explore/npc_pve_doc.md §6 (HoYoWiki entry/2547)"
+        "special_rules": "reports/explore/npc_pve_doc.md §6 (HoYoWiki entry/196)"
       },
       "objectives_verified": true,
       "notes": {
         "differs_from_npc_spec_example_timaeus": "npc_spec_example_timaeus.json 的 objectives 为占位（defeated_less_than 2）；经 eurogamer 核实实际目标第 2 条为「打出1张圣遗物牌」、第 3 条为「5回合内胜利」。本文件为准，原文件保留不动。"
       },
       "special_rules_verified": false,
-      "special_rules_unverified_reason": "HoYoWiki 本轮不可直连核实；沿用 npc_pve_doc.md 记录"
+      "special_rules_unverified_reason": "HoYoWiki 本轮不可直连核实；沿用 npc_pve_doc.md 记录",
+      "stage_title": {
+        "text": "持盾的危机",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     },
     {
       "name": "patton",
@@ -439,7 +459,12 @@
         "objectives": "eurogamer.net/genius-invokation-card-adventure-challenge-npcs",
         "special_rules": null
       },
-      "objectives_verified": true
+      "objectives_verified": true,
+      "stage_title": {
+        "text": "湖边奇遇",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     },
     {
       "name": "ellin",
@@ -499,7 +524,12 @@
         "objectives": "eurogamer.net/genius-invokation-card-adventure-challenge-npcs",
         "special_rules": null
       },
-      "objectives_verified": true
+      "objectives_verified": true,
+      "stage_title": {
+        "text": "攀高危险",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     },
     {
       "name": "jifang",
@@ -584,7 +614,12 @@
         "objectives": "eurogamer.net/genius-invokation-card-adventure-challenge-npcs",
         "special_rules": null
       },
-      "objectives_verified": true
+      "objectives_verified": true,
+      "stage_title": {
+        "text": "神侠行剑谭",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     },
     {
       "name": "buyun",
@@ -644,7 +679,12 @@
         "objectives": "eurogamer.net/genius-invokation-card-adventure-challenge-npcs",
         "special_rules": null
       },
-      "objectives_verified": true
+      "objectives_verified": true,
+      "stage_title": {
+        "text": "熟能生巧",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     },
     {
       "name": "liusu",
@@ -696,7 +736,12 @@
         "objectives": "eurogamer.net/genius-invokation-card-adventure-challenge-npcs",
         "special_rules": null
       },
-      "objectives_verified": true
+      "objectives_verified": true,
+      "stage_title": {
+        "text": "岩国周游记",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     },
     {
       "name": "shitou",
@@ -739,10 +784,9 @@
         },
         {
           "type": "win_within_rounds",
-          "n": 44,
-          "text": "44回合内胜利",
-          "verified": false,
-          "unverified_reason": "eurogamer 原文为 'within 44 Rounds'，疑为笔误（4/14?），待游戏内核实"
+          "n": 4,
+          "text": "4回合内胜利",
+          "verified": true
         },
         {
           "type": "trigger_elemental_reactions",
@@ -757,8 +801,12 @@
         "objectives": "eurogamer.net/genius-invokation-card-adventure-challenge-npcs",
         "special_rules": null
       },
-      "objectives_verified": false,
-      "objectives_unverified_reason": "第 2 条回合数 44 疑似笔误"
+      "objectives_verified": true,
+      "stage_title": {
+        "text": "古石旧事",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     },
     {
       "name": "irontonguetian",
@@ -810,7 +858,12 @@
         "objectives": "eurogamer.net/genius-invokation-card-adventure-challenge-npcs",
         "special_rules": null
       },
-      "objectives_verified": true
+      "objectives_verified": true,
+      "stage_title": {
+        "text": "荡邪录",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     },
     {
       "name": "chefmao",
@@ -924,7 +977,12 @@
         "objectives": "eurogamer.net/genius-invokation-card-adventure-challenge-npcs",
         "special_rules": null
       },
-      "objectives_verified": true
+      "objectives_verified": true,
+      "stage_title": {
+        "text": "临危受命",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     },
     {
       "name": "lan",
@@ -984,7 +1042,12 @@
         "objectives": "eurogamer.net/genius-invokation-card-adventure-challenge-npcs",
         "special_rules": null
       },
-      "objectives_verified": true
+      "objectives_verified": true,
+      "stage_title": {
+        "text": "七剑往事",
+        "verified": true,
+        "source": "HoYoWiki（观测枢）；configs/npc/special_rules.json stages[].challenge_title"
+      }
     }
   ]
 }

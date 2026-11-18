@@ -7,7 +7,7 @@
   "field_notes": {
     "cost": "e.g. 'Cryo1+Unaligned2' / 'Cryo3+Energy2'",
     "effect": "official Chinese description (in-game text)",
-    "hp_card": "card HP; equals the HP used by the PvE stages (confirmed for Timaeus 3/8/8)",
+    "hp_card": "card HP; 官方可玩角色卡 2301=11 / 2202=10 保持引擎原版；PvE 冒险挑战的 fatuipyroagent/mirrormaiden 使用 NPC 变体 9301(9)/9202(10)，与本文件 hp_card 9/10 一致（Timaeus 3/8/8 已核实）",
     "energy": "Elemental Burst energy cost cap (A/E each +1, Q consumes it)",
     "charge_rule": "A/E each grant +1 energy; Q consumes it; cap = energy"
   },

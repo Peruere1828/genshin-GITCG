@@ -166,6 +166,24 @@ def test_timaeus_characters_present_with_authoritative_stats():
         assert char.max_energy == 2
 
 
+def test_fatui_variants_have_their_own_hp_and_official_cards_are_unchanged():
+    """9301/9202 are separate NPC cards; 2301/2202 keep the upstream HP."""
+    p0 = DeckSpec(
+        name="official",
+        characters=(2301, 2202, CRYO_HILICHURL_SHOOTER),
+        cards=_base_spec().cards,
+    )
+    p1 = _enemy_spec((9301, 9202, CRYO_HILICHURL_SHOOTER))
+    game, _ = _play(p0, p1, seed=3, max_steps=1)
+    snap = snapshot_state(None, game.state().json())
+    official = _chars(snap, 0)
+    variants = _chars(snap, 1)
+    assert official[2301].max_health == 11
+    assert official[2202].max_health == 10
+    assert variants[9301].max_health == 9
+    assert variants[9202].max_health == 10
+
+
 @pytest.mark.slow
 def test_timaeus_battle_begin_passive_statuses():
     """Hoarfrost Greatshield / Flowfire Edge are attached when the battle begins."""
@@ -265,9 +283,9 @@ def test_timaeus_npc_lineup_full_match_is_clean():
 # --------------------------------------------------------------------------- #
 # full Mondstadt/Liyue NPC enemy roster (PLAN §4.4)
 # --------------------------------------------------------------------------- #
-# Character ids are the official GCG enemy-card ids; the two Fatui entries
-# already exist in the upstream data package (engine HP 11/10 vs the NPC data
-# 9/10 for Fatui Pyro Agent) — a documented deviation.
+# Character ids are the NPC enemy-card ids. The two Fatui entries use dedicated
+# NPC variant cards (9301/9202) so the official playable cards (2301/2202) keep
+# their original HP (11/10); the NPC variants use this repo's PvE HP (9/10).
 ALL_ENEMIES: dict[str, int] = {
     "hydroslime": 3204,
     "electroslime": 3406,
@@ -286,8 +304,8 @@ ALL_ENEMIES: dict[str, int] = {
     "hydro_abyss_mage": 3201,
     "fatui_anemoboxer_vanguard": 3502,
     "fatui_hydrogunner_legionnaire": 3203,
-    "fatui_pyro_agent": 2301,
-    "mirror_maiden": 2202,
+    "fatui_pyro_agent": 9301,
+    "mirror_maiden": 9202,
 }
 
 # Abyss Mage wards: status id attached at battle begin, with 2 element instances.

@@ -12,6 +12,8 @@ engine-overlay/
 ├── versions.env               # 所有 pin（引擎 tag/commit、V8 wrapper/版本、node/pnpm/cmake、镜像 tag）
 ├── overlay/                   # 我们的引擎改动（引擎仓根目录镜像；B0 为空）
 │   └── README.md              # B1 起敌人 .gts 的放置路径对照
+├── patches/                   # 引擎改动的完整 diff（可 git apply；overlay/ 为同内容全量文件）
+│   └── stage-rules.patch      # PvE 冒险挑战关卡规则（CreateParam attr 2002）
 └── scripts/
     ├── materialize.sh         # 物化引擎源码到 build/engine，精确 pin 到 v0.21.0
     ├── materialize-v8.sh      # 预取 V8 wrapper（piovium/v8-cmake，含 vendor 的 V8 源码）
@@ -195,3 +197,21 @@ bash engine-overlay/scripts/standalone.sh dev     # http://localhost:5173/
   `sha256=82630a6e0d1f6a5e09306c41c131100e73b404a09c67deb1957c2feeade7e9ce`。
 - 验收：`tests/test_npc_enemies.py`（**27 passed**：蒂玛乌斯三只行为抽检 +
   19 类敌人各跑满一局无错 + 3 深渊法师护罩挂载）；`pytest -m "not slow"` 全绿。
+
+## 构建记录（关卡特殊规则 + NPC 变体，2026-11-17）
+
+- 改动：`packages/core/src/**` 7 文件 + `packages/cbinding/js/{constant,main}.ts`
+  （字符串 CreateParam 属性 `GITCG_ATTR_CREATEPARAM_STAGE_RULES = 2002`）；
+  新增 NPC 变体 `9301`（火债处理人，9 HP）/ `9202`（镜女，10 HP），
+  官方可玩卡 `2301`（11）/ `2202`（10）不覆盖。完整 diff：
+  `patches/stage-rules.patch`；同样的文件也在 `overlay/`，`apply-overlay.sh` 自动应用。
+- 无该属性时行为与补丁前一致：不添加状态字段、不改变首个 pause 边界
+  （同 fixture 初始 state JSON 逐字节相同）。`envs.match.run_match(stage_rules=None)` 即此路径。
+- 构建：本机 `pnpm build` 生成 `js_code.cpp`（V8 不重编），docker 增量重链 **~4 s**。
+- 产物 `build/artifacts/libgitcg.so`，**36,632,368 bytes**，
+  `sha256=da8e20201e6d2b5ab42ec6497a7dacd86cdd059b94b8dc4ee49a1ef3f8c8616a`；
+  `overlay_tree_sha256=3c0c18463a842650fe7b10accc3cc7dfb92cd92c7279ba351bb757fd1ffe8b44`。
+  同样记录在 `configs/engine.lock` 的 `[overlay]`。
+- 验收：`tests/test_stage_rules.py`（payload/coverage，10 passed）、
+  `tests/test_stage_rules_engine.py`（真实对局：timmie 初始支援 322007、blanche +2 充能）、
+  `tests/test_npc_enemies.py`（9301=9 / 9202=10 / 2301=11 / 2202=10）。

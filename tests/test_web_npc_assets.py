@@ -96,3 +96,40 @@ def test_summary_is_json_safe():
     summary = npc_custom_data_summary()
     assert summary["characters"] == len(npc_custom_data()["characters"])
     assert json.loads(json.dumps(summary))["skills"] >= 50
+
+
+def test_fatui_npc_variants_carry_their_own_hp():
+    """NPC 变体 9301/9202 进 CustomData 用的是本仓库 PvE 血量（9/10）。
+
+    官方可玩卡 2301/2202 不进 CustomData（前端走镜像官方数据），其引擎血量
+    仍是 11/10；两条线互不覆盖。
+    """
+    hp = {ch["id"]: ch["hp"] for ch in npc_custom_data()["characters"]}
+    assert hp[9301] == 9
+    assert hp[9202] == 10
+    assert 2301 not in hp
+    assert 2202 not in hp
+
+
+def test_official_fatui_cards_keep_upstream_hp():
+    """引擎里的官方可玩卡保持原版 2301=11 / 2202=10（与 NPC 变体分开）。"""
+    import re
+
+    import pytest
+
+    import common.paths as paths
+
+    official = {
+        2301: paths.REPO_ROOT
+        / "build/engine/packages/data/src/characters/pyro/fatui_pyro_agent.gts",
+        2202: paths.REPO_ROOT
+        / "build/engine/packages/data/src/characters/hydro/mirror_maiden.gts",
+    }
+    if not all(p.exists() for p in official.values()):
+        pytest.skip("engine workspace not materialized (no official .gts)")
+    hp = {}
+    for cid, gts in official.items():
+        match = re.search(r"\bhealth\s+(\d+);", gts.read_text(encoding="utf-8"))
+        assert match is not None, f"{gts} 缺 health"
+        hp[cid] = int(match.group(1))
+    assert hp == {2301: 11, 2202: 10}

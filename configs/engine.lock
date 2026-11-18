@@ -7,6 +7,16 @@ repo = "https://github.com/piovium/genius-invokation"
 commit = "6f01d5c1c1cee1791d6b9b3bfff5312208ce0a21"
 pybinding_version = "0.21.0"
 
+[overlay]
+# 我们的引擎改动（engine-overlay/）叠加在上游 tag v0.21.0 源上；没有新的上游 commit。
+source_tag = "v0.21.0"
+source_commit = "c94826b4611a19f0057d667f7db3b0f9aaf68c7e"
+overlay_tree_sha256 = "3c0c18463a842650fe7b10accc3cc7dfb92cd92c7279ba351bb757fd1ffe8b44"
+libgitcg_sha256 = "da8e20201e6d2b5ab42ec6497a7dacd86cdd059b94b8dc4ee49a1ef3f8c8616a"
+libgitcg_bytes = 36632368
+stage_rules_patch = "engine-overlay/patches/stage-rules.patch"
+updated = "2026-11-17"
+
 [cards]
 # 卡池数据版本：assets API `/api/v4/data/latest/CHS/all`，缓存于 data/assets/（不入库）
 data_version = "v4-latest-CHS@2026-10-07"
