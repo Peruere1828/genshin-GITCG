@@ -12,6 +12,9 @@
 | [`SPECIALISTS.md`](./SPECIALISTS.md) | 19 个 deck 的认证最优臂（自动生成） | generated |
 | [`explore/p0_parity_20261027.md`](./explore/p0_parity_20261027.md) | P0 parity / exact id / 干净语料 / A2 复核 | valid |
 | [`explore/literature_review.md`](./explore/literature_review.md) | 7 条文献线 + D25/D26 提案 | valid |
+| [`explore/daybreak_cr_20261119.md`](./explore/daybreak_cr_20261119.md) | daybreak-cr（皇室战争 IL→PPO）架构深挖：可迁移协议与不适用清单 | valid |
+| [`explore/firstlight_cr_20261119.md`](./explore/firstlight_cr_20261119.md) | FirstLight CR（名人堂 Hog 专精）配方、评测取证与 PPO 工程 | valid |
+| [`explore/imperfect_info_lit_20261120.md`](./explore/imperfect_info_lit_20261120.md) | 不完全信息博弈文献 + 对本仓的可执行结论（belief 校准 / PTIE / Obscuro 骨架） | valid |
 | [`explore/docs_audit.md`](./explore/docs_audit.md) | 63 份文档盘点 + 整理方案 | valid |
 | [`explore/a2_id_screening.md`](./explore/a2_id_screening.md) | A2 原始数字（**结论无效**） | invalid |
 | [`explore/eval_protocol.md`](./explore/eval_protocol.md) | 已迁到 `docs/EVAL_PROTOCOL.md` 的 stub | stub |
@@ -25,7 +28,8 @@
 - **Web**：`web/`（当前协议/状态）；C0 起步报告已删除，内容并入 `web/README.md`。
 - **LLM**：`llm/*.json`。
 - **引擎/基准**：`engine/*.json`、`benchmarks/*.json`、`LOCAL_BASELINE.md`。
-- **文献/审计**：`explore/lit/`、`explore/literature_review.md`、`explore/docs_audit.md`。
+- **文献/审计**：`explore/lit/`、`explore/literature_review.md`、`explore/docs_audit.md`、
+  `explore/daybreak_cr_20261119.md`（同类系统工程实证）。
 
 ## 规则
 
