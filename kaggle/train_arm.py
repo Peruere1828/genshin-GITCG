@@ -223,11 +223,11 @@ HIST_RUNS = [
      "run_timeout": 3600},
     {"name": "hh_a1_dvalin_s0", "store": "hh_a1_dvalin_bonk.pt", "loss": "pg", "epochs": 1,
      "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "grad_clip": 1.0, "d_model": 256,
-     "no_privileged": True, "allow_history_mismatch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0,
+     "no_privileged": True, "allow_history_mismatch": True, "history_branch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0,
      "run_timeout": 3600},
     {"name": "hh_a2_dvalin_s0", "store": "hh_a1_dvalin_bonk.pt", "loss": "pg", "epochs": 1,
      "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "grad_clip": 1.0, "d_model": 256,
-     "privileged": True, "allow_history_mismatch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0,
+     "privileged": True, "allow_history_mismatch": True, "history_branch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0,
      "run_timeout": 3600},
     {"name": "hh_a0_dvalin_s1", "store": "hh_a0_dvalin_bonk.pt", "loss": "pg", "epochs": 1,
      "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "grad_clip": 1.0, "d_model": 256,
@@ -235,11 +235,11 @@ HIST_RUNS = [
      "run_timeout": 3600},
     {"name": "hh_a1_dvalin_s1", "store": "hh_a1_dvalin_bonk.pt", "loss": "pg", "epochs": 1,
      "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "grad_clip": 1.0, "d_model": 256,
-     "no_privileged": True, "allow_history_mismatch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 1,
+     "no_privileged": True, "allow_history_mismatch": True, "history_branch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 1,
      "run_timeout": 3600},
     {"name": "hh_a2_dvalin_s1", "store": "hh_a1_dvalin_bonk.pt", "loss": "pg", "epochs": 1,
      "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "grad_clip": 1.0, "d_model": 256,
-     "privileged": True, "allow_history_mismatch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 1,
+     "privileged": True, "allow_history_mismatch": True, "history_branch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 1,
      "run_timeout": 3600},
     # Imitation-only probe: same warm start, 20 CE epochs, a0 vs a1. This separates
     # "can the network absorb history at all" from RL noise, and it is the arm that
@@ -249,10 +249,10 @@ HIST_RUNS = [
      "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
     {"name": "hh_bc_a1_dvalin_e20", "store": "hh_a1_dvalin_bonk.pt", "loss": "ce", "epochs": 20,
      "lr": 1e-4, "batch_size": 256, "d_model": 256, "no_privileged": True,
-     "allow_history_mismatch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
+     "allow_history_mismatch": True, "history_branch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
     {"name": "hh_bc_a2_dvalin_e20", "store": "hh_a1_dvalin_bonk.pt", "loss": "ce", "epochs": 20,
      "lr": 1e-4, "batch_size": 256, "d_model": 256, "privileged": True,
-     "allow_history_mismatch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
+     "allow_history_mismatch": True, "history_branch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
 ]
 
 MODE_RUNS = {

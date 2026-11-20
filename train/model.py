@@ -58,9 +58,54 @@ class CVPNConfig:
     # privileged information" embedding during training, so the null embedding is
     # calibrated and inference (which cannot see the god's-eye state) stays sane.
     privileged_dropout: float = 0.1
+    # History channel: the encoder appends up to 32 ``history`` token rows. Feeding
+    # them into the *public* masked mean-pool moves the pooled vector off the
+    # training distribution (measured 2026-11-20: val_acc 0.871 -> 0.368 for an
+    # untouched teacher). ``history_branch`` instead pools those rows separately
+    # and adds ``hist_proj(h)`` through a zero-initialised linear, so at init the
+    # output is bitwise identical to the public-only path and history can be
+    # learned in rather than forced in. Default off: every checkpoint written
+    # before this flag (no ``history_branch`` key) loads and forwards unchanged.
+    history_branch: bool = False
 
 
 PRIVILEGED_PARAM_PREFIXES = ("priv_proj.", "priv_null")
+HISTORY_PARAM_PREFIXES = ("hist_proj.",)
+
+
+def history_token_mask(tokens: torch.Tensor, token_mask: torch.Tensor) -> torch.Tensor:
+    """``(B, T)`` bool: ``True`` where a row's token-type one-hot is ``history``.
+
+    The token layout starts with the token-type one-hot (see
+    ``reps.observation_encoder._build_token``), so history rows are exactly those
+    whose first ``len(_TOKEN_TYPES)`` entries argmax to ``"history"`` (index 9).
+    Padded rows are never selected, even when their (zero) feature row happens to
+    argmax there, because ``token_mask`` is applied last.
+
+    The encoder constant is imported lazily: ``reps.observation_encoder`` is a
+    heavy module and importing it at ``train.model`` load time is unnecessary (and
+    would risk an import cycle through ``reps``).
+    """
+    from reps.observation_encoder import _TOKEN_TYPES
+
+    n_types = len(_TOKEN_TYPES)
+    history_index = _TOKEN_TYPES.index("history")
+    types = tokens[..., :n_types].argmax(dim=-1)
+    return (types == history_index) & token_mask.to(torch.bool)
+
+
+def masked_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Mean of ``values`` over ``mask`` along dim 1, exactly zero for empty rows.
+
+    Same semantics as the historical pool (``sum / clamp(sum, min=1)``), but the
+    denominator is guarded explicitly so a row with no selected tokens yields the
+    zero vector rather than relying on ``0 / 1``. That zero is what makes
+    ``hist_proj(0) == 0`` (bias zeroed at init) a clean no-op.
+    """
+    weights = mask.unsqueeze(-1).to(values.dtype)
+    denom = weights.sum(dim=1)
+    total = (values * weights).sum(dim=1)
+    return torch.where(denom > 0, total / denom.clamp(min=1.0), torch.zeros_like(total))
 
 
 def activate_value(value: torch.Tensor, config) -> torch.Tensor:
@@ -150,6 +195,14 @@ class CVPN(nn.Module):
                 nn.Linear(config.privileged_dim, d), nn.SiLU(), nn.Linear(d, d), nn.SiLU()
             )
             self.priv_null = nn.Parameter(torch.zeros(1, d))
+        self.has_history_branch = bool(getattr(config, "history_branch", False))
+        if self.has_history_branch:
+            # Zero weight AND bias: ``hist_proj(h) == 0`` exactly at init, for every
+            # input (including a history-bearing one). That makes ``--init-from`` a
+            # historyless teacher bitwise lossless and removes the dilution confound.
+            self.hist_proj = nn.Linear(d, d)
+            nn.init.zeros_(self.hist_proj.weight)
+            nn.init.zeros_(self.hist_proj.bias)
         self.value_head = _build_value_head(d, config)
         self.has_belief = bool(config.belief_group_dim or config.belief_card_dim)
         if self.has_belief:
@@ -202,9 +255,20 @@ class CVPN(nn.Module):
         privileged state is supplied (asserted by ``tests/test_privileged_critic.py``).
         """
         projected = self._with_ids(self.token_proj(tokens), tokens, option=False)
-        mask = token_mask.unsqueeze(-1).to(projected.dtype)
-        denom = mask.sum(dim=1).clamp(min=1.0)
-        global_vec = (projected * mask).sum(dim=1) / denom  # (B, d)
+        # The public pool never includes history rows (they are pooled separately
+        # below). For a history-bearing observation the historical all-token mean
+        # moved ``g`` off-distribution and collapsed a warm-started teacher
+        # (val_acc 0.871 -> 0.368); for a historyless observation this is bitwise
+        # the old behaviour because the mask is unchanged.
+        hist_mask = history_token_mask(tokens, token_mask)
+        public_mask = token_mask.to(torch.bool) & ~hist_mask
+        global_vec = masked_mean(projected, public_mask)  # (B, d)
+        if self.has_history_branch:
+            # History has its own pooling, added through a zero-initialised
+            # projection: at init this is ``g_public + 0``, bitwise. A batch with no
+            # history rows gives ``h == 0`` -> forever identical to public-only.
+            history_vec = masked_mean(projected, hist_mask)  # (B, d)
+            global_vec = global_vec + self.hist_proj(history_vec)
 
         option_vec = self._with_ids(self.option_proj(options), options, option=True)  # (B, K, d)
         repeated = global_vec.unsqueeze(1).expand(-1, option_vec.size(1), -1)
@@ -289,7 +353,8 @@ def checkpoint_encoder_config(path: str) -> dict | None:
 
 
 def config_for_encoder(
-    encoder, *, belief: bool = False, privileged: bool = False, **overrides
+    encoder, *, belief: bool = False, privileged: bool = False,
+    history: bool = False, **overrides
 ) -> CVPNConfig:
     base = dict(token_dim=encoder.token_dim, option_dim=encoder.option_dim)
     if belief:
@@ -298,6 +363,9 @@ def config_for_encoder(
     if privileged:
         # D30: privileged state goes to the critic only (never the actor).
         base["privileged_dim"] = int(encoder.privileged_state_dim)
+    if history:
+        # Expose the encoder's appended history rows as a separate pooled branch.
+        base["history_branch"] = True
     base.update(overrides)
     return CVPNConfig(**base)
 
@@ -394,7 +462,7 @@ def load_state_dict_compatible(
     was newly initialised.
     """
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
-    compatible = ID_PARAM_PREFIXES + PRIVILEGED_PARAM_PREFIXES
+    compatible = ID_PARAM_PREFIXES + PRIVILEGED_PARAM_PREFIXES + HISTORY_PARAM_PREFIXES
     allowed = [key for key in missing if key.startswith(compatible)]
     disallowed = [key for key in missing if key not in allowed]
     if disallowed or unexpected:
@@ -407,6 +475,16 @@ def load_state_dict_compatible(
         # what makes an unprivileged forward equal to the public-only source.
         with torch.no_grad():
             model.priv_null.zero_()
+    if getattr(model, "has_history_branch", False) and any(
+        key.startswith(HISTORY_PARAM_PREFIXES) for key in allowed
+    ):
+        # Belt and braces: a zero-initialised history projection is what makes the
+        # warm start bitwise lossless (``g_public + 0``), regardless of whether the
+        # source checkpoint pretrained it (a source with a history branch simply
+        # transfers its own value).
+        with torch.no_grad():
+            model.hist_proj.weight.zero_()
+            model.hist_proj.bias.zero_()
     return allowed
 
 
@@ -442,6 +520,9 @@ class TransformerCVPNConfig:
     # D30: privileged (god's-eye) state feeds the critic only; see CVPNConfig.
     privileged_dim: int = 0
     privileged_dropout: float = 0.1
+    # History branch; see CVPNConfig.history_branch. Off keeps pre-change
+    # checkpoints (no key) loadable and their forward historyless-identical.
+    history_branch: bool = False
 
 
 class TransformerCVPN(nn.Module):
@@ -485,6 +566,14 @@ class TransformerCVPN(nn.Module):
                 nn.Linear(config.privileged_dim, d), nn.SiLU(), nn.Linear(d, d), nn.SiLU()
             )
             self.priv_null = nn.Parameter(torch.zeros(1, d))
+        self.has_history_branch = bool(getattr(config, "history_branch", False))
+        if self.has_history_branch:
+            # Zero weight AND bias: ``hist_proj(h) == 0`` exactly at init, for every
+            # input (including a history-bearing one). That makes ``--init-from`` a
+            # historyless teacher bitwise lossless and removes the dilution confound.
+            self.hist_proj = nn.Linear(d, d)
+            nn.init.zeros_(self.hist_proj.weight)
+            nn.init.zeros_(self.hist_proj.bias)
         self.value_head = _build_value_head(d, config)
         self.has_belief = bool(config.belief_group_dim or config.belief_card_dim)
         if self.has_belief:
@@ -535,9 +624,16 @@ class TransformerCVPN(nn.Module):
         embedded = self._with_ids(self.token_proj(tokens), tokens, option=False)
         encoded = self.encoder(embedded, src_key_padding_mask=pad)  # (B,T,d)
 
-        mask = token_mask.unsqueeze(-1).to(encoded.dtype)
-        denom = mask.sum(dim=1).clamp(min=1.0)
-        pooled = (encoded * mask).sum(dim=1) / denom  # (B, d)
+        # ``pooled`` is the *public* pool; history rows are pooled separately. The
+        # encoder and the option cross-attention still see every non-padded token
+        # (history included), so the transformer keeps both routes: history through
+        # attention for the actor, and through ``hist_proj`` for value/belief.
+        hist_mask = history_token_mask(tokens, token_mask)
+        public_mask = token_mask.to(torch.bool) & ~hist_mask
+        pooled = masked_mean(encoded, public_mask)  # (B, d)
+        if self.has_history_branch:
+            history_vec = masked_mean(encoded, hist_mask)  # (B, d)
+            pooled = pooled + self.hist_proj(history_vec)  # zero at init -> bitwise
 
         option_vec = self._with_ids(self.option_proj(options), options, option=True)  # (B, K, d)
         attended, _ = self.cross_attn(
@@ -602,7 +698,8 @@ class TransformerCVPN(nn.Module):
 
 
 def transformer_config_for_encoder(
-    encoder, *, belief: bool = False, privileged: bool = False, **overrides
+    encoder, *, belief: bool = False, privileged: bool = False,
+    history: bool = False, **overrides
 ) -> TransformerCVPNConfig:
     base = dict(token_dim=encoder.token_dim, option_dim=encoder.option_dim)
     if belief:
@@ -611,6 +708,8 @@ def transformer_config_for_encoder(
     if privileged:
         # D30: privileged state goes to the critic only (never the actor).
         base["privileged_dim"] = int(encoder.privileged_state_dim)
+    if history:
+        base["history_branch"] = True
     base.update(overrides)
     return TransformerCVPNConfig(**base)
 

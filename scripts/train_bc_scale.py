@@ -764,6 +764,12 @@ class Config:
     # dropout mirrors the model config and is recorded for audit.
     privileged: bool = False
     privileged_dropout: float = 0.1
+    # --- history channel -------------------------------------------------------
+    # The model flag lives in its config (``history_branch``); this record is for
+    # the JSON report and for wiring ``config_for_encoder(..., history=...)``.
+    # Off by default: a historyless corpus and every pre-change checkpoint behave
+    # exactly as before.
+    history_branch: bool = False
 
 
 def train(
@@ -909,6 +915,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "(critic only; the actor sees the public observation alone)")
     p.add_argument("--privileged-dropout", type=float, default=0.1,
                    help="probability of using the learned null privileged embedding per sample")
+    p.add_argument("--history-branch", action="store_true",
+                   help="pool the encoder's history token rows separately and add them through a "
+                        "zero-initialised projection (off keeps the public mean-pool, which "
+                        "excludes history rows). The historical all-token mean-pool diluted a "
+                        "warm-started policy (0.871 -> 0.368), hence this separate branch.")
     p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--batch-size", type=int, default=128)
@@ -991,18 +1002,24 @@ def main(argv: list[str] | None = None) -> int:
             encoder, belief=args.belief, d_model=args.d_model,
             n_layers=args.n_layers, n_heads=args.n_heads,
             privileged=args.privileged, privileged_dropout=args.privileged_dropout,
+            history=args.history_branch,
         )
         model = TransformerCVPN(cfg)
     else:
         cfg = config_for_encoder(
             encoder, belief=args.belief, d_model=args.d_model,
             privileged=args.privileged, privileged_dropout=args.privileged_dropout,
+            history=args.history_branch,
         )
         model = CVPN(cfg)
     has_belief = bool(getattr(model, "has_belief", False))
     has_history = store_history_flag(train_store)
     meta.setdefault("has_history", has_history)
     print(f"[store] history channel present in tokens: {has_history}", flush=True)
+    print(
+        f"[store] history branch: {bool(getattr(model.config, 'history_branch', False))}",
+        flush=True,
+    )
     config = Config(
         epochs=args.epochs, lr=args.lr, batch_size=args.batch_size,
         seed=args.seed, device=args.device, weight_decay=args.weight_decay,
@@ -1011,6 +1028,7 @@ def main(argv: list[str] | None = None) -> int:
         best_path=str(best_out) if args.save_best else None,
         privileged=bool(args.privileged and getattr(model, "has_privileged", False)),
         privileged_dropout=args.privileged_dropout,
+        history_branch=bool(getattr(model.config, "history_branch", False)),
     )
     history, train_seconds = train(
         train_store, val_store, model, config, has_belief,
@@ -1026,6 +1044,7 @@ def main(argv: list[str] | None = None) -> int:
         "d_model": args.d_model,
         "belief_head": has_belief,
         "has_history": has_history,
+        "history_branch": bool(getattr(model.config, "history_branch", False)),
         "config": asdict(config),
         "store": meta,
         "n_train": len(train_store),

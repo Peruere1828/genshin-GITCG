@@ -85,6 +85,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="force a public-only critic even if the store carries privileged state")
     p.add_argument("--privileged-dropout", type=float, default=0.1,
                    help="probability of using the learned null privileged embedding per sample")
+    p.add_argument("--history-branch", action="store_true",
+                   help="pool the encoder's history token rows separately and add them through a "
+                        "zero-initialised projection. Without it the public mean-pool ignores "
+                        "history rows; the historical all-token mean-pool diluted a warm-started "
+                        "policy (measured val_acc 0.871 -> 0.368 on dvalin_bonk)")
     p.add_argument("--epochs", type=int, default=15)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--batch-size", type=int, default=128)
@@ -189,6 +194,17 @@ def main(argv: list[str] | None = None) -> int:
     # inference keeps old, history-free models history-free.
     has_history = store_history_flag(train_full)
     print(f"[history] store contains history tokens: {has_history}", flush=True)
+    if has_history and not args.history_branch:
+        print(
+            "[WARN] history-bearing store with --history-branch OFF: the public mean-pool "
+            "excludes the history token rows, so this arm ignores history entirely. Do not "
+            "report it as a history arm. The historical all-token mean-pool is the known-broken "
+            "dilution baseline: a warm-started teacher collapsed from val_acc 0.8710 to 0.3680 "
+            "(val_ce 0.3149 -> 28.9867). Pass --history-branch to give history its own "
+            "zero-initialised pooling.",
+            flush=True,
+        )
+    print(f"[history] history branch: {bool(args.history_branch)}", flush=True)
     if args.init_from:
         from train.model import checkpoint_encoder_config
 
@@ -247,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
             value_activation=args.value_activation,
             id_buckets=args.id_buckets, id_emb_dim=args.id_emb_dim,
             privileged=use_privileged, privileged_dropout=args.privileged_dropout,
+            history=args.history_branch,
         )
         model = TransformerCVPN(cfg)
     else:
@@ -254,7 +271,8 @@ def main(argv: list[str] | None = None) -> int:
                                  value_activation=args.value_activation,
                                  id_buckets=args.id_buckets, id_emb_dim=args.id_emb_dim,
                                  privileged=use_privileged,
-                                 privileged_dropout=args.privileged_dropout)
+                                 privileged_dropout=args.privileged_dropout,
+                                 history=args.history_branch)
         model = CVPN(cfg)
     has_belief = bool(getattr(model, "has_belief", False))
     if args.id_zero_init and zero_init_identity_branch(model):
@@ -305,6 +323,7 @@ def main(argv: list[str] | None = None) -> int:
         pg_advantage_norm=not args.no_pg_advantage_norm,
         privileged=bool(use_privileged and getattr(model, "has_privileged", False)),
         privileged_dropout=args.privileged_dropout,
+        history_branch=bool(getattr(model.config, "history_branch", False)),
         save_best=args.save_best,
         select_metric=args.select_metric,
         best_path=str(best_out) if args.save_best else None,
@@ -322,6 +341,7 @@ def main(argv: list[str] | None = None) -> int:
         "d_model": args.d_model,
         "belief_head": has_belief,
         "has_history": has_history,
+        "history_branch": bool(getattr(model.config, "history_branch", False)),
         "config": asdict(config),
         "store_meta": meta,
         "n_train_full": len(train_full),
