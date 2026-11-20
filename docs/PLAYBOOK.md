@@ -152,6 +152,21 @@ python -m scripts.datafirst_bc_store --replays data/replays/<tag> --store-cache 
 
 **注意**：这条只保证"不破坏"，不保证"有用"。本次 history/特权实测都是零增益，见 `failures/008`。
 
+## 7.6 1-epoch PG 必须加 KL 锚（方差控制）
+
+`--loss pg` 单 epoch、lr 3e-5 的更新量在 seed 间可达 **±10pp 胜率**（同数据同 recipe：
++0.015 / −0.128）。这会把任何 2–3pp 的特征效应埋掉。
+
+做法：`--pg-anchor-kl 0.1`（`KL(π‖π_init)`，`π_init` = `--init-from` 那个 checkpoint），
+实测 3 个 seed 的 val_acc 极差 **7pp → 3pp**，引擎 Δ 收敛到 teacher 水平（不再是随机游走）。
+
+```bash
+python -m scripts.datafirst_bc_train --store-cache <store> --init-from <teacher> \
+  --loss pg --lr 3e-5 --pg-anchor-kl 0.1 --grad-clip 1.0 --epochs 1 ...
+```
+
+判据：**任何新的 PG 结论必须带 ≥3 seeds**，并报告 seed 间极差；单 seed 不作为证据。
+
 ## 8. 不要写进 PLAYBOOK 的东西
 
 - 只有一次 run、没有独立种子复验的 +Δ。

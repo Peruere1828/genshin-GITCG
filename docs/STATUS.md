@@ -83,8 +83,29 @@
 | dvalin 第三个 PASS | ❌ 未达成 | floor 两个结构弱 matchup（0.35@20 局，n=400）；见 `failures/008` 与预注册 §4.1 |
 
 **当前 2 个 PASS 未变**（`double_geo_navia` 0.880、`unyielding_geo` 0.909）。
-下一步的杠杆不是这两个输入通道，而是：① 定向补采修 floor matchup；② 压 PG 的 seed 方差
-（单 seed 1 epoch 的 Δ 在 +0.015 与 −0.128 之间跳）。
+
+### 6.6 dvalin 第三次认证（2026-11-20，40 seeds / 1600 配对局）
+
+定向补采（expert teacher，`unyielding_geo` / `shenhe_double_swirl` / `dvalin_bonk` /
+`double_geo_navia` 各 200 局）+ BC 20ep，Kaggle `hist4`：
+
+| 项 | 数值 | 判定 |
+|---|---:|---|
+| pooled（seeds 9900–9939） | **0.7725** | ≥0.75 ✅ |
+| floor（D25：专家自己 Wilson low <0.45 的 matchup 豁免） | 无违规 | ✅（`unyielding_geo` 0.35 / 镜像 0.55 均豁免；`double_geo_navia` 0.61 > 专家 0.54） |
+| 配对 Δ vs `expert:dvalin_bonk` | **+0.019** [−0.003,+0.041] | ❌ CI_low < 0（差 0.3pp） |
+
+即 **dvalin 已经达到绝对强度 + floor 两关，只差"显著高于专家"这一条**（+0.3pp）。
+注意种子集敏感：同一 deck 的 teacher 在 seeds 9600 上是 +0.040 [+0.010,+0.070]。
+
+**门禁修复（本轮）**：`eval/scoreboard.evaluate_gates` 此前**没有实现 D25 豁免**，
+把"专家自己也过不了"的 matchup 记成违规；现已实现（`floor_mode="wilson_low_d25"`、
+`floor_exempt` 字段、`expert_per_opponent` 入参），并加测试 `tests/test_floor_exemption.py`。
+
+**仍有效的两个方法**（写入 PLAYBOOK）：
+1. 新输入通道一律走**零初始化加性旁路**（§7.5）；
+2. 1-epoch PG 一律加 **`--pg-anchor-kl 0.1`**（`KL(π‖π_warmstart)`）：3 seed 的 val_acc 极差从
+   7pp 降到 **3pp**，引擎 Δ 从 −0.128…+0.015 收敛到与 teacher 一致的 +0.040。
 
 ## 7. 相关入口
 

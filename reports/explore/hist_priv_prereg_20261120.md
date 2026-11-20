@@ -179,3 +179,66 @@ CVPN 是 **masked mean-pool**：history 把 T 从 ~29 抬到 ~55，等于把一�
 
 dvalin 的 floor 仍是同一处结构弱 matchup（`shenhe_double_swirl` / `unyielding_geo` 0.35@20），
 与本次特征无关；第三个 PASS 仍未达成，也不在本轮承诺范围内。
+
+---
+
+## 9. 第二轮（hist2）：定向补采修 floor + PG 方差锚（写于跑之前，2026-11-20）
+
+### 9.1 为什么换杠杆
+
+§7/`failures/008` 已判定两个输入通道**零增益**，所以第二轮不再碰它们。dvalin 的唯一硬阻塞是
+floor 的两个结构弱 matchup，而**数据侧的差距是可测的**（seeds 9200，n=20）：
+
+| matchup | 我方 `rl_dvalin1` | 脚本专家 `expert:dvalin_bonk` | 差距 |
+|---|---:|---:|---:|
+| `unyielding_geo` | 0.35 | **0.65** | −30pp |
+| `shenhe_double_swirl` | 0.35 | **0.50** | −15pp |
+
+**关键**：差距不是"对手太强"，是我方在该 matchup 上比专家差 15–30pp。所以补采必须用
+**脚本专家当 teacher**——用当前模型补采只会再写 200 局"输的走法"（这正是 failures/003 的教训）。
+
+### 9.2 臂
+
+| 臂 | store | 训练 | 目的 |
+|---|---|---|---|
+| `tg_bc_e20_s0` | base 2000 局 + 定向 400 局（expert teacher，ungeo/shenhe 各 200） | CE 20 ep, lr 1e-4, `--init-from rl_dvalin1` | 稳定模仿，看 floor matchup 是否被我方学到 |
+| `tg_pg_ank_s0/s1/s2` | 同上 | PG 1 ep, lr 3e-5, **`--pg-anchor-kl 0.1`**, 3 seeds | 压 seed 方差（无锚时同轮 +0.015 / −0.128） |
+
+### 9.3 判据（跑之前定死）
+
+1. **floor 是否修好**：在 **20 seeds（800 配对局，种子 9600–9619，全新）** 上，
+   `unyielding_geo` / `shenhe_double_swirl` 的每对手 rate 与 Wilson low；
+   与同一批种子上 `expert:dvalin_bonk` 自己的 Wilson low 对照（D25 teacher-limited 豁免）。
+2. **是否可宣称第三个 PASS**：同时满足 ① `pooled ≥ 0.75` 且 cluster CI_low 过线；
+   ② 每个**非 teacher-limited** 对手 Wilson low ≥0.45；③ 配对 Δ 的 CI_low > 0。缺一不算。
+3. **PG 方差**：三个 seed 的 Δ 极差（max−min）必须 < 4pp 才算"锚生效"；否则锚系数要调，不算负结果。
+4. **不达标就停**：若 ungeo 的 rate 仍 <0.45（点估计），补采这条路在 dvalin 上判负，
+   记 `failures/`，不再加种子。
+
+---
+
+## 10. 第三轮（hist4）：把 floor 缩到单个 matchup，并按功率改用 40 seeds 认证
+
+### 10.1 n=80/matchup 之后的真实阻塞（2026-11-20，跑之前写死）
+
+把 teacher 在 **3 组种子（9200 / 9600 / 9700）共 80 局/matchup** 上并表，
+并用同一批种子上 `expert:dvalin_bonk` 自己的 Wilson low 做 D25 豁免判定：
+
+| matchup | 我方 | 专家 | 专家 Wilson low | 判定 |
+|---|---:|---:|---:|---|
+| `unyielding_geo` | 0.588（low 0.478） | 0.600 | 0.490 | 专家**不豁免** → 我方 0.478 ≥0.45 **过** |
+| `shenhe_double_swirl` | 0.562（low 0.453） | 0.613 | 0.503 | 不豁免 → 我方 0.453 ≥0.45 **过（压线）** |
+| `dvalin_bonk`（镜像） | 0.438（low 0.334） | 0.475 | 0.369 | **豁免** |
+| `double_geo_navia` | 0.487（low 0.381） | 0.637 | 0.528 | 不豁免 → **唯一真实阻塞** |
+
+结论：**只剩 `double_geo_navia` 一个 matchup**，差距 +15pp（0.487 → ≥0.62 才能过 Wilson low）。
+
+### 10.2 臂与判定
+
+- 补采：`dvalin_bonk` vs `double_geo_navia`，**expert teacher**，200 seeds（9400–9599），`--no-history`；
+  与已有 base(2000) + 弱 matchup(600) 合并成 `tgt_dvalin_merged3.pt`（2600 局）。
+- 训练：Kaggle `hist4`，BC 20 ep（稳定臂）。
+- **认证改用 40 seeds / 1600 配对局（种子 9900–9939，全新）**，理由：floor 是**每 matchup** 的
+  Wilson low，40 局/matchup 的标准误约 ±8pp，会让同一个模型在不同种子集上从 0.75 掉到 0.25
+  （本轮实测）。80 局/matchup 才有分辨力；这是**提高样本量**，不是改判据。
+- 判定：`pooled ≥ 0.75` + 每个**非豁免** matchup Wilson low ≥0.45 + 配对 Δ CI_low > 0。
