@@ -11,6 +11,7 @@
 | 004 | 20-deck 单模型 generalist | 8 个 deck 里 7 个显著变差；密度是主因 | **negative** | 不再做共享 generalist；per-deck specialist + router |
 | 005 | 稠密 BC 超专家 | BC 从未显著超过同 deck 专家；数据量不是主杠杆 | **limited** | 先做 parity；用 PG/自博弈超专家；BC 只做底座 |
 | 006 | A2 identity embeddings | fp16 破坏 definition id，实验无效 | **invalid**（D25） | exact int id + parity PASS 后重做；不是“id 有害” |
+| 007 | 搜索当 actor（MCCFR / fork-MC 直接选点） | n=800 干净臂 **−6.63pp** CI[−12.5,−0.8]；depth2 −11.38pp；改决策率 87–89% | **negative**（D30） | 收敛诊断 + 动作抽象 + 非劣（CI_low≥−0.02）+ 叶值真值测试 |
 
 ## 维护
 

@@ -32,9 +32,11 @@
 | D26 | 搜索因果限定/价值语义 | **current** | 修 cfr_probe/dice；搜索重开需门禁 |
 | D27 | 非主线清理：删 `coach/` | **current** | 从未接入训练/评测；待办项前提已不成立 |
 | D28 | 删选牌/组牌；牌组+先手显式 | **current** | 删 decklab/counterpick/corpus/pools；`first_player` 入 MatchRecord |
+| D29 | 任务收敛：主线=突破教师天花板 | **current** | 字面 M4 标为不可达；支线冻结 |
+| D30 | 搜索退出决策路径 | **current** | 搜索三次实验全负；改 PTIE 特权 critic + league |
 
 ## 使用
 
-- 写新决策：在 `PLAN.md §0` 追加 D29…，再在本表加一行。
+- 写新决策：在 `PLAN.md §0` 追加 D31…，再在本表加一行。
 - 改验收口径：必须同时更新 `docs/EVAL_PROTOCOL.md` 与 `docs/STATUS.md`。
 - 旧决策被推翻：标 `superseded`/`limited` 并链接新决策，不改原文。
