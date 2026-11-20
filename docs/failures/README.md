@@ -12,6 +12,7 @@
 | 005 | 稠密 BC 超专家 | BC 从未显著超过同 deck 专家；数据量不是主杠杆 | **limited** | 先做 parity；用 PG/自博弈超专家；BC 只做底座 |
 | 006 | A2 identity embeddings | fp16 破坏 definition id，实验无效 | **invalid**（D25） | exact int id + parity PASS 后重做；不是“id 有害” |
 | 007 | 搜索当 actor（MCCFR / fork-MC 直接选点） | n=800 干净臂 **−6.63pp** CI[−12.5,−0.8]；depth2 −11.38pp；改决策率 87–89% | **negative**（D30） | 收敛诊断 + 动作抽象 + 非劣（CI_low≥−0.02）+ 叶值真值测试 |
+| 008 | 公开动作历史 + 特权 critic（纯模仿） | 三臂 val_acc 差 <0.1pp；配对 Δ **+0.0000**（A1−A0 [−0.030,+0.030]、A2−A1 [−0.016,+0.016]，n=400）；PG 1ep seed 方差 ±10pp | **negative** | 对手非马尔可夫；特权改结构化输入 + 价值真值测试；PG 必须多 seed |
 
 ## 维护
 

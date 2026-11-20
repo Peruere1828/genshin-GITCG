@@ -134,6 +134,24 @@ python -m scripts.datafirst_bc_store --replays data/replays/<tag> --store-cache 
 - 能力：standalone overlay、浏览器↔Python 桥、按 `(session, who)` 隔离、`/notify` seq 护栏、反选、NPC 阵容、续局、逐决策日志。
 - 入口：`web/README.md`、`docs/howto/web-debug.md`。
 
+## 7.5 给 mean-pool 模型加新输入通道（零初始化旁路）
+
+适用：CVPN（masked mean-pool）要新增一类 token 行或一路标量输入（history、对手统计、特权状态）。
+
+1. **不要把新行并进原来的池化**：平均值会把原向量位移出训练分布。实测：给 dvalin teacher
+   追加 32 行历史，未训练时 val_acc 0.871 → **0.368**，1 epoch 训练救不回来。
+2. **单独池化 + 零初始化加性投影**：
+   `g = mean(public rows) + Linear_zero_init(mean(new rows))`。
+   `weight` 与 `bias` 都初始化为 0 → 初始时 `g` 与旧模型**逐位相同**，
+   于是 `--init-from` 旧 checkpoint 无损，A/B 里"新通道"是唯一变量。
+3. 没有新行时（空 mask）必须返回**精确 0**，这样老数据/老路径永远不受影响。
+4. 验收两条：新配置与旧配置在同一 batch 上 logits/value `torch.equal`；
+   在真实 store 上未训练时的 val_acc 必须等于原模型（本次：0.8710 → 0.8710）。
+5. 训练侧要有"输入格式标记"（`encoder_config['include_history']`），
+   否则旧 checkpoint 会被喂进它没见过的 token 而不报错——评测数字会静默漂移。
+
+**注意**：这条只保证"不破坏"，不保证"有用"。本次 history/特权实测都是零增益，见 `failures/008`。
+
 ## 8. 不要写进 PLAYBOOK 的东西
 
 - 只有一次 run、没有独立种子复验的 +Δ。

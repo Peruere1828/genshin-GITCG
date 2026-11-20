@@ -71,6 +71,21 @@
    `failures/`、`environments/`、`decisions/`、`howto/` 已建；旧报告保留在 `reports/`。
    仍待持续清理：模块 README 的历史状态、全部报告的 front-matter、`PLAN §10` 之外的旧状态句。
 
+## 6.5 D30 gap 收口（2026-11-20）
+
+| 项 | 状态 | 证据 |
+|---|---|---|
+| 公开动作历史通道（32 token，此前恒空） | ✅ 已接通，**纯模仿下零增益** | 采集/推理同源 `MatchHistory`；`docs/failures/008`：配对 Δ `A1−A0 = +0.0000 [−0.030,+0.030]` n=400 |
+| 新输入通道的接入方式 | ✅ 结构分支（历史行单独池化 + 零初始化加性投影） | 直接 mean-pool 会把 teacher val_acc 0.871→0.368；分支后逐位回到 0.871 |
+| PTIE 特权 critic（`value = value_head(g + priv_proj(x))`） | ✅ 已接通，**策略零影响、价值泛化反而略差** | `A2−A1 = +0.0000 [−0.016,+0.016]`；val_value 0.1244→0.1274 |
+| checkpoint 输入格式标记 | ✅ | `encoder_config['include_history']`；旧臂无标记 → 继续无 history 推理，历史数字可比 |
+| Kaggle 训练面（`hist1` 9 runs, T4×2, 20.6 min） | ✅ 跑通 | `build/kaggle/out_hist1/summary.json` |
+| dvalin 第三个 PASS | ❌ 未达成 | floor 两个结构弱 matchup（0.35@20 局，n=400）；见 `failures/008` 与预注册 §4.1 |
+
+**当前 2 个 PASS 未变**（`double_geo_navia` 0.880、`unyielding_geo` 0.909）。
+下一步的杠杆不是这两个输入通道，而是：① 定向补采修 floor matchup；② 压 PG 的 seed 方差
+（单 seed 1 epoch 的 Δ 在 +0.015 与 −0.128 之间跳）。
+
 ## 7. 相关入口
 
 - 有效方法：`docs/PLAYBOOK.md`

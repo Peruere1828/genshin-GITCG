@@ -68,6 +68,38 @@ history tokens off: 0
 > 注意（下一轮的口径）：第 2 轮起若用 history 训练过的 checkpoint 当 teacher，采集时 teacher 仍然
 > 不吃 history，而评测时会吃。这是结构性分布差，必须在下一轮重新预注册，不能直接沿用本轮结论。
 
+### 3.2 实测：history 直接进 mean-pool 会摧毁策略（2026-11-20，训练前发现）
+
+第一次在真实 store 上跑 A1 时 `val_acc` 只有 0.29。定位到不是训练问题，是**架构问题**：
+未训练过的 teacher 在两种输入上的表现（val 2000 条）：
+
+| store | 未训练 teacher 的 val_acc | val_ce |
+|---|---:|---:|
+| `hh_a0_dvalin_bonk`（无 history） | **0.8710** | 0.3149 |
+| `hh_a1_dvalin_bonk`（有 history） | **0.3680** | 28.9867 |
+
+即 **32 行 history 一进入 masked mean-pool，就把池化向量位移到训练分布之外**，策略当场崩溃；
+1 epoch、lr 3e-5 的 PG 不可能把它救回来（实测 0.749 → 0.29）。
+
+这正是 §5.1 预注册过的"池化稀释"分支，因此按预注册执行结构改动，而不是改判据。
+
+### 3.3 结构补救：history 单独池化 + 零初始化投影
+
+```
+h = masked_mean(tokens[history rows])        # 无 history 时为 0 向量
+g = g_public + hist_proj(h)                  # hist_proj = Linear(d,d)，weight/bias 全 0 初始化
+value / option logits / belief 仍只用 g
+```
+
+三条性质，都是这次改动的验收点：
+
+1. **初始化时逐位等价**：`hist_proj(h) = 0` → g 与公开模型逐位相同，因此
+   `--init-from` 一个无 history 的 teacher 是**无损**的（不再有"输入分布位移"这个confound）；
+2. **无 history 的输入永远不受影响**：h=0 → 0，A0 臂与旧臂行为不变；
+3. **能不能用 history 交给训练决定**：模型自己学 `hist_proj` 的权重，而不是被迫把 32 行平均进去。
+
+A0（对照）不需要这个分支；A1/A2 用它。store 不需要重采——只有模型变。
+
 ## 4. 判据（跑之前定死）
 
 主指标 = `paired Δ = 我方 − expert:<deck>`，只算干净局（0 fallback / 0 error / 未截断）。
@@ -127,3 +159,23 @@ CVPN 是 **masked mean-pool**：history 把 T 从 ~29 抬到 ~55，等于把一�
 - 每臂一个 `reports/train/*.json` + `reports/eval/*.json`，带 engine lock 与 seed 口径；
 - 结论写入 `docs/STATUS.md`（只写现在有效的）+ 必要的 `docs/failures/`；
 - 若 history 有效，同步更新 `reports/explore/model_spec_20261120.md §2.3/§3.1` 的缺口描述。
+
+---
+
+## 7. 结果（2026-11-20，跑完）
+
+完整数据与归因见 `docs/failures/008-history-priv-neutral.md`。三行结论：
+
+1. **结构分支是必需的**：直接 mean-pool 会把未训练 teacher 的 val_acc 从 0.871 打到 0.368；
+   零初始化加性分支把它恢复到 0.871（两种输入逐位等价）。
+2. **纯模仿（CE 20 epochs）三臂等价**：val_acc 0.8779 / 0.8769 / 0.8770；引擎配对
+   `A1−A0 = +0.0000 [−0.030,+0.030]`、`A2−A1 = +0.0000 [−0.016,+0.016]`，n=400。
+3. **PG 1 epoch 方差压过效应**：同 recipe 同数据，seed1(GPU) Δ=+0.015、seed0(CPU) Δ=−0.128。
+
+按 §4 判据：H-hist 与 H-priv 都落在"保留但无证据"一格——**不得写成有效**；
+且 §5 反向停止条件没有触发（没有 >5pp 的下降）。
+
+## 8. 与 §4.1 的关系
+
+dvalin 的 floor 仍是同一处结构弱 matchup（`shenhe_double_swirl` / `unyielding_geo` 0.35@20），
+与本次特征无关；第三个 PASS 仍未达成，也不在本轮承诺范围内。
