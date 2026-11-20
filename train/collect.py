@@ -128,6 +128,7 @@ class CollectTask:
     payload_format: str = "jsonl"
     compact_dtype: str = "float16"
     include_privileged_state: bool = True
+    include_history: bool = True
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -141,6 +142,7 @@ class CollectTask:
             "payload_format": self.payload_format,
             "compact_dtype": self.compact_dtype,
             "include_privileged_state": bool(self.include_privileged_state),
+            "include_history": bool(self.include_history),
         }
 
     @classmethod
@@ -157,6 +159,7 @@ class CollectTask:
             payload_format=payload.get("payload_format", "jsonl"),
             compact_dtype=payload.get("compact_dtype", "float16"),
             include_privileged_state=bool(payload.get("include_privileged_state", True)),
+            include_history=bool(payload.get("include_history", True)),
         )
 
 
@@ -256,6 +259,7 @@ def run_collect_task(task: CollectTask) -> dict[str, Any]:
             encoder=_worker_encoder(),
             teacher_spec=task.teacher_spec,
             opponent_spec=task.opponent_spec,
+            include_history=task.include_history,
         )
         payloads = [_payload_for(task, sample) for sample in samples]
     except Exception as exc:  # engine/IO failures are otherwise swallowed by cffi
@@ -284,6 +288,10 @@ class CollectSpec:
     format: str = "jsonl"
     compact_dtype: str = "float16"
     include_privileged_state: bool = True
+    # Observation history channel (reps.history.MatchHistory). Part of the
+    # fingerprint: a history-bearing dataset must never be resumed as if it were
+    # historyless (or vice versa).
+    include_history: bool = True
 
     def tasks(self) -> list[CollectTask]:
         tasks: list[CollectTask] = []
@@ -302,6 +310,7 @@ class CollectSpec:
                         payload_format=self.format,
                         compact_dtype=self.compact_dtype,
                         include_privileged_state=self.include_privileged_state,
+                        include_history=self.include_history,
                     )
                 )
                 index += 1
@@ -340,6 +349,7 @@ class CollectSpec:
                 "opponent_spec": self.opponent_spec,
                 "search": search_spec,
                 "encoder": default_encoder().to_dict(),
+                "include_history": bool(self.include_history),
                 # Only the compact format adds the payload block, so a default
                 # jsonl spec keeps the *exact* pre-A6 fingerprint and existing
                 # replay dirs still resume (A6 is additive; PLAN discipline).
@@ -435,6 +445,7 @@ def collect(
                 "teacher_spec": spec.teacher_spec,
                 "opponent_spec": spec.opponent_spec,
                 "search": None if spec.search is None else spec.search.as_dict(),
+                "include_history": bool(spec.include_history),
                 **spec.format_block(),
             },
             "engine_lock": load_engine_lock(),
@@ -579,6 +590,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="drop the (large) privileged_state vector from compact payloads",
     )
+    parser.add_argument(
+        "--no-history",
+        action="store_true",
+        help="encode observations without the match-history channel (legacy datasets)",
+    )
     return parser
 
 
@@ -614,6 +630,7 @@ def main(argv: list[str] | None = None) -> int:
         format=args.format,
         compact_dtype=args.compact_dtype,
         include_privileged_state=not args.no_privileged_state,
+        include_history=not args.no_history,
     )
     summary = collect(
         spec,

@@ -206,6 +206,55 @@ GB2_RUNS = [
      "epochs": 150, "run_timeout": 10800},
 ]
 
+HIST_RUNS = [
+    # D30 gap-closing A/B (reports/explore/hist_priv_prereg_20261120.md).
+    # ONE deck (dvalin_bonk: the +3pp plateau arm, closest to a third gate PASS).
+    #   a0 = historyless observations + public value      (current recipe = control)
+    #   a1 = 32-token public action history + public value
+    #   a2 = history + PTIE privileged critic             (god's-eye state: critic only)
+    # a0/a1 share the same seed set (9100-9199) AND the collection teacher does not
+    # consume history, so both arms replay the *same* games (verified 96/96 identical
+    # teacher decisions): the encoded features are the only difference.
+    # Two seeds = training-variance replication; a 1-epoch PG run is noisy enough that
+    # one seed cannot separate a real 2pp effect from run-to-run noise.
+    {"name": "hh_a0_dvalin_s0", "store": "hh_a0_dvalin_bonk.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "grad_clip": 1.0, "d_model": 256,
+     "no_privileged": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0,
+     "run_timeout": 3600},
+    {"name": "hh_a1_dvalin_s0", "store": "hh_a1_dvalin_bonk.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "grad_clip": 1.0, "d_model": 256,
+     "no_privileged": True, "allow_history_mismatch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0,
+     "run_timeout": 3600},
+    {"name": "hh_a2_dvalin_s0", "store": "hh_a1_dvalin_bonk.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "grad_clip": 1.0, "d_model": 256,
+     "privileged": True, "allow_history_mismatch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0,
+     "run_timeout": 3600},
+    {"name": "hh_a0_dvalin_s1", "store": "hh_a0_dvalin_bonk.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "grad_clip": 1.0, "d_model": 256,
+     "no_privileged": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 1,
+     "run_timeout": 3600},
+    {"name": "hh_a1_dvalin_s1", "store": "hh_a1_dvalin_bonk.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "grad_clip": 1.0, "d_model": 256,
+     "no_privileged": True, "allow_history_mismatch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 1,
+     "run_timeout": 3600},
+    {"name": "hh_a2_dvalin_s1", "store": "hh_a1_dvalin_bonk.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "grad_clip": 1.0, "d_model": 256,
+     "privileged": True, "allow_history_mismatch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 1,
+     "run_timeout": 3600},
+    # Imitation-only probe: same warm start, 20 CE epochs, a0 vs a1. This separates
+    # "can the network absorb history at all" from RL noise, and it is the arm that
+    # would expose mean-pool dilution without PG variance on top.
+    {"name": "hh_bc_a0_dvalin_e20", "store": "hh_a0_dvalin_bonk.pt", "loss": "ce", "epochs": 20,
+     "lr": 1e-4, "batch_size": 256, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
+    {"name": "hh_bc_a1_dvalin_e20", "store": "hh_a1_dvalin_bonk.pt", "loss": "ce", "epochs": 20,
+     "lr": 1e-4, "batch_size": 256, "d_model": 256, "no_privileged": True,
+     "allow_history_mismatch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
+    {"name": "hh_bc_a2_dvalin_e20", "store": "hh_a1_dvalin_bonk.pt", "loss": "ce", "epochs": 20,
+     "lr": 1e-4, "batch_size": 256, "d_model": 256, "privileged": True,
+     "allow_history_mismatch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
+]
+
 MODE_RUNS = {
     "h4": H4_RUNS,
     "alld": ALL_DECKS_RUNS,
@@ -217,6 +266,7 @@ MODE_RUNS = {
     "wave1": GROUP_B_RUNS + CAPACITY_RUNS,
     "wave2": GROUP_C_RUNS + GROUP_B_RUNS + CAPACITY_RUNS,
     "gb2": GB2_RUNS,
+    "hist1": HIST_RUNS,
 }
 
 SMOKE_RUNS = [
@@ -534,7 +584,7 @@ def resolve_pinned_mode() -> tuple[str | None, dict[str, str]]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=["auto", "probe", "smoke", "runs", "h4", "alld"], default="auto",
+    parser.add_argument("--mode", choices=["auto", "probe", "smoke", "runs", *MODE_RUNS], default="auto",
                         help="auto = the real grid when the corpus dataset is mounted, "
                              "otherwise the tiny smoke grid (Kaggle script kernels run with no argv)")
     parser.add_argument("--workers", type=int, default=None,

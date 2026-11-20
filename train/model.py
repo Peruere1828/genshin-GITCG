@@ -50,6 +50,17 @@ class CVPNConfig:
     id_emb_dim: int = 32
     token_def_index: int = -1     # < 0 -> resolve from the encoder layout
     option_def_index: int = -1
+    # D30 (privileged critic): god's-eye state feeds the *value* head only.
+    # ``privileged_dim = 0`` (default) keeps every pre-D30 checkpoint bit-identical
+    # (no new parameters, identical state_dict keys and forward outputs).
+    privileged_dim: int = 0
+    # Probability of replacing a sample's privileged vector with the learned "no
+    # privileged information" embedding during training, so the null embedding is
+    # calibrated and inference (which cannot see the god's-eye state) stays sane.
+    privileged_dropout: float = 0.1
+
+
+PRIVILEGED_PARAM_PREFIXES = ("priv_proj.", "priv_null")
 
 
 def activate_value(value: torch.Tensor, config) -> torch.Tensor:
@@ -67,6 +78,57 @@ def activate_value(value: torch.Tensor, config) -> torch.Tensor:
     raise ValueError(f"unknown value_activation: {activation!r}")
 
 
+def _privileged_embedding(
+    priv_proj: nn.Module,
+    priv_null: torch.Tensor,
+    privileged: torch.Tensor | None,
+    batch: int,
+    *,
+    training: bool,
+    dropout: float,
+) -> torch.Tensor:
+    """``(B, d)`` privileged embedding, or the learned null embedding when absent.
+
+    D30: privileged (god's-eye) information is summarised into the same width as
+    the public pooled vector and **added** to it before the critic. ``None`` means
+    "unavailable" (inference, or a corpus without privileged state) and maps to the
+    learned ``priv_null`` row; ``dropout`` randomly does the same per row during
+    training so the null embedding stays calibrated.
+
+    Additive (not concatenated) conditioning is deliberate: ``priv_null`` starts at
+    zero, so a privileged model warm-started from a public-only checkpoint produces
+    the *bitwise identical* value while privileged state is unavailable. That keeps
+    the privileged-vs-public A/B free of a "value function was reinitialised"
+    confound (with ``--loss pg`` the advantage is ``return - value``).
+    """
+    null = priv_null.expand(batch, -1)
+    if privileged is None:
+        return null
+    if privileged.dim() == 1:
+        privileged = privileged.unsqueeze(0).expand(batch, -1)
+    if privileged.shape[0] != batch:
+        raise ValueError(
+            f"privileged batch {privileged.shape[0]} != observation batch {batch}"
+        )
+    embedded = priv_proj(privileged.to(device=priv_null.device, dtype=priv_null.dtype))
+    if training and dropout > 0:
+        keep = torch.rand(batch, 1, device=embedded.device) >= float(dropout)
+        embedded = torch.where(keep, embedded, null)
+    return embedded
+
+
+def _build_value_head(d: int, config) -> nn.Sequential:
+    """The historical public critic ``Linear(d, H) -> SiLU -> Linear(H, 1)``.
+
+    Identical for public-only and privileged models (D30 adds the privileged
+    embedding to ``g`` *before* the head, so no shape changes and ``--init-from``
+    from a public-only checkpoint preserves the value function bitwise).
+    """
+    return nn.Sequential(
+        nn.Linear(d, config.value_hidden), nn.SiLU(), nn.Linear(config.value_hidden, 1)
+    )
+
+
 class CVPN(nn.Module):
     def __init__(self, config: CVPNConfig) -> None:
         super().__init__()
@@ -82,9 +144,13 @@ class CVPN(nn.Module):
             nn.Dropout(config.dropout),
             nn.Linear(config.option_hidden, 1),
         )
-        self.value_head = nn.Sequential(
-            nn.Linear(d, config.value_hidden), nn.SiLU(), nn.Linear(config.value_hidden, 1)
-        )
+        self.has_privileged = int(config.privileged_dim) > 0
+        if self.has_privileged:
+            self.priv_proj = nn.Sequential(
+                nn.Linear(config.privileged_dim, d), nn.SiLU(), nn.Linear(d, d), nn.SiLU()
+            )
+            self.priv_null = nn.Parameter(torch.zeros(1, d))
+        self.value_head = _build_value_head(d, config)
         self.has_belief = bool(config.belief_group_dim or config.belief_card_dim)
         if self.has_belief:
             self.belief_head = BeliefHead(
@@ -127,8 +193,14 @@ class CVPN(nn.Module):
         token_mask: torch.Tensor,      # (B, T) bool
         options: torch.Tensor,         # (B, K, option_dim)
         option_mask: torch.Tensor,     # (B, K) bool
+        privileged: torch.Tensor | None = None,  # (B, privileged_dim) god's-eye state
     ) -> tuple[torch.Tensor, torch.Tensor, BeliefOutput | None]:
-        """Policy logits, value, and the (optional) belief prediction in one pass."""
+        """Policy logits, value, and the (optional) belief prediction in one pass.
+
+        D30: ``privileged`` reaches the *value* head only. The logits are computed
+        from the public observation alone and are bit-identical whether or not
+        privileged state is supplied (asserted by ``tests/test_privileged_critic.py``).
+        """
         projected = self._with_ids(self.token_proj(tokens), tokens, option=False)
         mask = token_mask.unsqueeze(-1).to(projected.dtype)
         denom = mask.sum(dim=1).clamp(min=1.0)
@@ -138,9 +210,33 @@ class CVPN(nn.Module):
         repeated = global_vec.unsqueeze(1).expand(-1, option_vec.size(1), -1)
         logits = self.option_scorer(torch.cat([repeated, option_vec], dim=-1)).squeeze(-1)
         logits = logits.masked_fill(~option_mask, float("-inf"))
-        value = activate_value(self.value_head(global_vec).squeeze(-1), self.config)  # (B,)
+        value = activate_value(
+            self._value_from(global_vec, privileged).squeeze(-1), self.config
+        )  # (B,)
         belief = self.belief_head(global_vec) if self.has_belief else None
         return logits, value, belief
+
+    def _value_from(self, global_vec: torch.Tensor, privileged: torch.Tensor | None) -> torch.Tensor:
+        """Raw critic output ``(B, 1)``; the only consumer of privileged state.
+
+        Additive conditioning: ``value = value_head(g + priv_emb)``. With
+        ``priv_emb == priv_null == 0`` this is exactly the public-only value, which
+        is what makes ``--init-from`` into a privileged config bitwise lossless.
+        """
+        if not self.has_privileged:
+            if privileged is not None:
+                raise ValueError(
+                    "privileged state was passed to a model built without a privileged "
+                    "critic (CVPNConfig.privileged_dim == 0); rebuild the model with "
+                    "config_for_encoder(encoder, privileged=True)"
+                )
+            return self.value_head(global_vec)
+        priv = _privileged_embedding(
+            self.priv_proj, self.priv_null, privileged, global_vec.size(0),
+            training=self.training,
+            dropout=float(getattr(self.config, "privileged_dropout", 0.0) or 0.0),
+        )
+        return self.value_head(global_vec + priv)
 
     def forward(
         self,
@@ -192,11 +288,16 @@ def checkpoint_encoder_config(path: str) -> dict | None:
     return payload.get("encoder_config")
 
 
-def config_for_encoder(encoder, *, belief: bool = False, **overrides) -> CVPNConfig:
+def config_for_encoder(
+    encoder, *, belief: bool = False, privileged: bool = False, **overrides
+) -> CVPNConfig:
     base = dict(token_dim=encoder.token_dim, option_dim=encoder.option_dim)
     if belief:
         base["belief_group_dim"] = int(encoder.belief_group_dim)
         base["belief_card_dim"] = int(encoder.belief_histogram_dim)
+    if privileged:
+        # D30: privileged state goes to the critic only (never the actor).
+        base["privileged_dim"] = int(encoder.privileged_state_dim)
     base.update(overrides)
     return CVPNConfig(**base)
 
@@ -277,20 +378,35 @@ def zero_init_identity_branch(model: nn.Module) -> bool:
 def load_state_dict_compatible(
     model: nn.Module, state_dict: Mapping[str, torch.Tensor]
 ) -> list[str]:
-    """Load a pre-A2 checkpoint into an identity-enabled model.
+    """Load a checkpoint that predates the A2 identity and/or D30 privileged branch.
 
-    Missing keys are allowed only for the A2 identity parameters; any other
-    mismatch is an architecture error.  Returns the missing identity keys so
-    callers can report what was newly initialised.
+    Missing keys are allowed only for newly added *branches* — the A2 identity
+    parameters (``ID_PARAM_PREFIXES``) and the D30 privileged critic
+    (``PRIVILEGED_PARAM_PREFIXES``, i.e. ``priv_proj.*`` / ``priv_null``). Any other
+    missing or unexpected key, and any shape mismatch, is an architecture error.
+
+    D30's critic is *additive* (``value_head(g + priv_emb)``), so the value head
+    keeps its historical ``d``-wide input: a public-only checkpoint loads exactly,
+    and because ``priv_null`` starts at zero, ``privileged=None`` reproduces the
+    source model's value bitwise. No value-head surgery is needed.
+
+    Returns the missing keys of the compatible branches so callers can report what
+    was newly initialised.
     """
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
-    allowed = [key for key in missing if key.startswith(ID_PARAM_PREFIXES)]
+    compatible = ID_PARAM_PREFIXES + PRIVILEGED_PARAM_PREFIXES
+    allowed = [key for key in missing if key.startswith(compatible)]
     disallowed = [key for key in missing if key not in allowed]
     if disallowed or unexpected:
         raise RuntimeError(
             "state_dict mismatch: "
             f"missing={sorted(disallowed)} unexpected={sorted(unexpected)}"
         )
+    if getattr(model, "has_privileged", False) and "priv_null" in allowed:
+        # Belt and braces: the null embedding must start at exactly zero, which is
+        # what makes an unprivileged forward equal to the public-only source.
+        with torch.no_grad():
+            model.priv_null.zero_()
     return allowed
 
 
@@ -323,6 +439,9 @@ class TransformerCVPNConfig:
     id_emb_dim: int = 32
     token_def_index: int = -1
     option_def_index: int = -1
+    # D30: privileged (god's-eye) state feeds the critic only; see CVPNConfig.
+    privileged_dim: int = 0
+    privileged_dropout: float = 0.1
 
 
 class TransformerCVPN(nn.Module):
@@ -360,9 +479,13 @@ class TransformerCVPN(nn.Module):
             nn.Dropout(config.dropout),
             nn.Linear(config.option_hidden, 1),
         )
-        self.value_head = nn.Sequential(
-            nn.Linear(d, config.value_hidden), nn.SiLU(), nn.Linear(config.value_hidden, 1)
-        )
+        self.has_privileged = int(config.privileged_dim) > 0
+        if self.has_privileged:
+            self.priv_proj = nn.Sequential(
+                nn.Linear(config.privileged_dim, d), nn.SiLU(), nn.Linear(d, d), nn.SiLU()
+            )
+            self.priv_null = nn.Parameter(torch.zeros(1, d))
+        self.value_head = _build_value_head(d, config)
         self.has_belief = bool(config.belief_group_dim or config.belief_card_dim)
         if self.has_belief:
             self.belief_head = BeliefHead(
@@ -405,7 +528,9 @@ class TransformerCVPN(nn.Module):
         token_mask: torch.Tensor,      # (B, T) bool
         options: torch.Tensor,         # (B, K, option_dim)
         option_mask: torch.Tensor,     # (B, K) bool
+        privileged: torch.Tensor | None = None,  # (B, privileged_dim) god's-eye state
     ) -> tuple[torch.Tensor, torch.Tensor, BeliefOutput | None]:
+        """Same contract as :meth:`CVPN.forward_all` (D30: critic-only privileged)."""
         pad = ~token_mask  # True = ignore in attention
         embedded = self._with_ids(self.token_proj(tokens), tokens, option=False)
         encoded = self.encoder(embedded, src_key_padding_mask=pad)  # (B,T,d)
@@ -420,9 +545,26 @@ class TransformerCVPN(nn.Module):
         )  # (B, K, d)
         logits = self.option_scorer(torch.cat([attended, option_vec], dim=-1)).squeeze(-1)
         logits = logits.masked_fill(~option_mask, float("-inf"))
-        value = activate_value(self.value_head(pooled).squeeze(-1), self.config)
+        value = activate_value(self._value_from(pooled, privileged).squeeze(-1), self.config)
         belief = self.belief_head(pooled) if self.has_belief else None
         return logits, value, belief
+
+    def _value_from(self, pooled: torch.Tensor, privileged: torch.Tensor | None) -> torch.Tensor:
+        """Raw critic output ``(B, 1)``; additive privileged conditioning (D30)."""
+        if not self.has_privileged:
+            if privileged is not None:
+                raise ValueError(
+                    "privileged state was passed to a model built without a privileged "
+                    "critic (TransformerCVPNConfig.privileged_dim == 0); rebuild the model "
+                    "with transformer_config_for_encoder(encoder, privileged=True)"
+                )
+            return self.value_head(pooled)
+        priv = _privileged_embedding(
+            self.priv_proj, self.priv_null, privileged, pooled.size(0),
+            training=self.training,
+            dropout=float(getattr(self.config, "privileged_dropout", 0.0) or 0.0),
+        )
+        return self.value_head(pooled + priv)
 
     def forward(
         self,
@@ -459,13 +601,43 @@ class TransformerCVPN(nn.Module):
         return model
 
 
-def transformer_config_for_encoder(encoder, *, belief: bool = False, **overrides) -> TransformerCVPNConfig:
+def transformer_config_for_encoder(
+    encoder, *, belief: bool = False, privileged: bool = False, **overrides
+) -> TransformerCVPNConfig:
     base = dict(token_dim=encoder.token_dim, option_dim=encoder.option_dim)
     if belief:
         base["belief_group_dim"] = int(encoder.belief_group_dim)
         base["belief_card_dim"] = int(encoder.belief_histogram_dim)
+    if privileged:
+        # D30: privileged state goes to the critic only (never the actor).
+        base["privileged_dim"] = int(encoder.privileged_state_dim)
     base.update(overrides)
     return TransformerCVPNConfig(**base)
+
+
+def privileged_tensor(observations: Sequence[EncodedObservation]) -> torch.Tensor | None:
+    """Stack god's-eye state into ``(B, dim)`` float32, or ``None`` when absent.
+
+    D30: this is the *only* plumbed path from ``EncodedObservation.privileged_state``
+    into the network, and the model routes it to the value head only. The first
+    observation decides availability: an empty vector means the corpus does not
+    carry privileged state, so the batch is treated as "unavailable" (the critic
+    then uses its learned null embedding). A batch that mixes widths is an error
+    rather than a silent pad, because a wrong width would be a shape bug.
+    """
+    if not observations:
+        return None
+    dim = len(observations[0].privileged_state)
+    if dim == 0:
+        return None
+    dims = {len(obs.privileged_state) for obs in observations}
+    if dims != {dim}:
+        raise ValueError(
+            f"ragged privileged_state widths in batch: {sorted(dims)} (expected {dim})"
+        )
+    return torch.tensor(
+        [list(obs.privileged_state) for obs in observations], dtype=torch.float32
+    )
 
 
 def collate(observations: Sequence[EncodedObservation]) -> tuple[torch.Tensor, ...]:

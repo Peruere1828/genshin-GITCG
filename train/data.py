@@ -22,6 +22,7 @@ from envs.decks import deck_spec
 from envs.match import run_match
 from envs.policy import Policy, build_policy
 from eval.stats import outcome_score
+from reps.history import MatchHistory
 from reps.observation_encoder import (
     DEFINITION_SCALE,
     BeliefTarget,
@@ -123,16 +124,23 @@ def align_teacher_action_values(
 
 
 class _CaptureTeacher:
-    """Wrap a policy and record (built_context, chosen_code) for each decision."""
+    """Wrap a policy and record ``(built_context, chosen_code, history)`` per decision.
 
-    def __init__(self, inner: Policy) -> None:
+    ``history`` is the snapshot taken **before** this decision is appended (the
+    match runner records it after ``choose`` returns), so the captured history
+    matches what the policy itself observed at inference time.
+    """
+
+    def __init__(self, inner: Policy, history: MatchHistory | None = None) -> None:
         self.inner = inner
         self.name = f"capture:{getattr(inner, 'name', '?')}"
-        self.items: list[tuple[object, int]] = []
+        self.history = history
+        self.items: list[tuple[object, int, tuple[Any, ...]]] = []
 
     def choose(self, built) -> int:
         code = int(self.inner.choose(built))
-        self.items.append((built, code))
+        snapshot = self.history.snapshot() if self.history is not None else ()
+        self.items.append((built, code, snapshot))
         return code
 
 
@@ -145,6 +153,7 @@ def collect_samples(
     teacher_spec: str | None = None,
     opponent_spec: str | None = None,
     capture_targets: bool = True,
+    include_history: bool = True,
 ) -> list[Sample]:
     """Collect teacher-labelled samples for ``deck`` (player 0) vs ``opponent``.
 
@@ -153,13 +162,19 @@ def collect_samples(
     (``belief_target`` / ``privileged_state``) from the true state; agent
     observations still come from the masked ``player_view`` (no leak). Pass
     ``False`` for the legacy zeros-target format.
+
+    With ``include_history`` (default) the match records every decision into a
+    :class:`reps.history.MatchHistory` and each sample is encoded with the
+    history *preceding* it, exactly as inference does. ``False`` keeps the old
+    historyless dataset (and skips the MatchHistory allocation).
     """
     samples: list[Sample] = []
     for seed in seeds:
+        history = MatchHistory() if include_history else None
         teacher = build_policy(
             teacher_spec or f"expert:{deck}", seed=derive_seed(seed, "p0", deck), role="p0"
         )
-        capture = _CaptureTeacher(teacher)
+        capture = _CaptureTeacher(teacher, history=history)
         opp = build_policy(
             opponent_spec or f"expert:{opponent}",
             seed=derive_seed(seed, "p1", opponent),
@@ -172,18 +187,19 @@ def collect_samples(
             opp,
             seed=int(seed),
             full_state_for_agents=capture_targets,
+            history=history,
         )
         if record.error:
             continue
         value = outcome_score(record.winner, 0)
-        for built, code in capture.items:
+        for built, code, hist in capture.items:
             context = built.context
             codes = list(int(c) for c in context.legal_low_level_codes)
             if int(code) not in codes:
                 continue
             index = codes.index(int(code))
             observation = encoder.encode_context(
-                context, history=(), include_training_targets=capture_targets
+                context, history=hist, include_training_targets=capture_targets
             )
             if not observation.option_features:
                 continue
@@ -271,6 +287,8 @@ def collect_search_samples(
             codes = [int(c) for c in context.legal_low_level_codes]
             if not codes:
                 continue
+            # Legacy path (D30 closed search): no match history is threaded
+            # through the MCCFR search runner, so these samples carry none.
             observation = encoder.encode_context(
                 context, history=(), include_training_targets=capture_targets
             )

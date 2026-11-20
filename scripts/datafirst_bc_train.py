@@ -51,7 +51,7 @@ from train.model import (
     transformer_config_for_encoder,
     zero_init_identity_branch,
 )
-from scripts.train_bc_scale import Config, train
+from scripts.train_bc_scale import Config, store_history_flag, train, with_history_flag
 
 
 def _subsample(store, limit: int | None, seed: int):
@@ -77,6 +77,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help="A2 fine-tune: start the identity branch as a no-op so a pre-A2 "
                         "--init-from checkpoint begins bit-identical to its old outputs")
     p.add_argument("--belief", action="store_true")
+    p.add_argument("--privileged", dest="privileged", action="store_true", default=None,
+                   help="D30: train the value head on the god's-eye privileged state "
+                        "(critic only). Default: auto-enable when the store carries "
+                        "privileged vectors")
+    p.add_argument("--no-privileged", dest="privileged", action="store_false",
+                   help="force a public-only critic even if the store carries privileged state")
+    p.add_argument("--privileged-dropout", type=float, default=0.1,
+                   help="probability of using the learned null privileged embedding per sample")
     p.add_argument("--epochs", type=int, default=15)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--batch-size", type=int, default=128)
@@ -116,6 +124,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--init-from", default=None,
                    help="initialize the weights from a checkpoint (continued training / PG rounds); "
                         "the architecture must match (same --arch / --d-model / head config)")
+    p.add_argument("--allow-history-mismatch", action="store_true",
+                   help="allow --init-from to disagree with the store about the history "
+                        "channel (the model would be trained on a different input format "
+                        "than it was trained on); off by default")
     p.add_argument("--out", required=True)
     p.add_argument("--report", default=None)
     return p
@@ -172,6 +184,30 @@ def main(argv: list[str] | None = None) -> int:
             "ids (legacy fp16 corpus); identity features are unreliable for this run",
             flush=True,
         )
+    # History channel: the marker is computed from the decoded token tensors (a
+    # cached store may predate the field). It is stamped into the checkpoint so
+    # inference keeps old, history-free models history-free.
+    has_history = store_history_flag(train_full)
+    print(f"[history] store contains history tokens: {has_history}", flush=True)
+    if args.init_from:
+        from train.model import checkpoint_encoder_config
+
+        saved_encoder = checkpoint_encoder_config(args.init_from) or {}
+        expected_history = bool(saved_encoder.get("include_history", False))
+        if expected_history != has_history:
+            message = (
+                f"--init-from {args.init_from} expects history="
+                f"{expected_history} (encoder_config['include_history']), but the "
+                f"store has history={has_history}. Training would feed a different "
+                "input format than the checkpoint was trained on."
+            )
+            if not args.allow_history_mismatch:
+                raise SystemExit(
+                    message
+                    + " Pass --allow-history-mismatch only if you really mean to "
+                    "re-interpret the trunk."
+                )
+            print(f"[warn] {message} (allowed by --allow-history-mismatch)", flush=True)
     train_store, n_train = _subsample(train_full, args.train_limit, args.seed)
     val_store, n_val = _subsample(val_full, args.val_limit, args.seed + 1)
     print(
@@ -179,33 +215,70 @@ def main(argv: list[str] | None = None) -> int:
         f"train={n_train} (of {len(train_full)}) val={n_val} (of {len(val_full)})",
         flush=True,
     )
+    # D30: privileged state is critic-only. Auto-detect from the *full* store so a
+    # random subsample that happens to miss the tail cannot flip the architecture.
+    n_privileged_full = train_full.n_privileged()
+    if args.privileged is None:
+        use_privileged = n_privileged_full > 0
+        if use_privileged:
+            print(
+                f"[priv] auto-enabled: {n_privileged_full}/{len(train_full)} train samples "
+                "carry privileged state (use --no-privileged to opt out)",
+                flush=True,
+            )
+    else:
+        use_privileged = bool(args.privileged)
+        if use_privileged and n_privileged_full == 0:
+            raise SystemExit(
+                f"--privileged requested but the store has no privileged vectors "
+                f"(0/{len(train_full)} train samples). Rebuild it from a replay corpus "
+                "collected with privileged_state capture, or drop --privileged."
+            )
+        if not use_privileged and n_privileged_full:
+            print(
+                f"[priv] disabled explicitly: {n_privileged_full}/{len(train_full)} samples "
+                "carry privileged state that will be ignored",
+                flush=True,
+            )
     if args.arch == "transformer":
         cfg = transformer_config_for_encoder(
             encoder, belief=args.belief, d_model=args.d_model,
             n_layers=args.n_layers, n_heads=args.n_heads,
             value_activation=args.value_activation,
             id_buckets=args.id_buckets, id_emb_dim=args.id_emb_dim,
+            privileged=use_privileged, privileged_dropout=args.privileged_dropout,
         )
         model = TransformerCVPN(cfg)
     else:
         cfg = config_for_encoder(encoder, belief=args.belief, d_model=args.d_model,
                                  value_activation=args.value_activation,
-                                 id_buckets=args.id_buckets, id_emb_dim=args.id_emb_dim)
+                                 id_buckets=args.id_buckets, id_emb_dim=args.id_emb_dim,
+                                 privileged=use_privileged,
+                                 privileged_dropout=args.privileged_dropout)
         model = CVPN(cfg)
     has_belief = bool(getattr(model, "has_belief", False))
     if args.id_zero_init and zero_init_identity_branch(model):
         print("[init] identity branch zero-initialised (no-op at step 0)", flush=True)
     if args.init_from:
-        from train.model import load_cvpn_model
+        from train.model import PRIVILEGED_PARAM_PREFIXES, load_cvpn_model
 
         source = load_cvpn_model(args.init_from)
         try:
-            missing_ids = load_state_dict_compatible(model, source.state_dict())
+            # Non-strict only for newly added branches (A2 identity / D30
+            # privileged critic); every other key or shape mismatch still raises.
+            missing = load_state_dict_compatible(model, source.state_dict())
         except RuntimeError as exc:
             raise SystemExit(
                 f"--init-from architecture mismatch ({args.init_from}): {exc}"
             ) from exc
+        missing_ids = [k for k in missing if not k.startswith(PRIVILEGED_PARAM_PREFIXES)]
+        missing_priv = [k for k in missing if k.startswith(PRIVILEGED_PARAM_PREFIXES)]
         note = f" ({len(missing_ids)} new identity tensors)" if missing_ids else ""
+        if missing_priv:
+            note += (
+                f" ({len(missing_priv)} new privileged-critic tensors; priv_null=0, "
+                "value preserved bitwise until privileged state is used)"
+            )
         if missing_ids and not args.id_zero_init:
             # Missing id tensors are randomly initialised by load_state_dict;
             # make the new branch a no-op instead of silently perturbing a
@@ -230,6 +303,8 @@ def main(argv: list[str] | None = None) -> int:
         pg_entropy=args.pg_entropy,
         grad_clip=args.grad_clip,
         pg_advantage_norm=not args.no_pg_advantage_norm,
+        privileged=bool(use_privileged and getattr(model, "has_privileged", False)),
+        privileged_dropout=args.privileged_dropout,
         save_best=args.save_best,
         select_metric=args.select_metric,
         best_path=str(best_out) if args.save_best else None,
@@ -238,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
         train_store, val_store, model, config, has_belief,
         encoder_config=encoder.to_dict(),
     )
-    model.save(str(out), encoder_config=encoder.to_dict())
+    model.save(str(out), encoder_config=with_history_flag(encoder.to_dict(), has_history))
     report = {
         "kind": "datafirst_bc",
         "generated": _dt.datetime.now().isoformat(timespec="seconds"),
@@ -246,6 +321,7 @@ def main(argv: list[str] | None = None) -> int:
         "arch": args.arch,
         "d_model": args.d_model,
         "belief_head": has_belief,
+        "has_history": has_history,
         "config": asdict(config),
         "store_meta": meta,
         "n_train_full": len(train_full),
@@ -261,6 +337,10 @@ def main(argv: list[str] | None = None) -> int:
         "best_metric": config.best_metric,
         "n_definition_ids": n_definition_ids,
         "n_events": n_events,
+        "privileged": bool(getattr(config, "privileged", False)),
+        "privileged_dim": int(getattr(model.config, "privileged_dim", 0) or 0),
+        "n_privileged": train_full.n_privileged(),
+        "n_missing_privileged": len(train_full) - train_full.n_privileged(),
         "engine_lock": load_engine_lock(),
         "runtime": runtime_metadata(),
     }

@@ -47,7 +47,7 @@ import argparse
 import datetime as _dt
 import json
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
@@ -77,9 +77,28 @@ class Store:
     b_burst: list[float]
     b_mask: list[bool]
     keys: list[tuple[str, str, int, int]]  # (deck, opponent, seed, step_index) for sorting
+    # D30 privileged critic: per-sample god's-eye state, ``(P,)`` float32 or an
+    # empty tensor when the corpus does not carry it. Never used by the actor.
+    priv: list[torch.Tensor] = field(default_factory=list)
+    # Producer-side history marker: True when the token rows include the
+    # encoder's ``history`` token type. Stamped into the checkpoint's
+    # ``encoder_config["include_history"]`` so inference never feeds history
+    # tokens to a model trained without them.
+    has_history: bool = False
 
     def __len__(self) -> int:
         return len(self.tokens)
+
+    def __getattr__(self, name: str):
+        # Stores cached by ``torch.save`` before D30 / the history marker have no
+        # such entry in their instance dict. Return the historical default
+        # instead of raising, so an old store still loads and simply reports
+        # "privileged unavailable" / "no history channel".
+        if name == "priv":
+            return []
+        if name == "has_history":
+            return False
+        raise AttributeError(name)
 
     def subset(self, indices: Sequence[int]) -> "Store":
         take = lambda xs: [xs[i] for i in indices]
@@ -95,6 +114,14 @@ class Store:
             b_burst=take(self.b_burst),
             b_mask=take(self.b_mask),
             keys=take(self.keys),
+            priv=take(self.priv) if self.priv else [],
+            has_history=bool(self.has_history),
+        )
+
+    def n_privileged(self) -> int:
+        """Samples carrying a non-empty privileged vector."""
+        return sum(
+            1 for vec in self.priv if isinstance(vec, torch.Tensor) and vec.numel() > 0
         )
 
 
@@ -131,6 +158,80 @@ def _iter_replay_records(replay_dirs: Sequence[str]) -> Iterator[dict[str, Any]]
                     yield json.loads(line)
                 except json.JSONDecodeError:
                     continue  # torn trailing line
+
+
+def _decode_privileged(value: Any) -> torch.Tensor:
+    """Decode ``observation["privileged_state"]`` from either payload format.
+
+    Compact payloads store it as a base64 dense envelope (see
+    ``train.data._encode_1d``), legacy payloads as a plain float list. Missing or
+    empty stays an empty tensor, which means "privileged unavailable" downstream.
+    """
+    if value is None:
+        return torch.empty(0, dtype=torch.float32)
+    from train.data import _unpack_dense, is_dense_payload
+
+    if is_dense_payload(value):
+        arr = _unpack_dense(value).reshape(-1)
+        if arr.size == 0:
+            return torch.empty(0, dtype=torch.float32)
+        return torch.as_tensor(arr, dtype=torch.float32).clone()
+    if not value:
+        return torch.empty(0, dtype=torch.float32)
+    return torch.tensor(list(value), dtype=torch.float32)
+
+
+def store_has_history(store: Store, limit: int = 2000) -> bool:
+    """True when the store's token rows contain the encoder's ``history`` token.
+
+    The token layout starts with the token-type one-hot, so a row is a history
+    token when ``argmax(type_one_hot)`` equals the index of ``"history"`` (9).
+    Scans a bounded prefix (``limit`` samples) to stay cheap on 1e5-sample
+    stores: a hit is definitive ("any non-empty"), while an all-empty prefix is
+    reported as False — exactly what a corpus collected with ``--no-history``
+    (or by a pre-history collector) looks like.
+
+    This is the *producer* side of the checkpoint marker: the trainer stamps
+    ``encoder_config["include_history"]`` from it, and inference uses that marker
+    to keep old, history-free checkpoints history-free.
+    """
+    from reps.observation_encoder import _TOKEN_TYPES
+
+    index = _TOKEN_TYPES.index("history")
+    n_types = len(_TOKEN_TYPES)
+    for tokens in store.tokens[:limit]:
+        if tokens.numel() == 0:
+            continue
+        types = tokens[:, :n_types].argmax(dim=-1)
+        if bool((types == index).any()):
+            return True
+    return False
+
+
+def store_history_flag(store: Store) -> bool:
+    """Recorded ``has_history`` when a builder recorded ``True``, else scan.
+
+    A recorded ``True`` is trusted (it is definitive). A recorded ``False`` —
+    including the dataclass default on an in-memory store, or a field that an old
+    cache never had — is re-checked against the tokens, so the marker can never
+    silently claim "no history" for a store that actually has history tokens.
+    """
+    cached = getattr(store, "__dict__", {}).get("has_history")
+    if cached:
+        return True
+    return store_has_history(store)
+
+
+def with_history_flag(encoder_config: dict[str, Any] | None, has_history: bool) -> dict[str, Any]:
+    """Return ``encoder_config`` with the producer-side ``include_history`` stamp.
+
+    The stamp is authoritative for this checkpoint: it records what the model's
+    inputs actually contained, so ``NeuralPolicy`` can refuse to attach a
+    ``MatchHistory`` to a model that never saw the history channel.
+    """
+    config = dict(encoder_config) if encoder_config else {}
+    config["include_history"] = bool(has_history)
+    return config
 
 
 def _plan_budgets(
@@ -201,8 +302,8 @@ def load_store(
     games. Without a cap a single pass is enough because the final sort removes
     any dependence on file order.
     """
-    train = Store([], [], [], [], [], [], [], [], [], [], [])
-    val = Store([], [], [], [], [], [], [], [], [], [], [])
+    train = Store([], [], [], [], [], [], [], [], [], [], [], [])
+    val = Store([], [], [], [], [], [], [], [], [], [], [], [])
     caps_set = max_train_samples is not None or max_val_samples is not None
     n_skipped = n_dup = 0
     remaining: dict[tuple[str, str, int], int] | None = None
@@ -270,6 +371,7 @@ def load_store(
                 or any(float(v) > 0.0 for v in bt.get("hand_histogram", ()))
             )
             dest.b_mask.append(bool(sig))
+            dest.priv.append(_decode_privileged(obs.get("privileged_state")).to(device))
             dest.keys.append((deck, opponent, seed, int(payload.get("step_index", 0))))
         n_games += 1
         if progress_every and n_games % progress_every == 0:
@@ -282,6 +384,7 @@ def load_store(
     for store in (train, val):
         order = sorted(range(len(store)), key=lambda i: store.keys[i])
         _reorder(store, order)
+        store.has_history = store_has_history(store)
     meta = {
         "replay_dirs": list(replay_dirs),
         "games": n_games,
@@ -289,6 +392,7 @@ def load_store(
         "duplicate_games": n_dup,
         "train_samples": len(train),
         "val_samples": len(val),
+        "has_history": bool(train.has_history or getattr(val, "has_history", False)),
         "load_seconds": round(time.perf_counter() - t0, 1),
         "seed_start": seed_start,
         "val_every": val_every,
@@ -297,12 +401,16 @@ def load_store(
 
 
 def _reorder(store: Store, order: Sequence[int]) -> None:
-    for field in (
+    for field_name in (
         "tokens", "options", "teacher", "value",
-        "b_hand", "b_deck", "b_hist", "b_hsize", "b_burst", "b_mask", "keys",
+        "b_hand", "b_deck", "b_hist", "b_hsize", "b_burst", "b_mask", "keys", "priv",
     ):
-        seq = getattr(store, field)
-        setattr(store, field, [seq[i] for i in order])
+        seq = getattr(store, field_name)
+        if len(seq) != len(order):
+            # A legacy store (or one without privileged vectors) has no entries
+            # for a newer field; leave it empty rather than failing the reorder.
+            continue
+        setattr(store, field_name, [seq[i] for i in order])
 
 
 def matchup_weights_for_store(store: Store, *, mode: str, strength: float = 1.0,
@@ -421,6 +529,33 @@ def _collate(store: Store, index: Sequence[int], device: str):
     return tokens, token_mask, options, option_mask, teacher, values
 
 
+def _collate_privileged(store: Store, index: Sequence[int], device: str):
+    """Stack the batch's god's-eye vectors into ``(B, P)`` float32, or ``None``.
+
+    Kept separate from :func:`_collate` so its 6-tuple arity (and therefore every
+    existing caller, e.g. ``scripts/compare_offline_rl.py``) is unchanged. Returns
+    ``None`` when the store carries no privileged state at all; samples that are
+    individually missing get a zero row (they are counted as "missing" in the
+    train report) so a partially captured corpus can still be trained.
+    """
+    priv = getattr(store, "priv", None) or []
+    if not priv:
+        return None
+    vectors = [priv[i] for i in index]
+    dims = {int(v.numel()) for v in vectors}
+    if dims == {0}:
+        return None
+    nonempty = {d for d in dims if d > 0}
+    if len(nonempty) != 1:
+        raise ValueError(f"ragged privileged widths in batch: {sorted(dims)}")
+    dim = nonempty.pop()
+    out = torch.zeros(len(index), dim, dtype=torch.float32)
+    for row, vec in enumerate(vectors):
+        if int(vec.numel()):
+            out[row] = vec.to(dtype=torch.float32).reshape(-1)
+    return out.to(device)
+
+
 def _belief_batch(store: Store, index: Sequence[int], device: str):
     if not store.b_hand[index[0]].numel() and not store.b_hist[index[0]].numel():
         return None
@@ -475,10 +610,16 @@ def _value_loss(value: torch.Tensor, targets: torch.Tensor, config, model) -> to
 
 
 def run_batch(model, store, index, device, value_coef, belief_coef, has_belief,
-              config=None, q_scale=None, sample_weights=None):
+              config=None, q_scale=None, sample_weights=None, privileged=None):
     tokens, token_mask, options, option_mask, teacher, values = _collate(store, index, device)
-    if has_belief:
-        logits, value, belief = model.forward_all(tokens, token_mask, options, option_mask)
+    if privileged is None and config is not None and getattr(config, "privileged", False):
+        # D30: privileged state feeds the critic only; the policy loss below is
+        # still computed from the public-observation logits alone.
+        privileged = _collate_privileged(store, index, device)
+    if has_belief or privileged is not None:
+        logits, value, belief = model.forward_all(
+            tokens, token_mask, options, option_mask, privileged=privileged
+        )
     else:
         logits, value = model(tokens, token_mask, options, option_mask)
         belief = None
@@ -616,6 +757,13 @@ class Config:
     pg_entropy: float = 0.01
     pg_advantage_norm: bool = True
     grad_clip: float = 0.0     # 0 = off; PG rounds use 1.0
+    # --- D30 privileged critic -------------------------------------------------
+    # ``privileged`` trains the value head on the god's-eye state (never the
+    # actor: logits stay a function of the public observation alone). The flag is
+    # only meaningful when the model was built with ``privileged_dim > 0``; the
+    # dropout mirrors the model config and is recorded for audit.
+    privileged: bool = False
+    privileged_dropout: float = 0.1
 
 
 def train(
@@ -630,6 +778,21 @@ def train(
     torch.manual_seed(config.seed)
     model.to(config.device)
     model.train()
+    if getattr(config, "privileged", False):
+        priv_dim = int(getattr(model.config, "privileged_dim", 0) or 0)
+        if priv_dim == 0:
+            raise ValueError(
+                "Config(privileged=True) but the model was built without a privileged "
+                "critic (privileged_dim == 0); build it with config_for_encoder(..., "
+                "privileged=True)"
+            )
+        n_priv = train_store.n_privileged()
+        print(
+            f"[train] privileged critic: dim={priv_dim} "
+            f"train_with_priv={n_priv}/{len(train_store)} "
+            f"dropout={config.privileged_dropout}",
+            flush=True,
+        )
     opt = torch.optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     n = len(train_store)
     q_scale = (
@@ -715,7 +878,12 @@ def train(
         try:
             model.load_state_dict(best_state)
             ensure_dir(Path(config.best_path).parent)
-            model.save(config.best_path, encoder_config=encoder_config)
+            model.save(
+                config.best_path,
+                encoder_config=with_history_flag(
+                    encoder_config, store_history_flag(train_store)
+                ),
+            )
         finally:
             model.load_state_dict(last_state)
             model.train()
@@ -736,6 +904,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--n-layers", type=int, default=2)
     p.add_argument("--n-heads", type=int, default=4)
     p.add_argument("--belief", action="store_true")
+    p.add_argument("--privileged", action="store_true",
+                   help="D30: train the value head on the god's-eye privileged state "
+                        "(critic only; the actor sees the public observation alone)")
+    p.add_argument("--privileged-dropout", type=float, default=0.1,
+                   help="probability of using the learned null privileged embedding per sample")
     p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--batch-size", type=int, default=128)
@@ -817,34 +990,49 @@ def main(argv: list[str] | None = None) -> int:
         cfg = transformer_config_for_encoder(
             encoder, belief=args.belief, d_model=args.d_model,
             n_layers=args.n_layers, n_heads=args.n_heads,
+            privileged=args.privileged, privileged_dropout=args.privileged_dropout,
         )
         model = TransformerCVPN(cfg)
     else:
-        cfg = config_for_encoder(encoder, belief=args.belief, d_model=args.d_model)
+        cfg = config_for_encoder(
+            encoder, belief=args.belief, d_model=args.d_model,
+            privileged=args.privileged, privileged_dropout=args.privileged_dropout,
+        )
         model = CVPN(cfg)
     has_belief = bool(getattr(model, "has_belief", False))
+    has_history = store_history_flag(train_store)
+    meta.setdefault("has_history", has_history)
+    print(f"[store] history channel present in tokens: {has_history}", flush=True)
     config = Config(
         epochs=args.epochs, lr=args.lr, batch_size=args.batch_size,
         seed=args.seed, device=args.device, weight_decay=args.weight_decay,
         save_best=args.save_best,
         select_metric=args.select_metric,
         best_path=str(best_out) if args.save_best else None,
+        privileged=bool(args.privileged and getattr(model, "has_privileged", False)),
+        privileged_dropout=args.privileged_dropout,
     )
     history, train_seconds = train(
         train_store, val_store, model, config, has_belief,
         encoder_config=encoder.to_dict(),
     )
-    model.save(str(out), encoder_config=encoder.to_dict())
+    model.save(
+        str(out), encoder_config=with_history_flag(encoder.to_dict(), has_history)
+    )
     report = {
         "kind": "bc_scale",
         "generated": _dt.datetime.now().isoformat(timespec="seconds"),
         "arch": args.arch,
         "d_model": args.d_model,
         "belief_head": has_belief,
+        "has_history": has_history,
         "config": asdict(config),
         "store": meta,
         "n_train": len(train_store),
         "n_val": len(val_store),
+        "n_privileged": train_store.n_privileged(),
+        "n_missing_privileged": len(train_store) - train_store.n_privileged(),
+        "privileged_dim": int(getattr(model.config, "privileged_dim", 0) or 0),
         "train_seconds": train_seconds,
         "history": history,
         "checkpoint": str(out),

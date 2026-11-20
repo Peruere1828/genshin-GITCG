@@ -33,6 +33,7 @@ from gitcg import (
 )
 
 from reps.action_adapter import BuiltDecisionContext, build_decision_context
+from reps.history import MatchHistory, attach_history
 from reps.schema import DecisionType, DeckSpec, OptionKind, StateSnapshot
 from reps.snapshot import snapshot_notification, snapshot_state
 
@@ -280,6 +281,7 @@ class PolicyPlayer(Player):
         full_state_provider: Callable[[], str | None] | None = None,
         metadata: dict[str, Any] | None = None,
         event_sink: list[MatchEvent] | None = None,
+        history: MatchHistory | None = None,
     ) -> None:
         self.who = int(who)
         self.policy = policy
@@ -288,6 +290,9 @@ class PolicyPlayer(Player):
         self.full_state_provider = full_state_provider
         self.metadata = metadata or {}
         self.event_sink = event_sink
+        self.history = history
+        if history is not None:
+            attach_history(self.policy, history)
         self._owner_by_entity_id: dict[int, int] = {}
         self.notification: Any = None
         self.io_errors: list[str] = []
@@ -517,6 +522,10 @@ class PolicyPlayer(Player):
                     card_kind=card_kind,
                 )
             )
+        # History holds every *previous* decision at the moment the next policy
+        # call runs: record after the policy chose (and after fallback resolution).
+        if self.history is not None:
+            self.history.record(built, code)
         return built, code
 
     def _resolve_card_kind(self, definition_id: int) -> str | None:
@@ -619,6 +628,7 @@ def run_match(
     first_player: int = 0,
     full_state_for_agents: bool = False,
     stage_rules: str | None = None,
+    history: MatchHistory | None = None,
 ) -> MatchRecord:
     """Play one full game synchronously in the current thread.
 
@@ -641,6 +651,10 @@ def run_match(
     ``stage_rules`` is the JSON payload built by :mod:`npc.stage_rules`; it is
     forwarded to the engine's ``ATTR_CREATEPARAM_STAGE_RULES`` string attribute.
     ``None`` (the default) sends nothing and keeps the old game setup.
+
+    ``history`` is a shared :class:`reps.history.MatchHistory`; when omitted it is
+    created only if a policy declares ``uses_match_history``. Both seats record
+    into it, and only policies that opted in receive it.
     """
     from reps.action_hierarchy import reset_default_hierarchical_action_codebook
 
@@ -659,6 +673,12 @@ def run_match(
     events: list[MatchEvent] = [] if record_events else []
     error: str | None = None
     truncated = False
+    # Share one history between both seats. Only create it when a policy actually
+    # consumes it, so scripted-vs-scripted matches pay nothing.
+    if history is None and any(
+        getattr(policy, "uses_match_history", False) for policy in (policy0, policy1)
+    ):
+        history = MatchHistory()
     players: list[PolicyPlayer] = []
     full_state_provider = (lambda: game.state().json()) if full_state_for_agents else None
     for who, policy in ((0, policy0), (1, policy1)):
@@ -674,6 +694,7 @@ def run_match(
                 record_views=record_views,
                 full_state_provider=full_state_provider,
                 event_sink=event_sink,
+                history=history,
             )
         )
     game.set_player(0, players[0])

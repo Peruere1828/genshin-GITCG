@@ -29,7 +29,15 @@ from common.lock import load_engine_lock, runtime_metadata
 from common.paths import ensure_dir
 from envs.observation import default_encoder
 from train.model import CVPN, TransformerCVPN, config_for_encoder, transformer_config_for_encoder
-from scripts.train_bc_scale import Config, Store, evaluate, load_or_build_store, train
+from scripts.train_bc_scale import (
+    Config,
+    Store,
+    evaluate,
+    load_or_build_store,
+    store_history_flag,
+    train,
+    with_history_flag,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -103,7 +111,10 @@ def main(argv: list[str] | None = None) -> int:
             history, secs = train(sub, val_store, model, config, has_belief)
             val = evaluate(model, val_store, config, args.device, has_belief)
             ckpt = ckpt_dir / f"curve_{args.tag}_d{d_model}_n{size}.pt"
-            model.save(str(ckpt), encoder_config=encoder.to_dict())
+            model.save(
+                str(ckpt),
+                encoder_config=with_history_flag(encoder.to_dict(), store_history_flag(train_store)),
+            )
             point = {
                 "d_model": d_model, "arch": args.arch, "n_train": len(sub),
                 "n_val": len(val_store), "train_seconds": secs,

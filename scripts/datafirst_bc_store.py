@@ -41,7 +41,12 @@ from common.paths import ensure_dir
 from envs.observation import default_encoder
 from reps.observation_encoder import definition_feature_indices
 from train.data import _unpack_dense, is_dense_payload, repair_observation_payload
-from scripts.train_bc_scale import Store, _game_key, _iter_replay_records
+from scripts.train_bc_scale import (
+    Store,
+    _game_key,
+    _iter_replay_records,
+    store_has_history,
+)
 
 
 def _tensor(value, dtype=torch.float32) -> torch.Tensor:
@@ -64,12 +69,14 @@ def _is_val(seed: int, seed_start: int, val_every: int) -> bool:
 
 
 def _reorder(store: Store, order: Sequence[int]) -> None:
-    for field in (
+    for field_name in (
         "tokens", "options", "teacher", "value",
-        "b_hand", "b_deck", "b_hist", "b_hsize", "b_burst", "b_mask", "keys",
+        "b_hand", "b_deck", "b_hist", "b_hsize", "b_burst", "b_mask", "keys", "priv",
     ):
-        seq = getattr(store, field)
-        setattr(store, field, [seq[i] for i in order])
+        seq = getattr(store, field_name)
+        if len(seq) != len(order):
+            continue  # legacy store without the newer field
+        setattr(store, field_name, [seq[i] for i in order])
 
 
 def load_store_any(
@@ -90,10 +97,12 @@ def load_store_any(
     ``max_seed`` keeps only games whose seed is below it — the balanced way to size a
     multi-deck store (every deck/opponent contributes the same seed window).
     """
-    empty = lambda: Store([], [], [], [], [], [], [], [], [], [], [])
+    empty = lambda: Store([], [], [], [], [], [], [], [], [], [], [], [])
     train, val = empty(), empty()
     n_games = n_skipped = n_dup = n_events = n_filtered = 0
     n_definition_ids = 0
+    n_privileged = 0
+    priv_dims: set[int] = set()
     seen: set[tuple[str, str, int]] = set()
     t0 = time.perf_counter()
     for record in _iter_replay_records(replay_dirs):
@@ -146,6 +155,13 @@ def load_store_any(
                 or bool((hist > 0.0).any())
             )
             dest.b_mask.append(bool(sig))
+            # D30: privileged (god's-eye) state -> critic only. Decoded from either
+            # the compact dense envelope or a legacy float list; missing -> empty.
+            priv = _tensor(obs.get("privileged_state", ()))
+            dest.priv.append(priv.to(device))
+            if priv.numel():
+                n_privileged += 1
+                priv_dims.add(int(priv.numel()))
             dest.keys.append((deck, opponent, seed, int(payload.get("step_index", 0))))
             n_events += 1
         n_games += 1
@@ -158,6 +174,7 @@ def load_store_any(
     for store in (train, val):
         order = sorted(range(len(store)), key=lambda i: store.keys[i])
         _reorder(store, order)
+        store.has_history = store_has_history(store)
     meta = {
         "replay_dirs": list(replay_dirs),
         "games": n_games,
@@ -169,6 +186,10 @@ def load_store_any(
         "max_seed": max_seed,
         "train_samples": len(train),
         "val_samples": len(val),
+        # Producer-side history marker: True when the token rows contain the
+        # encoder's ``history`` token type (stamped into checkpoints so inference
+        # never feeds history tokens to a model trained without them).
+        "has_history": bool(train.has_history or getattr(val, "has_history", False)),
         "load_seconds": round(time.perf_counter() - t0, 1),
         "seed_start": int(seed_start),
         "val_every": int(val_every),
@@ -179,6 +200,10 @@ def load_store_any(
         "definition_indices": [int(v) for v in definition_feature_indices()],
         "definition_ids_present": n_definition_ids,
         "definition_ids_required": False,
+        # D30: how much of the corpus can train a privileged critic.
+        "n_privileged": n_privileged,
+        "n_missing_privileged": n_events - n_privileged,
+        "privileged_dim": int(max(priv_dims)) if priv_dims else 0,
     }
     return train, val, meta
 
@@ -213,7 +238,8 @@ def main(argv: list[str] | None = None) -> int:
     torch.save({"train": train_store, "val": val_store, "meta": meta}, cache)
     print(
         f"[store] train={len(train_store)} val={len(val_store)} games={meta['games']} "
-        f"dup={meta['duplicate_games']} -> {cache} ({meta['load_seconds']}s)",
+        f"dup={meta['duplicate_games']} has_history={meta['has_history']} "
+        f"privileged={meta['n_privileged']} -> {cache} ({meta['load_seconds']}s)",
         flush=True,
     )
     if args.report:
