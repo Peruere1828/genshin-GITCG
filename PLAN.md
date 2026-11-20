@@ -34,6 +34,8 @@
 | D24 | 数据先行结论与下一杠杆（2026-10-12，A5/A7，`reports/train/bc_scale_datafirst.md`、`reports/datafirst_bc.md`） | **BC 撞到 teacher 天花板**：规模化 BC **从未显著超过同 deck 专家**（最优仅统计打平）；**真正的杠杆是训练时长/优化，不是数据量**。**deck 混淆极大**：同一策略在强 deck 上 pooled ≥0.50 达 strict-CI PASS、弱 deck 显著拖累 → **验收门禁必须固定 deck 集、逐 deck 报**。**M4 floor 结构性 FAIL**（长尾岩/雷/草系）。**下一杠杆＝策略改进（自博弈/RL 或修好的搜索），不是更多 BC 数据**。工程：`train.collect` 内存 bug 已修（`reports/train/a8_collect_streaming_memory.md`）；compact 载荷体积见 `reports/datafirst_bc.md`。|
 | D25 | A2 复核与 P0 一致性门禁（2026-10-27，`reports/explore/literature_review.md`、`reports/explore/p0_parity_20261027.md`） | **A2 判负无效**：compact 语料默认 fp16，把 `definition_id/400000` 压成不可逆假 id（152 张卡只剩 28 个不同 id；真实 bucket 142、与 store bucket 交集仅 4）；A2 的 id 分支训练/推理读两套索引。另叠加 p0-only/双边评测、模型 init 不受 seed 控制、val_acc 跨语料横比、只保存 final epoch（best 是 ep70）、eval seed 双倍偏移。**决策**：① A2 改判“无效，待 exact id + parity 后重做”；A0（h4m e150）仍为 4-deck 通用 BC 基线，id 路线暂停不关闭；② **parity 未 PASS 前冻结所有新结构训练**（A3/A4/A5/id/FiLM）；③ P0 修复：parity harness（`envs/parity.py` + `scripts/parity_store_live.py`）、compact exact int definition id、`--save-best`（默认 `val_ce`）、init/eval seed 修复、`neural:` 强制 `--contestant-deck`；④ M4 floor 双口径：绝对 floor + 相对同 deck 脚本专家的配对 Δ，teacher-limited matchup（expert Wilson low <45%）不要求绝对 45%；⑤ 评测功效：400 局筛选、800 局判 ≥6pp、1,400–1,600 非劣/4–5pp、3pp 需 2,000–3,000 局。证据：旧 fp16 replay 2 个决策即 10 token/15 option id 失配、同 argmax 下最大 logit drift 13.9；新采 4-deck 干净语料 1,600 局 / 85,573 决策全部带 exact id，dgeo/dvalin parity 各 5/5 决策 PASS（`reports/explore/p0_parity_20261027.md`）。 |
 | D26 | 搜索因果结论限定与价值语义修复（2026-10-27，`reports/explore/lit/f01_selfplay_value.md`、`reports/explore/lit/f07_code_audit.md`） | `envs/cfr_probe.py` 把 identity 价值头的负值当概率截断到 `[0,1]`，且把 acting-player 视角当 player-0；`reps/belief._sample_hidden_dice` 是确定性轮转而非采样。这三处足以单独制造 A4/D23 的“根价值区分度≈0 / 搜索覆盖专家却更常输”的测量结果。P0 已修：`PriorResolver.value_probability()`（identity→`(v+1)/2`、sigmoid 原值）、acting→p0 转换、dice i.i.d. 采样。**决策**：D23 的因果结论降级为“**在当前测量/预算下无增益**”；“不把搜索蒸馏放量到 A800”的排产不变；重开搜索仍需 D23 的三前置（校准价值头 + 非任意候选裁剪 + 门控覆盖）+ parity PASS + value AUC/within-matchup 门禁。 |
+| D27 | 非主线模块清理：删除 `coach/`（2026-11-20） | **删除 `coach/` 整包**（`ReplayCoach` / `build_timeline` / `rule_based_flags` / `python -m coach.review`）及其测试、`pyproject` 打包项、`scripts/kaggle_push.sh` 传输项、README/PLAN 目录表与其它模块注释中的引用。**理由**：① 它只消费 arena 的逐决策日志、只产出 JSON 报告，**从未接入训练/评测/门禁**；② README 待办里的“课程建议 → 自博弈配比、BC 标签回灌”从未实现，而 D23/D26 已判定搜索值不可用于归因、D24 已判定 BC 撞天花板，这两项的前提都不成立；③ 与 `eval/` 的逐决策日志 + `reports/` 人工分析功能重叠。**替代**：复盘需求由 `eval` 的 `record_decisions`/`record_views` 原始记录 + `reports/` 聚合分析承担。**恢复条件**：若重启，需先有可用的价值头（D26 门禁）与课程/BC 标签的真实消费方，按新 D 编号追加，不复活旧接口。历史报告中对 `coach/replay.py` 的引用保持原样（报告是时间切片，不改写）。 |
+| D28 | 删除选牌/组牌；牌组与先手成为显式输入（2026-11-20） | **前提**：每局开始时双方牌组与初始先手**都由调用方给定**，AI 不参与"打哪套牌 / 谁先手"的决定。**删除**：`decklab/`（builder/corpus/sensitivity）、`web/counterpick.py`（AI 看对手牌反选）、`scripts/explore/{fetch_deck_corpus,render_deck_report}.py` + `web_decks.json`、`configs/pools/`、`POST /choose-deck` 及其前端「AI 反选」，以及对应测试。**替代**：PvE 门禁改读冻结的 `configs/npc/contestant_deck.json`（原规则组牌产物，逐字节一致）；组牌质量消融改为与既有脚本牌组对照；`envs/decks` 新增 `load_deck_spec` / `deck_spec_from_json` / `pool_slug_for_deck`（只做识别，不做选择）。**先手**：`run_match(first_player=…)` 是显式输入并写入 `MatchRecord.first_player`，启动后校验引擎实际先手；本引擎固定 seat0 先手，非 0 值在缺少 overlay 属性 `ATTR_CREATEPARAM_FIRST_PLAYER` 时**立即报错**（不静默忽略）。Web「先手三选（人类/AI/随机）」改为二选，删掉随机分支。**恢复条件**：若重新引入组牌/选牌，必须有明确的消费方与验收（D19 的"自动组牌"从未实现，只做过规则近似）。 |
 
 ### 0.1 工程约定（现行做法，2026-10-10 正向化整理；证据指向脚本/测试）
 
@@ -369,8 +371,6 @@ genshin-GITCG/
 ├── agents/                    # WS4: resolving_agent（纯策略）、llm_assist、脚本对手适配
 ├── train/                     # WS3: CVPN、采集/训练/蒸馏、batched inference
 ├── eval/                      # WS2: arena、阶梯、20 套对手池、报表
-├── coach/                     # WS4: 复盘归因、课程建议、BC 标签
-├── decklab/                   # WS4: 卡组构筑（模板内 flex）
 ├── npc/                       # WS7: NPC PvE 调试系统
 ├── web/                       # WS8: 人机调试接口（standalone + HTTP 桥）
 ├── orchestrator/              # WS5: 自迭代循环（占位，未实现）
@@ -393,7 +393,7 @@ genshin-GITCG/
 |----|--------|--------|
 | **A 模型主线** | 表示层/信念/MCCFR/search-as-teacher（S-A–S-C）；数据先行 A5–A8；逐 deck specialist/PG（dgeo 0.880 / ungeo 0.909，2 个 full PASS）；P0 parity + A2 复核（D25/D26） | A2 重做（A800，`scripts/p0_a2_rerun.sh`）→ P1 DAgger 诊断 / 可修 matchup 靶向 / specialist 扩张 / router；P2 league/value/belief；P3 候选集。详见 `docs/STATUS.md` |
 | **B NPC PvE** | B0 构建链（`engine-overlay/README.md`）、B1–B5（敌人/策略/规格/关卡）+ PvE-v1 门禁（§4.4，`reports/npc/`） | 无（门禁已 PASS） |
-| **C Web 调试接口** | C0 standalone + 浏览器↔Python 桥；C1 反选；C2 模型桥；C3 NPC 阵容；C4 逐决策日志；T1–T3 `(session, who)` 隔离/`seq`/牌组对齐；续局、故障局归档、弹窗座位；终端 `HumanQuit`。协议细节见 `web/README.md` | 组牌器直通回填 / LLM 辅助档 / `/notify` 降流量 / e2e 固化 / 支援区·多轮的替代描述方式 |
+| **C Web 调试接口** | C0 standalone + 浏览器↔Python 桥；C1 牌组/先手显式输入（D28 删反选）；C2 模型桥；C3 NPC 阵容；C4 逐决策日志；T1–T3 `(session, who)` 隔离/`seq`/牌组对齐；续局、故障局归档、弹窗座位；终端 `HumanQuit`。协议细节见 `web/README.md` | 组牌器直通回填 / LLM 辅助档 / `/notify` 降流量 / e2e 固化 / 支援区·多轮的替代描述方式 |
 
 **并行收尾**（不阻塞主线）：WSL/MX550 小网络训练试验（结论写回 §5.2）；L5.2 全池 LLM 矩阵放量；L5.3 学习曲线留档；L5.5（可选）评测池扩容。机会算力窗口到手 → 按 §5.1 本地采集 / 传入 / GPU 放大 / 回流认证（M3 GPU → M4）。
 

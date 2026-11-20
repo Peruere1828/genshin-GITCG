@@ -36,7 +36,7 @@ if [ "$REFRESH_CODE" = "1" ]; then
   tar czf build/kaggle/bundle-code/gitcg-code.tar.gz \
     --exclude='__pycache__' --exclude='*.pyc' --exclude='*.pt' --exclude='.pytest_cache' \
     PLAN.md AGENTS.md README.md NOTICE.md LICENSE pyproject.toml \
-    common reps envs train scripts agents eval coach decklab npc configs tests web kaggle \
+    common reps envs train scripts agents eval npc configs tests web kaggle \
     data/assets/README.md data/assets/expert_system_assets_chs_latest.json \
     -C build/kaggle/bundle-code mode.txt
   if "$KAGGLE_BIN" datasets status "$CODE_DS" >/dev/null 2>&1; then

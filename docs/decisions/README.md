@@ -22,7 +22,7 @@
 | D16 | 三方向并行立项 | active | 模型/NPC/Web |
 | D17 | NPC PvE 调试系统 | active | 独立 PvE-v1 门禁 |
 | D18 | Web 人机调试接口 | active | 调试接口，不进口径验收 |
-| D19 | 卡组口径 | active | decklab 组牌；Web 人机反选 |
+| D19 | 卡组口径 | **superseded by D28** | decklab 组牌 / Web 反选已删除 |
 | D20 | 引擎构建策略 | active | Docker/V8/overlay |
 | D21 | 机会算力 CPU 配额 | active | 宿主 128 / 配额 ~10；只 GPU |
 | D22 | M3-CPU 首次认证 | historical | 未过；搜索蒸馏≈BC |
@@ -30,9 +30,11 @@
 | D24 | 数据先行结论 | **limited** | “总量不显著”≠“每 matchup 密度不显著” |
 | D25 | A2 复核与 P0 门禁 | **current** | A2 无效；parity 未过冻结新结构 |
 | D26 | 搜索因果限定/价值语义 | **current** | 修 cfr_probe/dice；搜索重开需门禁 |
+| D27 | 非主线清理：删 `coach/` | **current** | 从未接入训练/评测；待办项前提已不成立 |
+| D28 | 删选牌/组牌；牌组+先手显式 | **current** | 删 decklab/counterpick/corpus/pools；`first_player` 入 MatchRecord |
 
 ## 使用
 
-- 写新决策：在 `PLAN.md §0` 追加 D27…，再在本表加一行。
+- 写新决策：在 `PLAN.md §0` 追加 D29…，再在本表加一行。
 - 改验收口径：必须同时更新 `docs/EVAL_PROTOCOL.md` 与 `docs/STATUS.md`。
 - 旧决策被推翻：标 `superseded`/`limited` 并链接新决策，不改原文。

@@ -12,7 +12,6 @@
 | `POST /rpc` | `{"session","who":0\|1,"request":RpcRequest}` | `RpcResponse` |
 | `POST /notify` | `{"session","who","seq","notification":{mutation,state}}` | `{"applied":bool,"seq","state_seq"}` |
 | `POST /session` | `{"session","meta":{version,ai_seat,human_seat,ai_self_play,decks},"resume?":bool}` | 会话记录 + `deck_mismatch` + `seat_specs` + `runs` + `seq_base`（`resume:true`＝续局，给 seq 基线） |
-| `POST /choose-deck` | `{"session","deck":{characters,cards}}` | C1 反选结果（见下） |
 | `POST /game-end` | `{"session","winner","rounds","aborted?":bool,"abort_reason?":str}` | `{"ok","closed","aborted"}`（`aborted:true`＝故障局，归档成 `io_error`、不记胜负） |
 | `POST /game-log` | `{"session","log"}` | `{"ok","dir"}`（引擎日志归档） |
 | `GET /health` | – | `{"ok":true,"policy","rpc","notify","sessions","stale_notify","ai_deck","log_dir"}` |
@@ -65,28 +64,23 @@ reps/train/torch 只在请求模型策略时延迟导入，默认路径仍是零
 
 原因：脚本专家规则是按自家牌组写的，牌组不符会**静默变蠢**。
 
-## C1 反选（D19：对位矩阵 + decklab 固定规则）
+## 牌组与先手（D28：不做选择）
 
-`POST /choose-deck` 收**人的牌组** `{characters, cards}`，`web/counterpick.py` 挑一套
-应对牌组：
+牌组与先手都是**显式输入**，桥不替任何人挑牌、也不掷先手：
 
-1. 在评测池 20 套里找人的牌组的**代理**（相似度 = 0.6×角色 + 0.4×牌多重集），
-2. 用 `reports/arena/` 的 **20×20 对位矩阵**（双向合并后的两两胜率）择优，
-3. 相似度 < 0.2（池内没有像它的）→ 退到**总强度**最强的一套；
-4. 没有矩阵文件 → 退到 **decklab 池 C 固定规则牌组**（配 `heuristic`）。
-
-返回 `{slug,characters,cards,policy,method,proxy,similarity,win_rate,reason,
-base_policy,policy_applied}`，并把结果记进会话（供开局校验）。
+- 「我的牌组」「AI 牌组」在配置页填定（分享码或 NPC 阵容对象），开局原样使用；
+- AI 座位的牌组由 `--ai-deck <slug>`（或 `--policy expert:<slug>` 隐含）声明，
+  `GET /ai-deck` 只做回读，不做反选；
+- 先手由配置页二选（人类 / AI），**没有随机分支**。引擎 seat0 恒先手，所以
+  「AI 先手」= 真人坐 seat1。
 
 **策略改派**：`/session` 时若 base 策略是 deck-specific 的 `expert:*`，就按**各座位
 实际牌组**改派——池内 20 套派它自己的 `expert:<slug>`（人的牌组若也是池内套，自对弈
 时同样派它自己的脚本）；**非池内牌组（NPC 阵容/自改牌组）改派 deck-agnostic 的
 `heuristic`**（硬套别人的脚本每步都会回退占位，日志里会刷一屏 fallback），并 stderr
-告警。`neural:` 等用户显式选的策略**绝不覆盖**——那种情况 `policy_applied:false`，
-只换牌组不换策略。已在局中的座位不再改（实例已建）。
+告警。`neural:` 等用户显式选的策略**绝不覆盖**。已在局中的座位不再改（实例已建）。
 
-前端流程（D18）：人选牌 → 点「AI 反选」（或直接开局时自动反选，只要没手改过 AI
-牌组）→ 定先手（人类 / AI / 随机）→ 开局。
+前端流程（D18 → D28）：填双方牌组 → 选先手（人类 / AI）→ 开局。
 
 ## C3 NPC 阵容（D18：人可持 NPC 敌人卡组）
 

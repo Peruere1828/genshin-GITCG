@@ -1,0 +1,17 @@
+{
+  "_comment": "PvE-v1 gate contestant deck, frozen 2026-11-20. Previously produced by decklab.build_pool_c_superconduct(); deck building was removed (D28), so the deck is now an explicit config input.",
+  "name": "poolc_superconduct",
+  "characters": [1101, 1403, 1405],
+  "cards": [
+    331401, 331401, 331402, 331402,
+    332004, 332004, 332005, 332005,
+    332006, 332009, 333002,
+    312004, 312004, 312006,
+    322002, 322003, 322003,
+    311501, 311501,
+    332001, 332001, 332008,
+    332003, 332003,
+    312005, 312005,
+    322011, 322011, 322012, 322012
+  ]
+}

@@ -7,8 +7,7 @@
 # plan_strength_2day_kaggle.md). The mixed model also beat its teacher on matchups
 # that only *other decks'* games cover, i.e. cross-deck transfer is real. This job
 # widens that axis to all 20 decks so a single model can be trained for (and
-# evaluated on) every deck in the pool — which is also what the web/decklab lines
-# need.
+# evaluated on) every deck in the pool.
 #
 # Layout: `data/replays/all_<deck>/` — 20 opponents x 80 seeds (0..79), compact,
 # resumable; the store builder dedups by (deck, opponent, seed).

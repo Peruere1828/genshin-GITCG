@@ -82,21 +82,6 @@ interface NpcPayload {
   assets?: CustomData;
 }
 
-/** C1：`POST /choose-deck` 的反选结果 */
-interface CounterPick {
-  slug: string;
-  characters: number[];
-  cards: number[];
-  policy: string;
-  method: string;
-  proxy: string | null;
-  similarity: number | null;
-  win_rate: number | null;
-  reason: string;
-  policy_applied?: boolean;
-  base_policy?: string | null;
-}
-
 /** 开局时解析好的配置（牌组已解成对象、先手位已定） */
 interface GameConfig {
   sessionId: string;
@@ -105,8 +90,8 @@ interface GameConfig {
   humanSeat: 0 | 1;
 }
 
-/** 先手三选：人类 / AI（对面）/ 随机 —— 引擎 seat0 恒为先手 */
-type FirstTurn = "human" | "other" | "random";
+/** 先手二选：人类 / AI（对面）—— 引擎 seat0 恒为先手；不做随机（D28） */
+type FirstTurn = "human" | "other";
 
 function newSessionId(): string {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -130,15 +115,11 @@ export function App() {
   // 牌组：两个输入框存分享码；NPC 阵容（C3）编不出分享码，走对象覆盖。
   const [myDeckCode, setMyDeckCode] = createSignal(INIT_DECK1);
   const [otherDeckCode, setOtherDeckCode] = createSignal(INIT_DECK0);
-  // 用户手改过对面牌组 → 开局时不再自动反选（尊重人的选择）
-  const [otherDeckEdited, setOtherDeckEdited] = createSignal(false);
   const [npcPick, setNpcPick] = createSignal<NpcDeck | null>(null);
   const [npcList, setNpcList] = createSignal<NpcPayload | null>(null);
   const [npcError, setNpcError] = createSignal<string | null>(null);
-  // C1 反选结果（只做展示；真正生效在开局时的 /session）
-  const [counterPick, setCounterPick] = createSignal<CounterPick | null>(null);
-  // 先手三选：人类 / AI / 随机
-  const [firstTurn, setFirstTurn] = createSignal<FirstTurn>("random");
+  // 先手二选：人类 / AI（无随机，D28）
+  const [firstTurn, setFirstTurn] = createSignal<FirstTurn>("human");
   // WS8/D18 overlay：AI 对手（HTTP 桥）开关与地址。
   // 默认走**同源** `/bridge`（vite 反代到本机 Python 桥）：局域网另一台机器访问
   // 本页面时，`127.0.0.1` 指向的是那台机器；同源相对路径才能落到这个前端所在的
@@ -211,13 +192,8 @@ export function App() {
       return null;
     }
   };
-  /** seat0 恒为先手：先手三选在这里落成具体座位 */
-  const resolveHumanSeat = (): 0 | 1 => {
-    const choice = firstTurn();
-    if (choice === "human") return 0;
-    if (choice === "other") return 1;
-    return Math.random() < 0.5 ? 0 : 1;
-  };
+  /** seat0 恒为先手：先手二选在这里落成具体座位（无随机分支，D28） */
+  const resolveHumanSeat = (): 0 | 1 => (firstTurn() === "human" ? 0 : 1);
 
   const fetchAiDeck = async () => {
     try {
@@ -237,53 +213,13 @@ export function App() {
       const code = encodeDeck({ characters: data.characters, cards: data.cards });
       if (code) {
         setOtherDeckCode(code);
-        // 桥声明的牌组是**显式选择**：标记手改过，开局时不再被自动反选覆盖
-        // （否则 expert:<slug> 的牌组会被反选成别的池内套，脚本专家被改派）。
-        setOtherDeckEdited(true);
+        // 桥声明的牌组是**显式输入**（D28）：直接回填到「AI 牌组」。
       }
       setAiDeckSlug(data.slug);
     } catch (e) {
       // 取不到不拦开局：只是没做牌组对齐（桥侧 /session 还会再校验一次）。
       console.warn("[ai-deck] 取 AI 牌组失败", e);
       setAiDeckSlug(null);
-    }
-  };
-
-  /** C1 反选：把「我的牌组」发给桥，按对位矩阵挑对面牌组并回填 */
-  const chooseCounterPick = async (
-    session?: string,
-  ): Promise<CounterPick | null> => {
-    const mine = myDeck();
-    if (!mine) {
-      return null;
-    }
-    try {
-      const resp = await fetch(`${bridgeBase()}/choose-deck`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          session: session ?? "-",
-          deck: { characters: mine.characters, cards: mine.cards },
-        }),
-      });
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`);
-      }
-      const pick = (await resp.json()) as CounterPick;
-      if (!pick?.characters) {
-        throw new Error(`反选返回异常：${JSON.stringify(pick)}`);
-      }
-      const code = encodeDeck({ characters: pick.characters, cards: pick.cards });
-      if (code) {
-        setOtherDeckCode(code);
-        setOtherDeckEdited(false);
-      }
-      setCounterPick(pick);
-      return pick;
-    } catch (e) {
-      console.warn("[choose-deck] 反选失败", e);
-      setCounterPick(null);
-      return null;
     }
   };
 
@@ -423,7 +359,7 @@ export function App() {
     setMode(GameMode.Editor);
   };
 
-  /** 导入日志：不需要反选，直接定配置进对局 */
+  /** 导入日志：直接定配置进对局 */
   const enterGame = (logEntries?: GameStateLogEntry[]) => {
     if (logEntries) {
       setLogs(logEntries);
@@ -437,7 +373,7 @@ export function App() {
     setMode(GameMode.Standalone);
   };
 
-  /** 开局（D18 流程：人选牌 → AI 看牌反选 → 定先手） */
+  /** 开局（D28：双方牌组与先手都是显式配置，不做反选/随机） */
   const startGame = async () => {
     const mine = myDeck();
     if (!mine) {
@@ -448,13 +384,6 @@ export function App() {
       return;
     }
     const sessionId = newSessionId();
-    if (aiOpponent() && !otherDeckEdited()) {
-      // 没手改过对面牌组 → 让桥按我的牌组反选一次（结果回填并用于本局）
-      const pick = await chooseCounterPick(sessionId);
-      if (pick) {
-        theirs = { characters: pick.characters, cards: pick.cards };
-      }
-    }
     setGameCfg({
       sessionId,
       myDeck: mine,
@@ -499,20 +428,8 @@ export function App() {
                 <input
                   type="text"
                   value={otherDeckCode()}
-                  onInput={(e) => {
-                    setOtherDeckCode(e.currentTarget.value);
-                    setOtherDeckEdited(true);
-                    setCounterPick(null);
-                  }}
+                  onInput={(e) => setOtherDeckCode(e.currentTarget.value)}
                 />
-                <button
-                  type="button"
-                  disabled={!aiOpponent()}
-                  title="按我的牌组用对位矩阵挑一套（D19）"
-                  onClick={() => void chooseCounterPick()}
-                >
-                  AI 反选
-                </button>
                 <button
                   type="button"
                   disabled={!aiOpponent()}
@@ -563,7 +480,6 @@ export function App() {
                     setFirstTurn(e.target.value as FirstTurn)
                   }
                 >
-                  <option value="random">随机</option>
                   <option value="human">
                     {aiOpponent() ? "人类先手" : "我先手"}
                   </option>
@@ -571,7 +487,7 @@ export function App() {
                     {aiOpponent() ? "AI 先手" : "对面先手"}
                   </option>
                 </select>
-                <span>（引擎 seat0 恒先手；选「随机」则开局时掷一次）</span>
+                <span>（引擎 seat0 恒先手；先手必须在开局前选定）</span>
               </div>
               <div class="config-panel__deck">
                 <label>游戏版本</label>
@@ -633,17 +549,6 @@ export function App() {
                     AI 卡组：<code>{aiDeckSlug()}</code>（可「取 AI 牌组」回填到
                     「AI 牌组」，与桥的 <code>--policy</code>/<code>--ai-deck</code>{" "}
                     对齐）。
-                  </Show>
-                </Show>
-                <Show when={counterPick()}>
-                  <br />
-                  反选：<code>{counterPick()!.slug}</code>（
-                  {counterPick()!.method}）— {counterPick()!.reason}
-                  <Show when={counterPick()!.policy_applied === false}>
-                    <br />
-                    注：桥的 <code>--policy</code> 不是 <code>expert:*</code>
-                    （deck-specific），所以只换牌组、不换策略
-                    （{counterPick()!.base_policy ?? "占位"}）。
                   </Show>
                 </Show>
                 <Show when={npcPick() && npcList()}>

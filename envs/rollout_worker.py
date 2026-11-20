@@ -25,6 +25,7 @@ def _process_line(line: str) -> dict:
         seed=int(payload["seed"]),
         policy0=payload.get("policy0", "expert"),
         policy1=payload.get("policy1", "expert"),
+        first_player=int(payload.get("first_player", 0)),
         record_decisions=bool(payload.get("record_decisions", False)),
         record_views=bool(payload.get("record_views", False)),
         tag=payload.get("tag", ""),

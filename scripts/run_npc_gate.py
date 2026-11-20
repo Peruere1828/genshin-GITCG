@@ -1,6 +1,6 @@
 """PvE-v1 gate runner (PLAN.md §4.4 / D17 / D19).
 
-Runs a **decklab-built pool-C deck** against all 16 Mondstadt/Liyue NPC stages
+Runs a **frozen contestant deck** against all 16 Mondstadt/Liyue NPC stages
 over a grid of seeds, and reports the gate metric — **three-star rate** (all
 challenge objectives met) — plus win rate, per-stage and per-objective
 breakdowns, and a cluster CI over stages.
@@ -8,8 +8,8 @@ breakdowns, and a cluster CI over stages.
 It also runs a small set of ablations that separate *deck quality* from *play
 quality* (the B5 brief):
 
-* play quality: same pool-C deck x {contestant, contestant_plain, heuristic}
-* deck quality: same contestant policy x {pool-C deck, pool-C variant}
+* play quality: same deck x {contestant, contestant_plain, heuristic}
+* deck comparison: same contestant policy x {frozen deck, ``superconduct_aggro``}
 * cross-check: the B2/B3 smoke config (``superconduct_aggro`` deck x its own
   scripted expert) re-run under the same seed grid.
 
@@ -31,38 +31,13 @@ import random
 from pathlib import Path
 from typing import Any, Sequence
 
-from common.paths import data_dir, ensure_dir, reports_dir
-from decklab.builder import (
-    POOL_C_FILL,
-    POOL_C_META_CORE,
-    POOL_C_SUPERCONDUCT_CHARACTERS,
-    build_deck,
-    build_pool_c_superconduct,
-    deck_summary,
-    load_pool,
-)
-from envs.decks import deck_spec
+from common.paths import REPO_ROOT, data_dir, ensure_dir, reports_dir
+from envs.decks import deck_spec, deck_summary, load_deck_spec
 from eval.stats import estimate_rate
 from npc.eval import NpcEvalResult, NpcEvalSpec, run_npc_eval
 from npc.spec import stage_names
 
 GATE_THRESHOLD = 0.60
-
-# A deliberately different pool-C deck (same superconduct trio, defensive fill)
-# used only to show that *deck quality* moves the gate number.
-POOL_C_V2_FILL: tuple[int, ...] = (
-    312001, 312001,  # 冒险家头带 (heal on normal attack)
-    321006, 321006,  # 西风大教堂 (end-phase heal)
-    322005, 322005,  # 卯师傅 (food support)
-    333005, 333005, 333005,  # 甜甜花酿鸡
-    333006, 333006,  # 蒙德土豆饼
-    311501,          # one weapon so the weapon objective stays reachable
-    322003, 322003,
-    312005, 312005,
-    322011, 322011,
-    322012, 322012,
-)
-
 
 def _unique(values: Sequence[Any]) -> tuple[Any, ...]:
     """Order-preserving de-duplication.
@@ -117,20 +92,17 @@ def _reproduce_command(
     )
 
 
+CONTESTANT_DECK_PATH = REPO_ROOT / "configs" / "npc" / "contestant_deck.json"
+
+
 def build_decks() -> dict[str, Any]:
-    """Return the decks used by the gate and its ablations."""
-    primary = build_pool_c_superconduct()
-    pool = load_pool()
-    variant = build_deck(
-        pool,
-        POOL_C_SUPERCONDUCT_CHARACTERS,
-        name="decklab_poolc_superconduct_defensive",
-        core=POOL_C_META_CORE,
-        fill=POOL_C_V2_FILL,
-    )
+    """Return the decks used by the gate.
+
+    Decks are always explicit inputs (D28): the contestant deck is a frozen
+    config file, and the cross-check arm reuses an existing scripted deck.
+    """
     return {
-        "poolc_superconduct": primary,
-        "poolc_superconduct_defensive": variant,
+        "poolc_superconduct": load_deck_spec(CONTESTANT_DECK_PATH),
         "superconduct_aggro": deck_spec("superconduct_aggro"),
     }
 
@@ -144,7 +116,7 @@ def arms(seeds: tuple[int, ...], stages: tuple[str, ...]) -> list[dict[str, Any]
             "policy0": "contestant",
             "seeds": seeds,
             "stages": stages,
-            "note": "PRIMARY GATE: decklab pool-C deck x contestant policy",
+            "note": "PRIMARY GATE: frozen contestant deck x contestant policy",
         },
         {
             "arm": "play_plain",
@@ -161,14 +133,6 @@ def arms(seeds: tuple[int, ...], stages: tuple[str, ...]) -> list[dict[str, Any]
             "seeds": seeds,
             "stages": stages,
             "note": "play-quality: same deck, generic heuristic baseline policy",
-        },
-        {
-            "arm": "deck_defensive",
-            "deck": "poolc_superconduct_defensive",
-            "policy0": "contestant",
-            "seeds": seeds,
-            "stages": stages,
-            "note": "deck-quality: same contestant policy, defensive pool-C variant",
         },
         {
             "arm": "deck_meta",
@@ -286,11 +250,11 @@ def _pct(value: float) -> str:
 
 def render_markdown(payload: dict[str, Any]) -> str:
     lines: list[str] = []
-    lines.append("# PvE-v1 门禁报告（decklab 组牌 × 16 关 × 多种子）")
+    lines.append("# PvE-v1 门禁报告（固定牌组 × 16 关 × 多种子）")
     lines.append("")
     lines.append(
         f"> 里程碑：PLAN §4.4 `PvE-v1`（D17/D19）。口径：**纯策略**，"
-        f"contestant = decklab 池 C 组牌，NPC = 关卡 lineup + greedy `NpcPolicy`。"
+        f"contestant = `configs/npc/contestant_deck.json`，NPC = 关卡 lineup + greedy `NpcPolicy`。"
     )
     lines.append(f"> 生成：{payload['generated_at']}；tag=`{payload['tag']}`。")
     lines.append("")
@@ -346,9 +310,9 @@ def render_markdown(payload: dict[str, Any]) -> str:
             f"{_pct(overall['three_star_cluster_ci']['ci_high'])}] |"
         )
     lines.append("")
-    lines.append("## decklab 组牌口径（D19）")
+    lines.append("## 牌组口径（D28）")
     lines.append("")
-    lines.append(payload["decklab_note"])
+    lines.append(payload["deck_note"])
     lines.append("")
     lines.append("## 与 B2/B3 冒烟的差异")
     lines.append("")
@@ -370,14 +334,12 @@ def render_markdown(payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-DECKLAB_NOTE = (
-    "decklab 当前**没有**学习/Agent 式自动组牌（`decklab/README.md` 待办，"
-    "`decklab.sensitivity` 只做固定模板内单卡换卡评测）。本门禁用 "
-    "`decklab/builder.py` 的**确定性规则组牌**近似 D19：以固定 meta 牌组"
-    "（`superconduct_aggro`）的**池 C 可用核心**（含张数）为骨架，再按人工写定的"
-    "池 C 填充序（节奏/aggro + 目标覆盖，含 1 张武器保证 `play_equipment_card` 可达成）"
-    "补到 30 张（每卡 ≤2 张、全部来自池 C）。这是「固定 meta deck + decklab 变体」"
-    "口径，**不是自动组牌 Agent**；偏差已在此记录。角色：甘雨(1101,冰)+刻晴(1403,雷)+北斗(1405,雷)。"
+DECK_NOTE = (
+    "牌组是显式输入（D28：不做组牌/选牌）：主门禁用 "
+    "`configs/npc/contestant_deck.json`（冻结于 2026-11-20，原 decklab 规则组牌产物，"
+    "角色甘雨(1101,冰)+刻晴(1403,雷)+北斗(1405,雷)，30 张、每卡 ≤2 张）。"
+    "该牌组在组牌工具删除前后逐字节一致；组牌质量消融改为与既有脚本牌组 "
+    "`superconduct_aggro` 对照。"
 )
 
 # B2/B3 published smoke (reports/npc/npc_pve_smoke_v1.json): 16 stages x 3 seeds.
@@ -396,8 +358,7 @@ OPEN_ISSUES = (
     "对该关三星率无约束。",
     "关卡特殊规则未在引擎内模拟：`artifact_cards_free`（蒂玛乌斯）、`chef_mao_support_present` + "
     "`pyro_application_on_action_phase_start`（卯师傅）；对局按普通规则跑，蒂玛乌斯/卯师傅偏难/偏易需另立项。",
-    "decklab 无 Agent 式自动组牌：本门禁用 `decklab/builder.py` 规则组牌近似（偏差见上）。"
-    "后续若实现学习/Agent 组牌，需重跑本门禁。",
+    "牌组为冻结配置（D28）：牌组质量变化需显式替换 `configs/npc/contestant_deck.json` 并重跑门禁。",
     "PvE 机制近似（D17）：NPC 无手牌/无骰子/不打出行动牌；引擎只有全局手牌/骰子配置，"
     "NPC 仍持有被 `NpcPolicy` 闲置的手牌与骰子。",
     "`win_within_rounds`（多数 n=5）是主要失分项：打装备/事件牌会牺牲节奏，"
@@ -420,7 +381,7 @@ def _smoke_note(payload: dict[str, Any]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="PvE-v1 gate: decklab deck x 16 stages x seeds")
+    parser = argparse.ArgumentParser(description="PvE-v1 gate: frozen deck x 16 stages x seeds")
     parser.add_argument("--stages", default="all")
     parser.add_argument("--seeds", default=None, help="explicit comma list")
     parser.add_argument("--seed-count", type=int, default=24, help="seeds 1..N when --seeds absent")
@@ -468,7 +429,7 @@ def main(argv: list[str] | None = None) -> int:
         "decks": {
             name: deck_summary(deck) for name, deck in decks.items()
         },
-        "decklab_note": DECKLAB_NOTE,
+        "deck_note": DECK_NOTE,
         "gate": {
             "passed": gate_passed,
             "threshold": GATE_THRESHOLD,

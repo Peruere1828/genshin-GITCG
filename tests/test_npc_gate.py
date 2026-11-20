@@ -74,9 +74,9 @@ def test_reproduce_command_reflects_explicit_seeds():
 def test_build_decks_shapes():
     decks = build_decks()
     assert len(decks["poolc_superconduct"].cards) == 30
-    assert len(decks["poolc_superconduct_defensive"].cards) == 30
+    assert len(decks["poolc_superconduct"].characters) == 3
     assert decks["superconduct_aggro"].name == "superconduct_aggro"
-    assert decks["poolc_superconduct"] != decks["poolc_superconduct_defensive"]
+    assert decks["poolc_superconduct"] != decks["superconduct_aggro"]
 
 
 def test_render_markdown_has_gate_and_ablation_sections():
@@ -84,7 +84,7 @@ def test_render_markdown_has_gate_and_ablation_sections():
         "generated_at": "2026-10-12T00:00:00",
         "tag": "t",
         "command": "python -m scripts.run_npc_gate",
-        "decklab_note": "note",
+        "deck_note": "note",
         "smoke_note": "smoke note",
         "open_issues": ["issue one"],
         "gate": {
@@ -125,4 +125,4 @@ def test_render_markdown_has_gate_and_ablation_sections():
     assert "PASS" in md
     assert "逐关" in md
     assert "组牌质量 vs 打牌质量" in md
-    assert "decklab 组牌口径" in md
+    assert "牌组口径（D28）" in md

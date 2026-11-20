@@ -4,8 +4,7 @@
 configs/
 ├── engine.lock          # 现行版本锁定（每个 run 强制引用其拷贝）
 ├── engine.lock.example  # 新 run 的模板
-├── npc/                 # PvE 关卡规格 + 敌人数据（见 npc/README.md）
-└── pools/               # AI 侧卡池 id 清单（见 pools/README.md）
+└── npc/                 # PvE 关卡规格 + 敌人数据 + 冻结的 contestant 牌组（见 npc/README.md）
 ```
 
 ## engine.lock（D4）

@@ -1,4 +1,4 @@
-"""LLM layer: client plumbing, JSON parsing, assist fallback, coach structure.
+"""LLM layer: client plumbing, JSON parsing, assist fallback.
 
 These use a ``MockLLMClient`` (no network) except the ``contexts`` fixture, which
 plays one local game to obtain real decision contexts.
@@ -10,7 +10,6 @@ import pytest
 
 from common.llm import MockLLMClient, extract_json_object, redact
 from agents.llm_assist import AssistConfig, LLMAssistPolicy
-from coach.replay import ReplayCoach, rule_based_flags
 from envs.decks import deck_spec
 from envs.match import run_match
 from envs.policy import expert_policy, _asset_catalog
@@ -98,54 +97,3 @@ def test_assist_prompt_has_no_hidden_opponent_cards(contexts):
     prompt = client.prompts[0][1]["content"]
     # Opponent hand is described only by size, never by card names.
     assert "opponent hand size=" in prompt
-
-
-def _synthetic_match() -> dict:
-    def view(acting: int) -> dict:
-        chars = [
-            {"definition_id": 1411, "health": 10, "max_health": 10, "energy": 1, "aura": 0, "defeated": False, "is_active": True},
-            {"definition_id": 1510, "health": 8, "max_health": 10, "energy": 0, "aura": 2, "defeated": False, "is_active": False},
-        ]
-        return {
-            "players": [
-                {"characters": chars, "hand_cards": [{"definition_id": 332002}] * 3, "dice": [8, 1, 1]},
-                {"characters": chars, "hand_cards": [{"definition_id": 0}] * 4, "dice": []},
-            ]
-        }
-
-    return {
-        "deck0": "superconduct_aggro",
-        "deck1": "natlan_battleship",
-        "winner": 0,
-        "rounds": 5,
-        "decisions": [
-            {"step_index": 1, "player": 0, "request_type": "action", "chosen_label": "use_skill:x", "legal_labels": ["a"], "player_view": view(0)},
-            {"step_index": 2, "player": 1, "request_type": "action", "chosen_label": "declare_end", "legal_labels": ["a", "b"], "fallback": True, "player_view": view(1)},
-        ],
-    }
-
-
-def test_rule_based_flags_detect_fallbacks():
-    flags = rule_based_flags(_synthetic_match())
-    assert any(flag["step"] == 2 for flag in flags)
-
-
-def test_coach_degrades_without_llm():
-    coach = ReplayCoach(assets=_asset_catalog(), client=None)
-    review = coach.review(_synthetic_match())
-    assert review["llm"] is None
-    assert review["mistakes"]
-    assert "summary" in review
-
-
-def test_coach_with_mock_llm_returns_structured_review():
-    client = MockLLMClient(
-        ['{"summary":"ok","mistakes":[{"step":1,"player":0,"severity":"low","why":"w","better":"b"}],"deck_lessons":["keep tempo"]}']
-    )
-    coach = ReplayCoach(assets=_asset_catalog(), client=client)
-    review = coach.review(_synthetic_match())
-    assert review["llm"]["parsed"] is True
-    assert review["summary"] == "ok"
-    assert review["deck_lessons"] == ["keep tempo"]
-    # rule flags are appended to LLM mistakes
-    assert len(review["mistakes"]) >= 2

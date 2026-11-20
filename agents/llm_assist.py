@@ -29,7 +29,7 @@ class AssistConfig:
     request_types: tuple[str, ...] = ("action",)
     temperature: float = 0.0
     # In-game decisions want low latency, so default to a non-reasoning model.
-    # Deep offline review (coach) can use a reasoning model instead.
+    # Deep offline review can use a reasoning model instead.
     model: str | None = "deepseek-chat"
     # Reasoning models (e.g. deepseek-flash) spend tokens on hidden reasoning
     # before emitting `content`; too small a budget yields empty content.

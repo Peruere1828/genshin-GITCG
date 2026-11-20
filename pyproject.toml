@@ -24,8 +24,6 @@ packages = [
     "agents.scripted",
     "agents.scripted.deck_rules",
     "eval",
-    "coach",
-    "decklab",
     "train",
     "scripts",
     "npc",

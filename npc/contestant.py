@@ -52,8 +52,8 @@ def _asset_catalog():
 
 
 def _card_kind(card_id: int) -> str:
-    """Classify an action card id via the asset tags (see decklab.builder)."""
-    from decklab.builder import card_kind
+    """Classify an action card id via the asset tags (see ``envs.decks.card_kind``)."""
+    from envs.decks import card_kind
 
     return card_kind(card_id)
 
@@ -98,7 +98,7 @@ def build_contestant_profile(deck: DeckSpec):
     names = tuple(catalog.character(int(c)).name for c in deck.characters)
     elements = tuple(catalog.element_for_character(int(c)) for c in deck.characters)
     config = make_rule_config(
-        slug="decklab_contestant",
+        slug="contestant",
         opener=names[0],
         carry=names,
         bench=names[1:],
@@ -106,9 +106,9 @@ def build_contestant_profile(deck: DeckSpec):
         style=_style_for_elements(elements),
     )
     return DeckProfile(
-        slug="decklab_contestant",
+        slug="contestant",
         name=deck.name,
-        author="decklab",
+        author="contestant",
         tags=(),
         share_code="",
         characters=tuple(int(c) for c in deck.characters),

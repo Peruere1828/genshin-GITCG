@@ -19,8 +19,6 @@
 | `eval/` | arena、20 套脚本池、Wilson/Elo | WS2 |
 | `train/` | CVPN、采集/训练/蒸馏、batched inference | WS3 |
 | `agents/` | 纯策略 agent、LLM 辅助、脚本对手适配 | WS4 |
-| `coach/` | 复盘归因、课程建议、BC 标签 | WS4 |
-| `decklab/` | 卡组构筑（模板内 flex 位） | WS4 |
 | `orchestrator/` | 自迭代闭环（占位，未实现） | WS5 |
 | `web/` | 人机调试接口（standalone + HTTP 桥） | WS8 |
 | `npc/` | NPC PvE 调试系统 | WS7 |

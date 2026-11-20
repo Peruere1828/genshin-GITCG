@@ -3,7 +3,7 @@
 This is the WS0 core (PLAN.md): wrap ``gitcg`` so a full game can be played by
 two arbitrary policies, with only ``notification.state``-derived observations
 fed to the agents (no god view). It also records per-decision traces for the
-coach/arena layers.
+arena and report layers.
 """
 
 from __future__ import annotations
@@ -45,10 +45,16 @@ ATTR_CREATEPARAM_STAGE_RULES = int(
     getattr(low_level, "ATTR_CREATEPARAM_STAGE_RULES", 2002)
 )
 
+# Engine CreateParam attribute that pins the first player (the seat whose turn starts
+# the game). Only builds carrying the overlay's first-player change export it; a
+# stock wheel starts seat 0 unconditionally. ``_build_create_param`` therefore sends
+# the attribute only when the wheel knows it, and ``run_match`` checks the result.
+ATTR_CREATEPARAM_FIRST_PLAYER = getattr(low_level, "ATTR_CREATEPARAM_FIRST_PLAYER", None)
+
 
 @dataclass
 class DecisionRecord:
-    """One decision made during a match (for arena stats and coach consumption)."""
+    """One decision made during a match (for arena stats and offline review)."""
 
     player: int
     step_index: int
@@ -146,7 +152,7 @@ def _talent_card_ids() -> frozenset[int]:
     played like an event) and there is no talent ``EquipmentType``, so the
     entity type/equipment pair alone cannot tell a talent from a plain event. We
     fall back to the scripted-expert asset catalog's ``GCG_TAG_TALENT`` tag —
-    the same source ``decklab.builder.card_kind`` uses — so the *recorded* card
+    the same source ``envs.decks.card_kind`` uses — so the *recorded* card
     kind matches the contestant's selection vocabulary
     (``weapon|artifact|talent|support|event``). Without this, a
     ``play_equipment_card`` objective with ``kind="talent"`` could never pass.
@@ -187,6 +193,7 @@ class MatchRecord:
     deck0: str
     deck1: str
     seed: int
+    first_player: int
     winner: int | None
     rounds: int
     decisions0: int
@@ -214,6 +221,7 @@ class MatchRecord:
             "deck1": self.deck1,
             "matchup": self.matchup,
             "seed": self.seed,
+            "first_player": self.first_player,
             "winner": self.winner,
             "rounds": self.rounds,
             "decisions0": self.decisions0,
@@ -551,6 +559,7 @@ def _build_create_param(
     version: str | None = None,
     deterministic_shuffle: bool = True,
     stage_rules: str | None = None,
+    first_player: int = 0,
 ) -> CreateParam:
     create_param = CreateParam(version=version)
     create_param.set_characters(0, list(deck0.characters))
@@ -572,6 +581,15 @@ def _build_create_param(
     # string carries the stage's initial supports/effects. See npc.stage_rules.
     if stage_rules is not None:
         create_param.set_attr(ATTR_CREATEPARAM_STAGE_RULES, stage_rules)
+    if int(first_player) != 0:
+        if ATTR_CREATEPARAM_FIRST_PLAYER is None:
+            raise RuntimeError(
+                f"first_player={first_player} requested, but this gitcg build cannot "
+                "pin the first player (no ATTR_CREATEPARAM_FIRST_PLAYER). Rebuild the "
+                "engine overlay, or put the intended first player in seat 0 and pass "
+                "first_player=0."
+            )
+        create_param.set_attr(int(ATTR_CREATEPARAM_FIRST_PLAYER), int(first_player))
     return create_param
 
 
@@ -598,6 +616,7 @@ def run_match(
     record_final_state: bool = False,
     record_events: bool = False,
     deterministic_shuffle: bool = True,
+    first_player: int = 0,
     full_state_for_agents: bool = False,
     stage_rules: str | None = None,
 ) -> MatchRecord:
@@ -606,6 +625,12 @@ def run_match(
     Both policies are driven from ``notification.state`` observations only. A
     ``max_steps`` guard marks abnormally long games as ``truncated`` instead of
     hanging the caller.
+
+    ``first_player`` is the engine seat that moves first. It is a required part of
+    the match contract (D28) — never inferred or randomised — and is recorded in
+    ``MatchRecord.first_player``. This build starts seat 0 unconditionally, so a
+    non-zero value raises unless the engine overlay's first-player attribute is
+    present.
 
     With ``deterministic_shuffle`` (default) the pile is pre-shuffled in Python
     from ``seed`` so identical inputs reproduce an identical game; see
@@ -627,6 +652,7 @@ def run_match(
         version=version,
         deterministic_shuffle=deterministic_shuffle,
         stage_rules=stage_rules,
+        first_player=first_player,
     )
     game = Game(create_param=create_param)
     decisions: list[DecisionRecord] = [] if record_decisions else []
@@ -658,6 +684,14 @@ def run_match(
     quit_by: int | None = None
     try:
         game.start()
+        # ``first_player`` is an explicit input, never inferred: verify the engine
+        # really starts from that seat instead of silently playing a different game.
+        actual_first = int(game.current_turn())
+        if actual_first != int(first_player):
+            raise RuntimeError(
+                f"engine started with seat {actual_first} to move, "
+                f"but first_player={first_player} was requested"
+            )
         while game.is_running():
             if steps >= max_steps:
                 truncated = True
@@ -697,6 +731,7 @@ def run_match(
         deck0=deck0.name,
         deck1=deck1.name,
         seed=int(seed),
+        first_player=int(first_player),
         winner=winner,
         rounds=int(rounds),
         decisions0=players[0].decisions,

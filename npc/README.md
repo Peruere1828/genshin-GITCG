@@ -1,6 +1,6 @@
 # npc — NPC PvE 调试系统（PLAN.md §3 WS7 / §4.4，D17/D19）
 
-确定性 NPC 假想敌池 + 关卡目标判定 + 独立门禁 **PvE-v1**（decklab 组牌 × 16 关 × 多种子，三星达成率 ≥ 60%）。
+确定性 NPC 假想敌池 + 关卡目标判定 + 独立门禁 **PvE-v1**（`configs/npc/contestant_deck.json` × 16 关 × 多种子，三星达成率 ≥ 60%）。
 定位＝**调试/训练辅助**，不追求复刻游戏内体验、不改动 WS1/WS3/WS4 主线；强度口径同为**纯策略**（LLM 不参与）。
 敌人/关卡数据的权威在 [`configs/npc/`](../configs/npc/README.md)（本包只读不写），机制差异与 schema 未覆盖项也在那里。
 
@@ -22,7 +22,7 @@
 python -m npc.eval --stages all --deck superconduct_aggro \
     --policy expert:superconduct_aggro --seeds 1,2,3 --workers 6 --tag npc_pve_smoke
 
-# PvE-v1 门禁（decklab 池 C 组牌 × 16 关 × 多种子 + 组牌/打牌消融，可断点续跑）
+# PvE-v1 门禁（configs/npc/contestant_deck.json × 16 关 × 多种子 + 打牌消融，可断点续跑）
 python -m scripts.run_npc_gate --stages all --seed-count 24 --workers 8 --tag pve_v1_gate
 ```
 
@@ -49,4 +49,4 @@ python -m scripts.run_npc_gate --stages all --seed-count 24 --workers 8 --tag pv
 ## 待办
 
 - 关卡特殊规则引擎内模拟（`reports/npc/pve_v1_gate.json` 的 `open_issues`）与待核数据补齐。
-- decklab 学习/Agent 式自动组牌落地后**重跑门禁**（当前用 `decklab/builder.py` 规则组牌近似 D19）。
+- 牌组是冻结配置（D28）：换牌组需显式替换 `configs/npc/contestant_deck.json` 并重跑门禁。

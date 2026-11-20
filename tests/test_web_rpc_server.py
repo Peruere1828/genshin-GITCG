@@ -925,7 +925,7 @@ def test_log_failure_does_not_break_rpc(captured, tmp_path, capsys):
 
 
 # --------------------------------------------------------------------------- #
-# C1：/choose-deck 反选 + 按座位派生策略（只在 base 是 expert:* 时改派）
+# 按座位派生策略（只在 base 是 expert:* 时改派；牌组不做选择，D28）
 # --------------------------------------------------------------------------- #
 def _deck_payload(name: str) -> dict:
     from envs.decks import deck_spec
@@ -934,58 +934,7 @@ def _deck_payload(name: str) -> dict:
     return {"characters": list(spec.characters), "cards": list(spec.cards)}
 
 
-def test_choose_deck_returns_counter_pick():
-    state = srv.State(srv.Policy(strategy="greedy", seed=1), base_spec="expert:x")
-    server = _Server(state=state)
-    try:
-        status, pick = server.request(
-            "POST", "/choose-deck",
-            {"session": "g1", "deck": _deck_payload("natlan_battleship")},
-        )
-        assert status == 200
-        assert pick["session"] == "g1"
-        assert pick["method"] in {"matrix-proxy", "matrix-strength", "decklab-rule"}
-        if pick["method"] == "decklab-rule":
-            # 没有 reports/arena 矩阵时的 decklab 兜底牌组没有配套脚本 → heuristic。
-            assert pick["policy"] == "heuristic"
-        else:
-            assert pick["policy"] == f"expert:{pick['slug']}"
-        assert pick["policy_applied"] is True  # base 是 expert:* → 会按牌组改派
-        assert pick["reason"]
-        # 反选结果记进会话，供 /session 校验（优先于 --ai-deck）
-        assert state.picks["g1"]["slug"] == pick["slug"]
-    finally:
-        server.close()
 
-
-def test_choose_deck_rejects_bad_body():
-    server = _Server(srv.Policy(strategy="greedy", seed=1))
-    try:
-        status, out = server.request("POST", "/choose-deck", {"session": "g"})
-        assert status == 400 and "error" in out
-        status, out = server.request(
-            "POST", "/choose-deck", {"session": "g", "deck": {"characters": []}}
-        )
-        assert status == 400 and "error" in out
-    finally:
-        server.close()
-
-
-def test_choose_deck_reports_policy_not_applied_for_neural():
-    """neural:* 是用户显式选的模型 → 只换牌组、不换策略，要如实告知。"""
-    state = srv.State(
-        srv.Policy(strategy="greedy", seed=1), base_spec="neural:ckpt.pt"
-    )
-    server = _Server(state=state)
-    try:
-        _, pick = server.request(
-            "POST", "/choose-deck",
-            {"session": "g2", "deck": _deck_payload("superconduct_aggro")},
-        )
-        assert pick["policy_applied"] is False
-        assert pick["base_policy"] == "neural:ckpt.pt"
-    finally:
-        server.close()
 
 
 def test_session_assigns_per_seat_expert_specs(capsys):
@@ -1057,55 +1006,6 @@ def test_session_does_not_touch_non_expert_policy():
     finally:
         server.close()
 
-
-def test_session_deck_check_prefers_counter_pick_over_ai_deck(capsys):
-    """反选之后，校验对象变成反选结果（否则会拿 --ai-deck 误报不一致）。"""
-    declared = _deck_payload("superconduct_aggro")   # --ai-deck 声明的
-    state = srv.State(
-        srv.Policy(strategy="greedy", seed=1), ai_deck=declared, base_spec=None
-    )
-    server = _Server(state=state)
-    capsys.readouterr()
-    try:
-        # 反选出另一套
-        _, pick = server.request(
-            "POST", "/choose-deck",
-            {"session": "gp", "deck": _deck_payload("natlan_battleship")},
-        )
-        pick_deck = {"characters": pick["characters"], "cards": pick["cards"]}
-
-        # 1) 用反选结果开局 → 不算不一致、不告警
-        _, out = server.request(
-            "POST", "/session",
-            {"session": "gp", "meta": {"ai_seat": 0, "decks": {"0": pick_deck}}},
-        )
-        assert out["deck_mismatch"] is False
-        assert "不一致" not in capsys.readouterr().err
-
-        # 2) 没反选过的会话用同一套 → 与 --ai-deck 声明不符 → 告警（label=--ai-deck）
-        _, out = server.request(
-            "POST", "/session",
-            {"session": "gq", "meta": {"ai_seat": 0, "decks": {"0": pick_deck}}},
-        )
-        assert out["deck_mismatch"] is True
-        err = capsys.readouterr().err
-        assert "不一致" in err and "--ai-deck" in err
-
-        # 3) 反选过、但实际开局用的牌组被改了 → 告警（label=反选结果）
-        server.request(
-            "POST", "/choose-deck",
-            {"session": "gr", "deck": _deck_payload("natlan_battleship")},
-        )
-        capsys.readouterr()
-        _, out = server.request(
-            "POST", "/session",
-            {"session": "gr", "meta": {"ai_seat": 0, "decks": {"0": declared}}},
-        )
-        assert out["deck_mismatch"] is True
-        err = capsys.readouterr().err
-        assert "不一致" in err and "反选结果" in err
-    finally:
-        server.close()
 
 
 # --------------------------------------------------------------------------- #

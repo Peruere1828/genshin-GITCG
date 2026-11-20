@@ -10,6 +10,7 @@ PvE「冒险挑战」NPC 的**关卡规格**与**敌人数据**定义。做法�
 | `npc_enemies_all.json` | 蒙德/璃月 NPC 战斗里出现的**全部敌人类型**（19 类，含 3 史莱姆 / 3 深渊法师）：HP / 元素 / 充能 / A-E-Q / 被动 | **权威**：整份取自 genshin-db（游戏数据，见下「来源」）；能与 GameWith 逐条对上的 11 类已标 `cross_check`。与原 `npc_enemies_timaeus.json` 的差异记在 `discrepancies_with_timaeus_file` |
 | `npc_stages_mond_liyue.json` | 16 个关卡规格（蒙德 8 + 璃月 8）：出战/预备阵容、特殊规则、挑战目标 | 阵容与目标**权威**（来源见下）；特殊规则多数待核（逐关 `special_rules_verified`） |
 | `npc_enemies_timaeus.json` | 蒂玛乌斯三只敌人的 HP / 元素 / 充能 / A-E-Q / 被动 | **权威**（逐条对照公开源，HP 3/8/8 已实测）；保持不变，差异见 all 文件 |
+| `contestant_deck.json` | PvE-v1 门禁里玩家侧用的冻结牌组（3 角色 / 30 张，原 decklab 规则组牌产物） | **权威**：门禁读它；换牌组 = 改本文件 + 重跑 `scripts/run_npc_gate.py`（D28） |
 | `npc_spec_example_timaeus.json` | 蒂玛乌斯关卡规格：阵容、特殊规则、挑战目标、参考日志 | 规格参考；其 `objectives` 为占位，**已被** `npc_stages_mond_liyue.json` 更正（见 `discrepancies_with_npc_spec_example`），原文件保留不动 |
 
 ## 约定（应该这样做）

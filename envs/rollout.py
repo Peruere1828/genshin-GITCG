@@ -20,9 +20,9 @@ from common.lock import runtime_metadata
 class MatchTask:
     """A single match request, addressable by (deck0, deck1, seed).
 
-    ``deck0_inline``/``deck1_inline`` allow evaluating *mutated* decks that have no
-    registry entry (deck-building sensitivity); they are plain
-    ``{"name", "characters", "cards"}`` dicts so they cross the worker boundary.
+    ``deck0_inline``/``deck1_inline`` allow evaluating decks that have no registry
+    entry; they are plain ``{"name", "characters", "cards"}`` dicts so they cross the
+    worker boundary. ``first_player`` is the engine seat that moves first.
     """
 
     index: int
@@ -31,6 +31,7 @@ class MatchTask:
     seed: int
     policy0: str = "expert"
     policy1: str = "expert"
+    first_player: int = 0
     record_decisions: bool = False
     record_views: bool = False
     tag: str = ""
@@ -53,6 +54,7 @@ class MatchTask:
             "seed": self.seed,
             "policy0": self.policy_spec(0),
             "policy1": self.policy_spec(1),
+            "first_player": int(self.first_player),
             "record_decisions": self.record_decisions,
             "record_views": self.record_views,
             "tag": self.tag,
@@ -86,6 +88,7 @@ def run_task(task: MatchTask) -> dict[str, Any]:
         build_policy(task.policy_spec(0), seed=task.seed, role="p0"),
         build_policy(task.policy_spec(1), seed=task.seed, role="p1"),
         seed=task.seed,
+        first_player=int(task.first_player),
         record_decisions=task.record_decisions,
         record_views=task.record_views,
     )

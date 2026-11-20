@@ -37,7 +37,7 @@ rule", §5.4). ``base`` and the rollout policies can themselves be the network
 
 Cost is ``candidates x rollouts`` full games per searched decision; ``top_k`` and
 ``search_every`` bound it. Every decision is logged (``SearchDecision``) for the
-coach/teacher and for distillation features.
+teacher and for distillation features.
 
 Public-belief rooting (M3-CPU S-A, gaps G1+G3)
 ---------------------------------------------
@@ -72,7 +72,7 @@ from envs.snapshot import capture_snapshot
 
 @dataclass
 class SearchDecision:
-    """One searched decision's outcome (also feeds the coach / distillation)."""
+    """One searched decision's outcome (also feeds the teacher / distillation)."""
 
     player: int
     ordinal: int
@@ -621,6 +621,7 @@ def run_search_match(
         deck0=spec0.name,
         deck1=spec1.name,
         seed=int(seed),
+        first_player=0,
         winner=winner,
         rounds=rounds,
         decisions0=len(context.records[0]),

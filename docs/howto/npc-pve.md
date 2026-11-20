@@ -8,11 +8,11 @@
 - 蒙德/璃月全量：**19 类敌人 = 17 个新增 `.gts` + 2 个 NPC 变体**；16 关。
 - Fatui 火债处理人 / 镜女 使用独立 NPC 变体 `9301`（9 HP）/ `9202`（10 HP）；
   官方可玩卡 `2301`（11）/ `2202`（10）保持引擎原版，不再被 PvE 血量污染。
-- `NpcPolicy`（greedy + rotation）；`NpcSpec`/三星判定；decklab 自动组牌。
+- `NpcPolicy`（greedy + rotation）；`NpcSpec`/三星判定；contestant 牌组是显式配置（D28）。
 
 ## 门禁 PvE-v1
 
-- decklab 组牌 × 16 关 × 多种子；三星达成率 ≥60%。
+- `configs/npc/contestant_deck.json` × 16 关 × 多种子；三星达成率 ≥60%。
 - 当前 PASS 74.7% 是**无关卡规则**口径；`npc/eval.py` 现已默认发送关卡规则，
   旧基线需重跑后再引用（spec 指纹已包含 `special_rules.json` 的 sha1）。
 

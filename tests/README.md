@@ -28,7 +28,6 @@
 - `test_env_smoke.py`：脚本对手对局跑通、无 IO 错误 / 无回退。
 - `test_stats.py` / `test_ladder.py`：Wilson CI、Elo。
 - `test_llm.py`：LLM 客户端 JSON 解析/脱敏、LLM 辅助策略「非法响应回退 + 预算 + prompt 不泄密」、教练结构化输出（mock 客户端，无网络）。
-- `test_decklab.py`：换卡保持 30 张、候选池排除、换卡评测小样本（slow）。
 - `test_engine_bridge.py`：L5.4/D12——快照往返无损、续跑克隆确定、`InjectionPolicy` 位置/夹取逻辑（快测）；
   replay-branch 注入 base 选择时逐局复现 base、同注入两次一致、`evaluate_decision` 候选覆盖（slow）。
 - `test_llm_matrix.py`（L5.2）：LLM 矩阵任务网格确定性、纯策略/LLM 行结构、干预与用量记录（mock 客户端，无网络）、
@@ -50,9 +49,6 @@
 - `test_collect.py`（L5.6 + S-C）：集群数据平面——观测/样本 JSON 往返无损、`CollectSpec` 任务网格与指纹稳定、
   撕裂行容错、replay 目录展平；S-C 搜索 teacher 的 `SearchSpec` 往返 + 进 spec 指纹；慢测——并行采集 + 续跑不重复、
   `load_samples` 计数一致、`collect_search_samples` 产出带 solver 目标（根策略归一、根价值、belief 标签）的样本。
-- `test_deck_corpus.py`（探索任务 1）：公开卡组语料——每条分享码经引擎编解码解出 3 角色 + 30 牌、
-  `DeckSpec` 唯一且形状正确、loader 元数据/查找、分享码与存储 id 一致（需资产缓存，否则 skip）；
-  语料 JSON 缺失（gitignore）时整个文件 skip，无网络。
 - `test_npc_spec.py`（PvE-B3）：16 关 `NpcSpec` 加载/校验、中文名→引擎角色 id 映射经 `appears_in` 交叉校验、
   A/E/Q 技能 definition id + 伤害表与 `.gts` 源逐一对照、关卡阵容按 count 展开、未知目标类型报错。
 - `test_npc_policy.py`（PvE-B2）：`NpcPolicy` greedy 取最大伤害 / 平局固定顺序 / 绝不打出行动牌 / 绝不主动切人 /
@@ -63,7 +59,5 @@
   任务网格；slow——`run_npc_eval` 端到端 + 重复运行续跑不重复 + 产物落盘。
 - `test_npc_contestant.py`（PvE-v1，B5）：门禁 contestant 策略——合成 profile 无 deck 专属规则、
   目标注入（装备/事件牌）与不可用时的回退、`inject_objectives=False` 不注入；slow——同种子逐决策复现。
-- `test_decklab_builder.py`（PvE-v1，B5，D19）：规则组牌——池 C 牌组合法（30 张 / ≤2 张 / 全在池内 /
-  角色在池内）、确定性、武器+圣遗物齐备（目标可达）、越界报错、kind 统计。
 
 依赖：需要资产缓存（`data/assets/`）；首次运行会联网拉取，CI 可预置缓存并设 `GITCG_ASSETS_OFFLINE=1`。

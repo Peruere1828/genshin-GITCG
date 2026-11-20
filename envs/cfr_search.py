@@ -662,6 +662,7 @@ def run_cfr_search_match(
         deck0=spec0.name,
         deck1=spec1.name,
         seed=int(seed),
+        first_player=0,
         winner=winner,
         rounds=rounds,
         decisions0=len(context.records[0]),

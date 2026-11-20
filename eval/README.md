@@ -1,7 +1,7 @@
 # eval — 评测与基准（PLAN.md WS2，先于训练建成）
 
 对手池注册表（20 套，D11；refs/Rebel_base_RL/.../gitcg_expert_system/deck_rules/）、arena 并行批量对局、
-TrueSkill/Elo 阶梯（固定基线 + 历史 checkpoint 双向）、分卡组胜率矩阵、逐决策日志（供 coach/ 消费）。
+TrueSkill/Elo 阶梯（固定基线 + 历史 checkpoint 双向）、分卡组胜率矩阵、逐决策日志（供 `reports/` 复盘分析消费）。
 
 ## 已实现（2026-10-07）
 
@@ -22,5 +22,5 @@ TrueSkill/Elo 阶梯（固定基线 + 历史 checkpoint 双向）、分卡组胜
   双侧同种子、逐局流式落盘 + 按 `task_index` 断点续跑 + spec 指纹护栏；聚合落 `reports/explore/`，含 `--baseline` 配对门禁与 `--sample-sizes`。
 - 协议全文与验收映射：`docs/EVAL_PROTOCOL.md`；测试 `tests/test_eval_protocol.py`。
   命令：`python -m scripts.eval_protocol --sample-sizes`、`--smoke` 式小样本见文档 §9。
-- 当前用 Bradley-Terry/Elo（`anchored_bt_rating`）；待办：历史 checkpoint 双向阶梯、逐决策日志接入 coach、曲线出图。
+- 当前用 Bradley-Terry/Elo（`anchored_bt_rating`）；待办：历史 checkpoint 双向阶梯、曲线出图。
   另：搜索值 regret / teacher 一致率尚未接入评测流（见 `docs/EVAL_PROTOCOL.md` §4/§11）。

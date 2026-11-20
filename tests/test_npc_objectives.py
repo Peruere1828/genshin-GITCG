@@ -21,6 +21,7 @@ def _record(
         deck0="contestant",
         deck1="npc_timaeus",
         seed=1,
+        first_player=0,
         winner=winner,
         rounds=rounds,
         decisions0=0,

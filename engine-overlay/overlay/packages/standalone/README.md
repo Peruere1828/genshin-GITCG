@@ -133,11 +133,11 @@ package.json 只导出 `dist/`，Vite dev 无法直接解析其源码，因此�
 
 ## 已完成 / 下一步（WS8 路线）
 
-**已完成**：人选牌（分享码 + **NPC 阵容**，16 关全可选）、**AI 看对手牌反选**
-（`POST /choose-deck`，对位矩阵 + decklab 兜底，未手改时开局自动反选）、
-**先手三选**（人类 / AI / 随机，`humanSeat` 派生座位；弹窗按 `#opponent=` 拿座位，
+**已完成**：双方牌组显式输入（分享码 + **NPC 阵容**，16 关全可选）、
+**先手二选**（人类 / AI；`humanSeat` 派生座位，弹窗按 `#opponent=` 拿座位，
 不再写死 seat0）、模型桥 `--policy` 全 spec、逐决策日志与战绩归档（C4：续局
 `seq` 基线、故障局 `io_error` 归档、`deck_mismatch`/`seat_specs` 落盘）。
+> D28（2026-11-20）：删除 AI 反选与随机先手；牌组/先手一律显式指定。
 协议与近似语义见 `web/README.md`。
 
 **下一步**：
@@ -147,4 +147,4 @@ package.json 只导出 `dist/`，Vite dev 无法直接解析其源码，因此�
 2. **LLM 辅助档**：把 `agents/llm_assist.build_llm_assist_policy` 接成
    `--policy llm:<slug>`，干预记进决策日志（分开报分、不进口径验收）。
 3. **`/notify` 降流量**：每步一次全量状态（一局数千条）→ seq/节流/合并。
-4. **e2e 固化**：把无头 Chromium 冒烟（NPC 阵容 × 先手 × 反选）落成仓库脚本。
+4. **e2e 固化**：把无头 Chromium 冒烟（NPC 阵容 × 先手二选）落成仓库脚本。

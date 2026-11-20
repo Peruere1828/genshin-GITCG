@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from decklab.builder import build_pool_c_superconduct
+from common.paths import REPO_ROOT
+from envs.decks import load_deck_spec
 from reps.action_adapter import BuiltDecisionContext
 from reps.schema import (
     CharacterSnapshot,
@@ -22,6 +23,8 @@ from reps.schema import (
 )
 from npc.contestant import build_contestant_policy, build_contestant_profile
 from npc.spec import get_stage
+
+CONTESTANT_DECK_PATH = REPO_ROOT / "configs" / "npc" / "contestant_deck.json"
 
 WEAPON = 311501  # 旅行剑 (sword)
 ARTIFACT = 312001  # 冒险家头带
@@ -131,13 +134,13 @@ def _end() -> LowLevelActionSpec:
 def test_profile_slug_has_no_deck_specific_rules():
     from agents.scripted.deck_rules import ACTION_RULES
 
-    profile = build_contestant_profile(build_pool_c_superconduct())
+    profile = build_contestant_profile(load_deck_spec(CONTESTANT_DECK_PATH))
     assert profile.slug not in ACTION_RULES
     assert len(profile.character_names) == 3
 
 
 def test_injection_plays_required_weapon_card():
-    deck = build_pool_c_superconduct()
+    deck = load_deck_spec(CONTESTANT_DECK_PATH)
     stage = get_stage("wagner")  # needs a weapon
     policy = build_contestant_policy(deck, stage)
     built = _built([_skill(14031), _card(WEAPON), _end()])
@@ -148,7 +151,7 @@ def test_injection_plays_required_weapon_card():
 
 
 def test_injection_plays_required_event_cards():
-    deck = build_pool_c_superconduct()
+    deck = load_deck_spec(CONTESTANT_DECK_PATH)
     stage = get_stage("uncletian")  # needs 2 event cards
     policy = build_contestant_policy(deck, stage)
     built = _built([_skill(14031), _card(EVENT), _end()])
@@ -158,7 +161,7 @@ def test_injection_plays_required_event_cards():
 
 
 def test_injection_ignored_when_card_not_available():
-    deck = build_pool_c_superconduct()
+    deck = load_deck_spec(CONTESTANT_DECK_PATH)
     stage = get_stage("wagner")  # needs a weapon
     policy = build_contestant_policy(deck, stage)
     built = _built([_skill(14031), _card(ARTIFACT), _end()])
@@ -168,7 +171,7 @@ def test_injection_ignored_when_card_not_available():
 
 
 def test_plain_policy_does_not_inject():
-    deck = build_pool_c_superconduct()
+    deck = load_deck_spec(CONTESTANT_DECK_PATH)
     stage = get_stage("wagner")
     policy = build_contestant_policy(deck, stage, inject_objectives=False)
     built = _built([_skill(14031), _card(WEAPON), _end()])
@@ -177,7 +180,7 @@ def test_plain_policy_does_not_inject():
 
 
 def test_injection_uses_required_burst():
-    deck = build_pool_c_superconduct()
+    deck = load_deck_spec(CONTESTANT_DECK_PATH)
     stage = get_stage("blanche")  # needs 1 elemental burst
     policy = build_contestant_policy(deck, stage)
     built = _built([_skill(14031), _skill(14033), _end()])  # 14033 = 刻晴 burst
@@ -191,7 +194,7 @@ def test_contestant_policy_same_seed_reproducible():
     from envs.match import run_match
     from reps.schema import DeckSpec
 
-    deck = build_pool_c_superconduct()
+    deck = load_deck_spec(CONTESTANT_DECK_PATH)
     stage = get_stage("timaeus")
     npc_deck = DeckSpec(name="npc_timaeus", characters=stage.deck_characters, cards=deck.cards)
 

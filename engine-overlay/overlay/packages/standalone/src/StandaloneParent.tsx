@@ -48,7 +48,7 @@ export interface StandaloneParentProps {
   myDeck: Deck;
   /** 对面座位的牌组对象（AI 模式＝AI 牌组；双人模式＝弹窗那边） */
   otherDeck: Deck;
-  /** 本窗口托管的座位：随机先手时可能是 0（=先手） */
+  /** 本窗口托管的座位：先手由配置指定，可能是 0（=先手） */
   humanSeat: 0 | 1;
   version: Version;
   /**
@@ -114,8 +114,8 @@ function parseSeqBase(raw: unknown): SeqBaseline {
 }
 
 export function StandaloneParent(props: StandaloneParentProps) {
-  // 席位派生：seat0 恒为先手（引擎 currentTurn 从 0 开始）。「随机先手」= 随机决定
-  // 真人坐哪个座位，对面那个座位交给桥/弹窗。
+  // 席位派生：seat0 恒为先手（引擎 currentTurn 从 0 开始）。先手是开局配置里的显式
+  // 输入（D28），真人可能坐 seat0 或 seat1，对面那个座位交给桥/弹窗。
   const HUMAN_WHO: 0 | 1 = props.humanSeat;
   const OTHER_WHO: 0 | 1 = (1 - props.humanSeat) as 0 | 1;
   // 两个座位各自的牌组：真人坐 seat0 时两张牌对调。
@@ -168,7 +168,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
     if (popupWindow() !== null) {
       return;
     }
-    // 弹窗托管的是对面座位（真人随机先手时可能在 seat0 或 seat1），座位号经
+    // 弹窗托管的是对面座位（真人可能在 seat0 或 seat1），座位号经
     // URL hash 传给弹窗——写死 seat0 会让「真人先手」那半数的对局里弹窗视角错位
     // （自己的手牌显示成对手的暗牌）。
     const url = `${window.location.href.split("#")[0]}#opponent=${OTHER_WHO}`;
@@ -367,7 +367,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
   };
 
   // T3：把本局两个座位的牌组（definition id）报给桥。桥用它校验
-  // AI 座位的牌组是否等于 `--ai-deck`/反选声明的那套（脚本专家规则按自家牌组写，
+  // AI 座位的牌组是否等于 `--ai-deck` 声明的那套（脚本专家规则按自家牌组写，
   // 牌组不符会静默变蠢），并按实际牌组派生座位策略，写进决策日志。
   // `resume=true` 是「从此处继续」：桥会把座位 seq 顶到上一局之后并回一个
   // `seq_base`（本局 io 必须从它接着数，见 ai-http-io.ts 的 seqBase）。
@@ -574,7 +574,7 @@ export function StandaloneParent(props: StandaloneParentProps) {
       return;
     }
     if (data.method === "giveUp") {
-      // 弹窗托管的是对面那个座位（真人随机先手时可能在 seat0 或 seat1）。
+      // 弹窗托管的是对面那个座位（真人可能在 seat0 或 seat1）。
       game?.giveUp(OTHER_WHO);
     }
   };

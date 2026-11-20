@@ -125,7 +125,7 @@ python -m scripts.datafirst_bc_store --replays data/replays/<tag> --store-cache 
 ## 6. NPC PvE 调试系统（独立门禁）
 
 - 定位：调试/训练辅助，不进口径验收。
-- 门禁 PvE-v1：decklab 组牌 × 16 关 × 多种子，三星 ≥60%；当前 PASS 74.7%，但支援区/多轮挑战与游戏内机制不一致需标注。
+- 门禁 PvE-v1：`configs/npc/contestant_deck.json` × 16 关 × 多种子，三星 ≥60%；当前 PASS 74.7%，但支援区/多轮挑战与游戏内机制不一致需标注。
 - 入口：`npc/README.md`、`configs/npc/README.md`、`docs/howto/npc-pve.md`。
 
 ## 7. Web 人机调试接口（独立线）
