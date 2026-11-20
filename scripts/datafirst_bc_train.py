@@ -116,6 +116,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--matchup-weight-strength", type=float, default=1.0)
     p.add_argument("--matchup-floor", type=float, default=0.45)
     p.add_argument("--pg-entropy", type=float, default=0.01, help="entropy bonus for --loss pg")
+    p.add_argument(
+        "--pg-anchor-kl", type=float, default=0.0,
+        help="KL penalty to the warm-started policy (variance reducer for 1-epoch PG; "
+             "0 = off). Measured motivation: the same PG round moves +0.015 / -0.128 "
+             "between seeds, which buries a 2-3pp effect.",
+    )
     p.add_argument("--grad-clip", type=float, default=0.0, help="gradient norm clip (PG rounds use 1.0)")
     p.add_argument("--no-pg-advantage-norm", action="store_true",
                    help="disable per-batch advantage normalisation for --loss pg")
@@ -319,6 +325,7 @@ def main(argv: list[str] | None = None) -> int:
         matchup_weight_strength=args.matchup_weight_strength,
         matchup_floor=args.matchup_floor,
         pg_entropy=args.pg_entropy,
+        pg_anchor_kl=args.pg_anchor_kl,
         grad_clip=args.grad_clip,
         pg_advantage_norm=not args.no_pg_advantage_norm,
         privileged=bool(use_privileged and getattr(model, "has_privileged", False)),

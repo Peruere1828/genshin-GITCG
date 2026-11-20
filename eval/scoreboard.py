@@ -255,29 +255,43 @@ def evaluate_gates(
     floor: float | None = None,
     require_clean: bool = True,
     strict_ci: bool = False,
+    expert_per_opponent: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Map a summary to the protocol's go/no-go gates.
 
     ``strict_ci=True`` requires the *cluster* CI lower bound to clear the pooled
     threshold (certification-grade); otherwise only the point estimate must clear
     it (screening / training-gate grade). See ``reports/explore/eval_protocol.md``.
+
+    ``expert_per_opponent`` implements **D25**: a matchup where the *scripted
+    expert itself* cannot clear the floor (its Wilson lower bound is below
+    ``floor``) is *teacher-limited* and exempt from the contestant's floor. Without
+    that table the gate can only report the raw form, which marks a matchup as a
+    violation even when the reference policy fails it too (e.g. dvalin vs the two
+    strongest decks). Exempt matchups are reported in ``floor_exempt`` for audit.
     """
     floor = summary.get("floor", 0.45) if floor is None else floor
     pooled = float(summary.get("pooled_rate", 0.0))
     cluster_low = float(summary.get("cluster_ci_low", 0.0))
     quality = summary.get("quality", {})
     per_opponent = summary.get("per_opponent", {})
+    exempt: list[str] = []
     if strict_ci:
         # Certification form (§2.4 / §5.4): the per-opponent Wilson *lower*
         # bound must clear the floor, not just the noisy point estimate. The
         # screening form below keeps the point estimate so a `< floor` opponent
         # is flagged for investigation rather than auto-failed.
-        violations = sorted(
-            opponent
-            for opponent, row in per_opponent.items()
-            if row.get("games", 0) > 0 and float(row.get("ci_low", 0.0)) < floor
-        )
-        floor_mode = "wilson_low"
+        violations = []
+        for opponent, row in sorted(per_opponent.items()):
+            if row.get("games", 0) <= 0 or float(row.get("ci_low", 0.0)) >= floor:
+                continue
+            if expert_per_opponent is not None:
+                expert = expert_per_opponent.get(opponent) or {}
+                if expert.get("games", 0) > 0 and float(expert.get("ci_low", 0.0)) < floor:
+                    exempt.append(opponent)
+                    continue
+            violations.append(opponent)
+        floor_mode = "wilson_low_d25" if expert_per_opponent is not None else "wilson_low"
     else:
         violations = list(summary.get("floor_violations", []))
         floor_mode = "point"
@@ -292,6 +306,7 @@ def evaluate_gates(
         "floor_mode": floor_mode,
         "floor_pass": len(violations) == 0,
         "floor_violations": violations,
+        "floor_exempt": exempt,
         "clean_pass": (quality.get("fallback_rate", 0.0) == 0.0
                        and quality.get("error_rate", 0.0) == 0.0)
         if require_clean

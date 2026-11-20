@@ -628,6 +628,25 @@ def main(argv: list[str] | None = None) -> int:
             outcomes_from_rows(rows), outcomes_from_rows(baseline_rows)
         )
         report["paired_vs_baseline"] = paired
+        # D25: re-evaluate the floor with the *expert's own* per-opponent Wilson
+        # bounds, so a matchup the reference policy cannot clear either is exempt
+        # instead of failing the contestant. Recorded, not inferred.
+        expert_summary = summarize(outcomes_from_rows(baseline_rows), floor=args.floor)
+        report["expert_per_opponent"] = {
+            opponent: {
+                "games": row.get("games", 0),
+                "rate": row.get("rate", 0.0),
+                "ci_low": row.get("ci_low", 0.0),
+            }
+            for opponent, row in expert_summary.get("per_opponent", {}).items()
+        }
+        report["gates"] = evaluate_gates(
+            report["summary"],
+            pooled_threshold=args.pooled_threshold,
+            floor=args.floor,
+            strict_ci=args.strict_ci,
+            expert_per_opponent=expert_summary.get("per_opponent"),
+        )
         report["noninferiority"] = (
             noninferiority_gate(paired, tolerance=0.02) if paired else None
         )

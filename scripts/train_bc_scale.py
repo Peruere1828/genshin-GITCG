@@ -610,7 +610,8 @@ def _value_loss(value: torch.Tensor, targets: torch.Tensor, config, model) -> to
 
 
 def run_batch(model, store, index, device, value_coef, belief_coef, has_belief,
-              config=None, q_scale=None, sample_weights=None, privileged=None):
+              config=None, q_scale=None, sample_weights=None, privileged=None,
+              anchor=None):
     tokens, token_mask, options, option_mask, teacher, values = _collate(store, index, device)
     if privileged is None and config is not None and getattr(config, "privileged", False):
         # D30: privileged state feeds the critic only; the policy loss below is
@@ -672,6 +673,20 @@ def run_batch(model, store, index, device, value_coef, belief_coef, has_belief,
             raise ValueError(f"unknown loss kind: {loss_kind!r}")
     mse = _value_loss(value, values, config, model)
     bl = _belief_loss(belief, _belief_batch(store, index, device)) if has_belief else torch.zeros((), device=device)
+    if anchor is not None and getattr(config, "pg_anchor_kl", 0.0):
+        # Trust region around the warm-started policy: KL(pi || pi_anchor) over the
+        # *legal* options only. Both log-softmaxes are masked the same way, because
+        # padded logits are -inf and 0 * -inf would be NaN.
+        with torch.no_grad():
+            anchor_out = anchor(tokens, token_mask, options, option_mask)
+            anchor_logits = anchor_out[0] if isinstance(anchor_out, tuple) else anchor_out
+            logp_anchor = F.log_softmax(anchor_logits, dim=-1)
+            logp_anchor = torch.where(option_mask, logp_anchor, torch.zeros_like(logp_anchor))
+        logp_student = F.log_softmax(logits, dim=-1)
+        logp_student = torch.where(option_mask, logp_student, torch.zeros_like(logp_student))
+        kl = (logp_student.exp() * (logp_student - logp_anchor)).sum(dim=-1).mean()
+        policy_loss = policy_loss + float(config.pg_anchor_kl) * kl
+        extra["kl"] = float(kl.item())
     loss = policy_loss + value_coef * mse + belief_coef * bl
     with torch.no_grad():
         acc = (logits.argmax(dim=-1) == teacher).float().mean()
@@ -756,6 +771,13 @@ class Config:
     # This is on-policy, unlike AWR on expert data (which was neutral-to-harmful).
     pg_entropy: float = 0.01
     pg_advantage_norm: bool = True
+    # KL anchor to the *initial* (warm-started) policy: ``+ c * KL(pi || pi_init)``.
+    # A 1-epoch PG round at lr 3e-5 moves the policy by ~10pp of win rate between
+    # seeds (measured 2026-11-20: +0.015 vs -0.128 on the same data). The anchor is
+    # the standard variance reducer: it keeps the update inside the trust region of
+    # the teacher, so a 2-3pp feature effect is not buried in run-to-run noise.
+    # 0 = off (historical behaviour, bit-identical).
+    pg_anchor_kl: float = 0.0
     grad_clip: float = 0.0     # 0 = off; PG rounds use 1.0
     # --- D30 privileged critic -------------------------------------------------
     # ``privileged`` trains the value head on the god's-eye state (never the
@@ -799,6 +821,19 @@ def train(
             f"dropout={config.privileged_dropout}",
             flush=True,
         )
+    anchor = None
+    if getattr(config, "pg_anchor_kl", 0.0):
+        if config.loss != "pg":
+            raise ValueError("pg_anchor_kl is only defined for --loss pg")
+        import copy as _copy
+
+        anchor = _copy.deepcopy(model).to(config.device).eval()
+        for parameter in anchor.parameters():
+            parameter.requires_grad_(False)
+        print(
+            f"[train] KL anchor to the warm-start policy: coef={config.pg_anchor_kl}",
+            flush=True,
+        )
     opt = torch.optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     n = len(train_store)
     q_scale = (
@@ -834,14 +869,15 @@ def train(
             if not index:
                 continue
             opt.zero_grad(set_to_none=True)
-            loss, info = run_batch(model, train_store, index, config.device, config.value_coef, config.belief_coef, has_belief, config, q_scale, sample_weights)
+            loss, info = run_batch(model, train_store, index, config.device, config.value_coef, config.belief_coef, has_belief, config, q_scale, sample_weights, anchor=anchor)
             loss.backward()
             if getattr(config, "grad_clip", 0.0):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), float(config.grad_clip))
             opt.step()
             agg["loss"] += float(loss.item())
-            for k in ("ce", "value", "belief", "acc"):
-                agg[k] += info[k]
+            for k in ("ce", "value", "belief", "acc", "kl"):
+                if k in info:
+                    agg[k] = agg.get(k, 0.0) + info[k]
             nb += 1
         for k in agg:
             agg[k] /= max(1, nb)

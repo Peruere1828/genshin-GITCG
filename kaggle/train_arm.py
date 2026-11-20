@@ -255,6 +255,69 @@ HIST_RUNS = [
      "allow_history_mismatch": True, "history_branch": True, "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
 ]
 
+HIST2_RUNS = [
+    # Floor-repair + PG-variance round (2026-11-20, follow-up to failures/008).
+    # Store = the 2,000-game base corpus + 400 games against dvalin's two structural
+    # weak matchups (unyielding_geo, shenhe_double_swirl), collected with the
+    # *scripted expert* as teacher: the expert wins 0.65 / 0.50 there while the
+    # current model wins 0.35 / 0.35, so this is the only data source that shows a
+    # winning line instead of 200 more losing ones.
+    #   tg_bc_e20   : stable imitation arm on the merged corpus (20 CE epochs)
+    #   tg_pg_ank_sN: 1-epoch PG with a KL anchor to the warm start, 3 seeds --
+    #                 the same round measured +0.015 / -0.128 between seeds without
+    #                 the anchor, which buries any 2-3pp effect.
+    {"name": "tg_bc_e20_s0", "store": "tgt_dvalin_merged.pt", "loss": "ce", "epochs": 20,
+     "lr": 1e-4, "batch_size": 256, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
+    {"name": "tg_pg_ank_s0", "store": "tgt_dvalin_merged.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "pg_anchor_kl": 0.1,
+     "grad_clip": 1.0, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 3600},
+    {"name": "tg_pg_ank_s1", "store": "tgt_dvalin_merged.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "pg_anchor_kl": 0.1,
+     "grad_clip": 1.0, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 1, "run_timeout": 3600},
+    {"name": "tg_pg_ank_s2", "store": "tgt_dvalin_merged.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "pg_anchor_kl": 0.1,
+     "grad_clip": 1.0, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 2, "run_timeout": 3600},
+]
+
+HIST3_RUNS = [
+    # hist2 + the mirror matchup (dvalin_bonk) in the targeted set. The 800-pair
+    # certification of the teacher on seeds 9600-9619 shows dvalin's PASS now hinges
+    # ONLY on the floor: pooled 0.79 and paired delta +0.040 [+0.010,+0.070] already
+    # clear, but `unyielding_geo` (0.550) and the mirror `dvalin_bonk` are below the
+    # 0.45 Wilson-low bar while the scripted expert clears it (0.650 each), i.e. a
+    # ~10pp imitation gap on exactly two matchups -- not a teacher-limited one.
+    {"name": "tg2_bc_e20_s0", "store": "tgt_dvalin_merged2.pt", "loss": "ce", "epochs": 20,
+     "lr": 1e-4, "batch_size": 256, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
+    {"name": "tg2_bc_e40_s0", "store": "tgt_dvalin_merged2.pt", "loss": "ce", "epochs": 40,
+     "lr": 5e-5, "batch_size": 256, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
+    {"name": "tg2_pg_ank_s0", "store": "tgt_dvalin_merged2.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "pg_anchor_kl": 0.1,
+     "grad_clip": 1.0, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 3600},
+    {"name": "tg2_pg_ank_s1", "store": "tgt_dvalin_merged2.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "pg_anchor_kl": 0.1,
+     "grad_clip": 1.0, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 1, "run_timeout": 3600},
+]
+
+HIST4_RUNS = [
+    # Third floor round: the only non-exempt matchup below the Wilson-low bar is
+    # `double_geo_navia` (us 0.487 vs expert 0.637 pooled over 80 games/matchup), so
+    # the targeted set now also carries 200 expert-taught games against it.
+    {"name": "tg3_bc_e20_s0", "store": "tgt_dvalin_merged3.pt", "loss": "ce", "epochs": 20,
+     "lr": 1e-4, "batch_size": 256, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
+    {"name": "tg3_bc_e30_s0", "store": "tgt_dvalin_merged3.pt", "loss": "ce", "epochs": 30,
+     "lr": 5e-5, "batch_size": 256, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
+]
+
 MODE_RUNS = {
     "h4": H4_RUNS,
     "alld": ALL_DECKS_RUNS,
@@ -267,6 +330,9 @@ MODE_RUNS = {
     "wave2": GROUP_C_RUNS + GROUP_B_RUNS + CAPACITY_RUNS,
     "gb2": GB2_RUNS,
     "hist1": HIST_RUNS,
+    "hist2": HIST2_RUNS,
+    "hist3": HIST3_RUNS,
+    "hist4": HIST4_RUNS,
 }
 
 SMOKE_RUNS = [
