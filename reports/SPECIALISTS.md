@@ -6,7 +6,7 @@ One row per deck: the best certified arm (highest paired delta, then pooled rate
 | deck | pooled | expert | delta | 95% CI | pairs | matchups <45% | gate | arm |
 |---|---|---|---|---|---|---|---|---|
 | double_geo_navia | 0.8800 | 0.7125 | +0.1675 | [+0.134,+0.201] | 800 | 0 | PASS | `final20_dgeo` |
-| shenhe_double_swirl | 0.7450 | 0.6775 | +0.0675 | [+0.018,+0.117] | 400 | 1 | fail | `rl_shenhe2_shenhe_double_swirl` |
+| shenhe_double_swirl | 0.7569 | 0.6581 | +0.0988 | [+0.074,+0.124] | 1600 | 1 | PASS | `cert_shenhe2_s10500` |
 | unyielding_geo | 0.9087 | 0.8538 | +0.0550 | [+0.027,+0.083] | 800 | 0 | PASS | `final20_ungeo` |
 | dvalin_bonk | 0.7738 | 0.7288 | +0.0450 | [+0.014,+0.076] | 800 | 1 | PASS | `screen_r7_lr2e5_s10200` |
 | skirk_ayaka_navia | 0.2275 | 0.1875 | +0.0400 | [-0.011,+0.091] | 400 | 16 | fail | `screen_alld_skirk_ayaka_navia` |
@@ -25,6 +25,6 @@ One row per deck: the best certified arm (highest paired delta, then pooled rate
 | skirk_chasca_freeze | 0.0850 | 0.1975 | -0.1125 | [-0.154,-0.071] | 400 | 19 | fail | `screen_alld_skirk_chasca_freeze` |
 | yelan_clorinde_ororon | 0.2700 | 0.4475 | -0.1775 | [-0.230,-0.125] | 400 | 15 | fail | `screen_alld_yelan_clorinde_ororon` |
 
-Decks with a certified arm: **19**  |  full gate PASS: **3**  |  absolute parity or better vs the scripted expert: **6**
+Decks with a certified arm: **19**  |  full gate PASS: **4**  |  absolute parity or better vs the scripted expert: **6**
 
 Note: the strict Wilson floor needs ~20 seeds per deck to be informative (at 10 seeds a true 0.50 matchup rate has a Wilson lower bound near 0.30, so the floor check fails on statistical power alone).

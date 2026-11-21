@@ -10,10 +10,13 @@
 | `double_geo_navia` | `final20_dgeo` | **0.8800** | 0.7125 | **+0.1675** [+0.134,+0.201] | 800 | 0 | **PASS** |
 | `unyielding_geo` | `final20_ungeo` | **0.9087** | 0.8538 | **+0.0550** [+0.027,+0.083] | 800 | 0 | **PASS** |
 | `dvalin_bonk` | `r7_gb50_lr2e5_e2_s0` | **0.7650** | 0.7344 | **+0.0306** [+0.008,+0.053] | **1600** | 0（D25 豁免 2 个） | **PASS**（2026-11-21） |
+| `shenhe_double_swirl` | `rl_shenhe2_shenhe_double_swirl` | **0.7569** | 0.6581 | **+0.0988** [+0.074,+0.124] | **1600** | 0（D25 豁免 2 个） | **PASS**（2026-11-21，待 D32 第二套） |
 | `shenhe_double_swirl` | `rl_shenhe1_...` | 0.7025 | 0.6650 | +0.0375 [−0.014,+0.089] | 400 | 2 | fail |
 | `electro_manifestation_nuke` | `rl_electro1_...` | 0.6850 | 0.6550 | +0.0300 [−0.025,+0.085] | 400 | 2 | fail |
 
-- 19 个 deck 有认证臂；**3 个完整门禁 PASS**（dgeo / ungeo / **dvalin**）；6 个达到专家 parity 或更好。
+- 19 个 deck 有认证臂；**4 个完整门禁 PASS**（dgeo / ungeo / dvalin / **shenhe**）；6 个达到专家 parity 或更好。
+- **D32 状态**：`dvalin`(+0.031) 与 `shenhe`(+0.099) 目前各只跑了**一套** 1600 局 → 记 **provisional**；
+  两者都需在第二套不相交种子上复现才转 stable。`ungeo` 仍是 800 局，需补到 1600×2。
 - dvalin 的 PASS 是 2026-11-21 的**第五轮**：game-level batch（≥50 局/步）+ KL 锚 0.2 + lr 2e-5，
   40 seeds / 1600 配对局，pooled 0.765、D25 floor 干净、Δ +0.0306 CI 不含 0。见 §6.8。
 - 生成源：`python -m scripts.specialist_table` → `reports/SPECIALISTS.md`；方法见 `docs/PLAYBOOK.md`。
@@ -121,7 +124,7 @@
 把"专家自己也过不了"的 matchup 记成违规；现已实现（`floor_mode="wilson_low_d25"`、
 `floor_exempt` 字段、`expert_per_opponent` 入参），并加测试 `tests/test_floor_exemption.py`。
 
-### 6.8 第三个 PASS：game-level batch 的 PG（2026-11-21）
+### 6.8 第三、第四个 PASS：game-level batch 的 PG（2026-11-21）
 
 按 §6.7 的重开条件换的是**更新方式**，不是种子：
 
@@ -155,3 +158,17 @@ PASS 集合 **2 → 3**（dgeo、ungeo、dvalin）。
 - 机器环境：`docs/environments/README.md`
 - 评测协议：`docs/EVAL_PROTOCOL.md`
 - 决策索引：`docs/decisions/README.md`
+
+### 6.9 第四个 PASS：shenhe（2026-11-21）
+
+`rl_shenhe2_shenhe_double_swirl` 在 **40 seeds / 1600 配对局（seeds 10500–10539，全新）** 上：
+
+```
+pooled=0.757  wilson95=[0.735,0.777]
+gates: pooled=True floor=True clean=True -> PASS      (floor_mode=wilson_low_d25)
+paired vs baseline: delta=+0.099 95%=[+0.074,+0.124] n=1600
+floor_exempt: ['dvalin_bonk', 'unyielding_geo']       # 专家自己也 <0.45
+```
+
+这同时纠正了排序：shenhe 的旧屏（400 局）已是 +0.0675 CI[+0.018,+0.117]，**不需要新一轮训练**就过线；
+按 D32 需第二套 1600 局（seeds 10600+）转 stable。
