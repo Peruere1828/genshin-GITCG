@@ -1,7 +1,7 @@
 ---
 title: "010 — dvalin 再走一轮自博弈 PG：仍停在 parity（+0.021@800）"
 kind: failure
-status: negative
+status: superseded
 freshness: 2026-11-21
 machines: [local, kaggle-t4]
 authority: evidence
@@ -47,6 +47,13 @@ gates (D25): pooled=True floor=False → 违规 klee_mavuika_mualani
 3. **floor 的阻塞 matchup 在轮换**：seeds 9900 是 `double_geo_navia`（D25 后豁免），
    seeds 10100 变成 `klee_mavuika_mualani`（不豁免）。40 局/matchup 的 Wilson low
    标准误 ±8pp，单轮认证的 floor 结论同样不稳。
+
+## 后续（2026-11-21，已推翻本条的"到顶"判断）
+
+换成 **game-level batch**（`--batch-games 50`）+ 重新标定的 lr（2e-5）+ 锚 0.2 后，同一 deck 在同一
+数据量（2,000 局）下 Δ = **+0.031 [+0.008,+0.053]**（1600 配对局，seeds 10300–10339），
+pooled 0.765、D25 floor 干净 → **第三个 PASS**。见 `docs/STATUS.md §6.8`、`docs/PLAYBOOK.md §7.7`。
+本条保留的是"1-epoch、≈5 局/批"这一族的负结果与其重开条件。
 
 ## 结论
 

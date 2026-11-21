@@ -167,6 +167,35 @@ python -m scripts.datafirst_bc_train --store-cache <store> --init-from <teacher>
 
 判据：**任何新的 PG 结论必须带 ≥3 seeds**，并报告 seed 间极差；单 seed 不作为证据。
 
+## 7.7 低方差 PG：整局 batch（≥50 局/步）+ 步长响应曲线
+
+**问题**：`--batch-size 256` 只有 ≈5 局，局内回报是常数 → advantage 的方差由"这批赢了哪几局"主导。
+同配方换 seed，引擎 Δ 从 +0.015 摆到 −0.128（`failures/008`）。
+
+**做法**：`--batch-games 50`（按 `(deck, opponent, seed)` 聚整局，局不拆；`--batch-samples-cap`
+限内存），`--pg-anchor-kl` 防漂移。
+
+**关键：整局 batch 每步的梯度强得多**，lr 必须跟着往下调，不能沿用 3e-5。先用 1–2 个 epoch
+量出「lr → KL → val_acc」响应，再定参。实测（2,000 局自博弈数据、50 局/步、anchor 0.2）：
+
+| lr | 2 epoch 后 KL | val_acc | 结论 |
+|---:|---:|---:|---|
+| 1e-5 | 0.005 | 0.864 | 太保守，等于没训 |
+| **2e-5** | **0.013** | **0.859** | **可用；认证 Δ +0.031 [+0.008,+0.053]** |
+| 3e-5 | 0.173 | 0.775 | 掉太多 |
+| 1.5e-4 × 4ep | — | 0.28–0.49 | 崩 |
+
+参考配方（dvalin 第三个 PASS 就是这条）：
+
+```bash
+python -m scripts.datafirst_bc_train --store-cache <selfplay store> \
+  --init-from <BC 臂> --loss pg --batch-games 50 --batch-samples-cap 8192 \
+  --epochs 2 --lr 2e-5 --pg-anchor-kl 0.2 --pg-entropy 0.01 --grad-clip 1.0 --no-privileged ...
+```
+
+判据：3 seeds 的 val_acc 极差 <1pp 且 KL <0.05 才算"稳"；再用 800 配对局筛选，
+Δ CI_low > 0 才进 1600 局认证。
+
 ## 8. 不要写进 PLAYBOOK 的东西
 
 - 只有一次 run、没有独立种子复验的 +Δ。

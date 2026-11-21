@@ -6,11 +6,11 @@ One row per deck: the best certified arm (highest paired delta, then pooled rate
 | deck | pooled | expert | delta | 95% CI | pairs | matchups <45% | gate | arm |
 |---|---|---|---|---|---|---|---|---|
 | double_geo_navia | 0.8800 | 0.7125 | +0.1675 | [+0.134,+0.201] | 800 | 0 | PASS | `final20_dgeo` |
+| shenhe_double_swirl | 0.7450 | 0.6775 | +0.0675 | [+0.018,+0.117] | 400 | 1 | fail | `rl_shenhe2_shenhe_double_swirl` |
 | unyielding_geo | 0.9087 | 0.8538 | +0.0550 | [+0.027,+0.083] | 800 | 0 | PASS | `final20_ungeo` |
+| dvalin_bonk | 0.7738 | 0.7288 | +0.0450 | [+0.014,+0.076] | 800 | 1 | PASS | `screen_r7_lr2e5_s10200` |
 | skirk_ayaka_navia | 0.2275 | 0.1875 | +0.0400 | [-0.011,+0.091] | 400 | 16 | fail | `screen_alld_skirk_ayaka_navia` |
-| dvalin_bonk | 0.7800 | 0.7425 | +0.0375 | [-0.009,+0.084] | 400 | 1 | fail | `rl_dvalin1_dvalin_bonk` |
-| shenhe_double_swirl | 0.7025 | 0.6650 | +0.0375 | [-0.014,+0.089] | 400 | 2 | fail | `rl_shenhe1_shenhe_double_swirl` |
-| electro_manifestation_nuke | 0.6850 | 0.6550 | +0.0300 | [-0.025,+0.085] | 400 | 2 | fail | `rl_electro1_electro_manifestation_nuke` |
+| electro_manifestation_nuke | 0.7175 | 0.6875 | +0.0300 | [-0.021,+0.081] | 400 | 3 | fail | `rl_electro2_electro_manifestation_nuke` |
 | superconduct_aggro | 0.5050 | 0.5088 | -0.0037 | [-0.057,+0.050] | 400 | 11 | fail | `h4v2_h4m_e150_superconduct_aggro` |
 | superconduct_mika_attack | 0.5437 | 0.5675 | -0.0238 | [-0.078,+0.031] | 400 | 8 | fail | `alld_e150_superconduct_mika_attack` |
 | natlan_battleship | 0.2562 | 0.2850 | -0.0288 | [-0.077,+0.020] | 400 | 15 | fail | `base_gb_natlan` |
@@ -25,6 +25,6 @@ One row per deck: the best certified arm (highest paired delta, then pooled rate
 | skirk_chasca_freeze | 0.0850 | 0.1975 | -0.1125 | [-0.154,-0.071] | 400 | 19 | fail | `screen_alld_skirk_chasca_freeze` |
 | yelan_clorinde_ororon | 0.2700 | 0.4475 | -0.1775 | [-0.230,-0.125] | 400 | 15 | fail | `screen_alld_yelan_clorinde_ororon` |
 
-Decks with a certified arm: **19**  |  full gate PASS: **2**  |  absolute parity or better vs the scripted expert: **6**
+Decks with a certified arm: **19**  |  full gate PASS: **3**  |  absolute parity or better vs the scripted expert: **6**
 
 Note: the strict Wilson floor needs ~20 seeds per deck to be informative (at 10 seeds a true 0.50 matchup rate has a Wilson lower bound near 0.30, so the floor check fails on statistical power alone).

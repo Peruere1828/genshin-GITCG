@@ -9,13 +9,15 @@
 |---|---|---:|---:|---:|---:|---:|---|
 | `double_geo_navia` | `final20_dgeo` | **0.8800** | 0.7125 | **+0.1675** [+0.134,+0.201] | 800 | 0 | **PASS** |
 | `unyielding_geo` | `final20_ungeo` | **0.9087** | 0.8538 | **+0.0550** [+0.027,+0.083] | 800 | 0 | **PASS** |
-| `dvalin_bonk` | `rl_dvalin1_dvalin_bonk` | 0.7800 | 0.7425 | +0.0375 [−0.009,+0.084] | 400 | 1 | fail（平台期 +3pp） |
+| `dvalin_bonk` | `r7_gb50_lr2e5_e2_s0` | **0.7650** | 0.7344 | **+0.0306** [+0.008,+0.053] | **1600** | 0（D25 豁免 2 个） | **PASS**（2026-11-21） |
 | `shenhe_double_swirl` | `rl_shenhe1_...` | 0.7025 | 0.6650 | +0.0375 [−0.014,+0.089] | 400 | 2 | fail |
 | `electro_manifestation_nuke` | `rl_electro1_...` | 0.6850 | 0.6550 | +0.0300 [−0.025,+0.085] | 400 | 2 | fail |
 
-- 19 个 deck 有认证臂；**2 个完整门禁 PASS**（dgeo/ungeo）；6 个达到专家 parity 或更好。
+- 19 个 deck 有认证臂；**3 个完整门禁 PASS**（dgeo / ungeo / **dvalin**）；6 个达到专家 parity 或更好。
+- dvalin 的 PASS 是 2026-11-21 的**第五轮**：game-level batch（≥50 局/步）+ KL 锚 0.2 + lr 2e-5，
+  40 seeds / 1600 配对局，pooled 0.765、D25 floor 干净、Δ +0.0306 CI 不含 0。见 §6.8。
 - 生成源：`python -m scripts.specialist_table` → `reports/SPECIALISTS.md`；方法见 `docs/PLAYBOOK.md`。
-- `dvalin` 的 +3.75pp 在 10 seeds 上 CI 含 0，不能写成“超过专家”；只算 plateau。
+- 历史：`dvalin` 曾长期停在 +3.75pp 平台期（CI 含 0）；2026-11-21 用 game-level batch 突破，见 §6.8。
 
 ## 2. 通用 BC 基线（A0）
 
@@ -108,13 +110,33 @@
 | 筛选（seeds 10100–10119, 800 局） | pooled **0.721**，Δ **+0.021 [−0.012,+0.055]** |
 | floor（D25） | 违规 `klee_mavuika_mualani`（0.575 vs 专家 0.650） |
 
-结论：**该轮没有越过 parity**，dvalin 仍是"绝对强度够、显著性差 0.3pp"的状态；
-1-epoch REINFORCE（≈5 局/批）在当前数据量下已到顶，下一步需换更新方式（每批 ≥50 局或 V-trace），
-不是继续换种子。**PASS 集合仍为 2 个 deck。**
+结论：**该轮没有越过 parity**（1-epoch、≈5 局/批），下一步换更新方式——见 §6.8（已做到）。
 
 **门禁修复（本轮）**：`eval/scoreboard.evaluate_gates` 此前**没有实现 D25 豁免**，
 把"专家自己也过不了"的 matchup 记成违规；现已实现（`floor_mode="wilson_low_d25"`、
 `floor_exempt` 字段、`expert_per_opponent` 入参），并加测试 `tests/test_floor_exemption.py`。
+
+### 6.8 第三个 PASS：game-level batch 的 PG（2026-11-21）
+
+按 §6.7 的重开条件换的是**更新方式**，不是种子：
+
+1. `--batch-games 50`：按 `(deck, opponent, seed)` 聚成整局，每步 ≥50 局（旧配方 256 样本 ≈5 局）；
+2. 先量出**步长响应曲线**（同一份 2,000 局自博弈数据）：
+   lr 1e-5 → KL 0.005（不动）、2e-5 → KL 0.013（稳）、3e-5 → KL 0.173（掉 7pp val_acc）、
+   1.5e-4×4ep → val_acc 0.28–0.49（崩）。
+3. 取 lr 2e-5 + `--pg-anchor-kl 0.2` + 2 epochs，`--init-from tg3_bc_e20_s0.pt`。
+
+认证（40 seeds / 1600 配对局，seeds 10300–10339，全新）：
+
+```
+pooled=0.765  wilson95=[0.744,0.785]
+gates: pooled=True floor=True clean=True -> PASS      (floor_mode=wilson_low_d25)
+paired vs baseline: delta=+0.031 95%=[+0.008,+0.053] n=1600
+floor_exempt: ['dvalin_bonk', 'unyielding_geo']   # 专家自己也只有 0.350 / 0.500
+```
+
+即 **dvalin 首次同时满足三项**：pooled ≥0.75、非豁免 matchup Wilson low ≥0.45、配对 Δ CI 不含 0。
+PASS 集合 **2 → 3**（dgeo、ungeo、dvalin）。
 
 **仍有效的两个方法**（写入 PLAYBOOK）：
 1. 新输入通道一律走**零初始化加性旁路**（§7.5）；

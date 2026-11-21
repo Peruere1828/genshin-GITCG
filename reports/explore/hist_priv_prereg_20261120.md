@@ -268,3 +268,51 @@ pooled **0.7725**（≥0.75 ✅）、floor 在 D25 下干净 ✅、配对 Δ **+
 - 3 个 seed 的 Δ 极差必须报告（锚是否真的把方差压住）；
 - 若最好 seed 的 Δ CI_low ≤0，则 dvalin 在本轮判"仍不及"，**不再加种子刷显著性**，
   下一次必须先有结构性增益（新数据/新方法），而不是同一臂换种子。
+
+---
+
+## 12. 第五轮（hist6）：换成 game-level batch 的 PG（写于跑之前，2026-11-21）
+
+### 12.1 触发
+
+`failures/010`：1-epoch REINFORCE、`--batch-size 256`（**≈5 局/批**）下，同一轮在 seed 间
+−0.128…+0.015；KL 锚 0.1 把方差压到 0.48pp 的同时也把改进压没了（Δ +0.021@800）。
+两端的共同问题是**每批的有效局数太少**：局内回报是常数，advantage 的方差主要来自"这一批碰巧赢了哪几局"。
+
+### 12.2 改动（代码）
+
+`--batch-games N`：按 `(deck, opponent, seed)` 聚成**整局**，每批 ≥N 局（`--batch-samples-cap`
+限制显存/内存，局不拆开）。实现 `game_groups` / `game_batches`（`scripts/train_bc_scale.py`），
+测试 `tests/test_game_batches.py`（6 例：整局不拆、≥N 局、cap 生效、seed 可复现、
+空 store、以及**乱序 store 按 key 分组**——`--train-limit` 之后不再是连续布局）。
+
+### 12.3 臂与判据
+
+| 项 | 值 |
+|---|---|
+| 采集 | teacher = `tg3_bc_e20_s0`，seeds **11000–11099** × 20 对手 = **2,000 局** |
+| 训练 | `--loss pg --batch-games 50 --batch-samples-cap 8192 --epochs 4 --lr 1.5e-4` `--pg-anchor-kl 0.05 --grad-clip 1.0 --no-privileged --init-from tg3_bc_e20_s0.pt`，**3 seeds**（Kaggle） |
+| 步数 | 90k 样本 / 50 局每批 ≈ **40 步/epoch × 4 = 160 步**（旧配方 342 步、每步 5 局） |
+| 筛选 | **800 配对局**，seeds 10200–10219（全新） |
+| 认证 | 若筛选 Δ CI_low > 0：**40 seeds / 1600 配对局**，seeds 10300–10339 |
+| 判据 | 认证需同时：pooled ≥0.75、D25 floor 干净、Δ CI_low > 0 |
+
+**停止规则**：若筛选 Δ CI_low ≤ 0，本轮记负、不加种子；下一轮必须再换更新方式
+（V-trace/Retrace 或每批 ≥200 局 + 更多步），不得重复同配方。
+
+### 12.4 结果（2026-11-21）
+
+先量出步长响应（2,000 局自博弈数据、50 局/步、anchor 0.2）：
+
+| lr | KL（2 ep） | val_acc | 备注 |
+|---:|---:|---:|---|
+| 1e-5 | 0.005 | 0.864 | 不动 |
+| **2e-5** | **0.013** | **0.859** | 取此档 |
+| 3e-5 | 0.173 | 0.775 | 掉 7pp |
+| 1.5e-4 × 4ep | — | 0.28–0.49 | 崩（先按旧 lr 试的，已记录） |
+
+- 筛选（800 配对局，seeds 10200–10219）：pooled **0.774**、Δ **+0.045 [+0.014,+0.076]**、D25 floor 干净；
+- 认证（40 seeds / 1600 配对局，seeds 10300–10339）：pooled **0.765**、Δ **+0.031 [+0.008,+0.053]**、
+  `floor_mode=wilson_low_d25`、`floor_exempt=['dvalin_bonk','unyielding_geo']` → **三项全过**。
+
+→ dvalin 成为第三个 PASS；本条预注册的停止规则未触发。
