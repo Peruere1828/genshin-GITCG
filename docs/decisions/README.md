@@ -35,9 +35,10 @@
 | D29 | 任务收敛：主线=突破教师天花板 | **current** | 字面 M4 标为不可达；支线冻结 |
 | D30 | 搜索退出决策路径 | **current** | 搜索三次实验全负；改 PTIE 特权 critic + league |
 | D31 | 低方差 PG（整局 batch + KL 锚）；dvalin 第三个 PASS | **current** | 50 局/步 + lr 2e-5；认证 1600 局，Δ +0.031 CI 不含 0 |
+| D32 | 认证证据标准：两套种子 + 余量下限 | **current** | 2×1600 不相交种子；单套只记 provisional；pooled 用 cluster CI |
 
 ## 使用
 
-- 写新决策：在 `PLAN.md §0` 追加 D32…，再在本表加一行。
+- 写新决策：在 `PLAN.md §0` 追加 D33…，再在本表加一行。
 - 改验收口径：必须同时更新 `docs/EVAL_PROTOCOL.md` 与 `docs/STATUS.md`。
 - 旧决策被推翻：标 `superseded`/`limited` 并链接新决策，不改原文。

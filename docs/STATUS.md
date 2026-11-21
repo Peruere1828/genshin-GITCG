@@ -43,17 +43,22 @@
 | A2 重做（150ep，dgeo/dvalin） | ⏳ 等 A800 | `scripts/p0_a2_rerun.sh` 已封装 |
 | seat 覆盖 A/B（p0-only vs 双边） | ⏳ 未跑 | f07 已确认 store `acting_player` 1128/1128 为 p0；需 200 局 A/B |
 
-## 4. 当前排产
+## 4. 当前排产（2026-11-21，D31 之后）
 
-| 优先级 | 实验 | 目的 | 预算 | 停止条件 |
+> 排序依据：`reports/explore/next_plan_20261121.md`（oracle 复盘 + 本仓实测方差）。
+> 训练一律用 D31 recipe（`--batch-games 50 --pg-anchor-kl 0.2 --epochs 2`，lr 按响应曲线重标）；
+> 认证一律按 D32（两套不相交种子 × 1600 局）。
+
+| # | 实验 | 目的 | 预算 | 停止条件 |
 |---|---|---|---|---|
-| P1 | DAgger 诊断（200 局，0 训练） | 模型状态 vs 专家状态一致率 gap | ~0.5h | gap <3pp → 停 |
-| P1 | 可修 matchup 靶向采集 pilot（nahida × 1 target） | floor 修补 | 1,400 采集 + 960 评测，2–3h | target Δ <+10pp → 停 |
-| P1 | specialist 扩张（dvalin/shenhe/electro） | 把 PASS 从 2 个扩到更多 deck | 18k 采集，6–10h CPU | 3 轮 0/3 → 停 |
-| P1 | portfolio/router（0 新训练） | 现有 arm 的 floor 路由 | 12k 评测 | routed <最佳单 arm +3pp → 不做 |
-| P2 | league/PFSP + anchor | specialist 防漂移 | 每轮 2k 局 | 非劣 CI 下界 <−0.02 → 回滚 |
-| P2 | value 拆头 + 搜索重开 | 修复 D23 的测量问题后再判 | 1 次训练 + 3.2k 局 | parity/价值门禁不过 → 不重开 |
-| P3 | 候选 self-attention probe | 只在 0 成本诊断有信号时做 | 0 新采集 | store 涨引擎不涨 → 停 |
+| **E1** | `shenhe_double_swirl`：2,000 局自博弈 → 1 轮 gb50 PG（从 `rl_shenhe2`），筛 800，认证 2×1600 | 第 4 个 PASS（现有臂已 Δ +0.0675 @400） | 2 CPU·h + 25 min 认证 | 筛 Δ 点估计 <+0.02 或 CI 含 0 → 只认证对照，标 provisional |
+| **E2** | `electro_manifestation_nuke`：2 轮 gb50 + 认证 2×1600 | 第 5 个 PASS | 4 CPU·h | 第 2 轮筛 Δ ≤0 → 停阶梯 |
+| **E3** | 加固：dvalin 1 轮余量（`--batch-games 50`）+ `ungeo` 复认证 2×1600 | 把 dvalin 从 provisional 变 stable；ungeo 补齐 D32 | 2 CPU·h | dvalin 筛回归 → 保 `r7_gb50_lr2e5_e2_s0` 不动 |
+| **E4** | TD(λ)/GAE 信用分配试点（dgeo）：先过**价值真值测试**（分箱校准 <5pp），再 3 seeds | 唯一可能 >5pp 的机制杠杆 | 2 CPU·h + 30 GPU·min | 校准不过→λ=0.5 再试一次；再不过 kill，记 `failures/011` |
+| 机会窗口 | 架构/大批量 probe（4090 或 A800，0 采集） | 仅诊断：val_ce 余量 **且** 800 局引擎筛过才投入 | 0 采集 | store 涨引擎不涨 → 停（failures/005 同型） |
+
+**已冻结**：league/PFSP（降级为防回退，不做效果引擎）、共享骨干蒸馏（failures/004 条件未满足）、
+弱 deck 课程（在 40–80 局/matchup 噪声上优化）、把绝对强度当主指标。
 
 ## 5. 评测与统计口径（当前）
 
