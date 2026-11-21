@@ -318,6 +318,27 @@ HIST4_RUNS = [
      "init_from": "data/store/rl_dvalin1_dvalin_bonk.pt", "seed": 0, "run_timeout": 5400},
 ]
 
+HIST5_RUNS = [
+    # One more exploitation round on top of the hist4 BC arm, which is the first
+    # dvalin checkpoint that clears the absolute bar (pooled 0.7725 at 1,600 pairs)
+    # and the D25 floor; only the paired delta (+0.019, CI_low -0.003) is short.
+    # Fresh self-play data (60 seeds x 20 opponents vs tg3_bc_e20_s0), 1-epoch PG
+    # with the KL anchor, 3 seeds -- the anchor keeps the round from wandering
+    # (3.0pp val_acc spread vs 7pp without).
+    {"name": "r5_pg_ank_s0", "store": "r5_dvalin_selfplay.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "pg_anchor_kl": 0.1,
+     "grad_clip": 1.0, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/tg3_bc_e20_s0.pt", "seed": 0, "run_timeout": 3600},
+    {"name": "r5_pg_ank_s1", "store": "r5_dvalin_selfplay.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "pg_anchor_kl": 0.1,
+     "grad_clip": 1.0, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/tg3_bc_e20_s0.pt", "seed": 1, "run_timeout": 3600},
+    {"name": "r5_pg_ank_s2", "store": "r5_dvalin_selfplay.pt", "loss": "pg", "epochs": 1,
+     "lr": 3e-5, "batch_size": 256, "pg_entropy": 0.01, "pg_anchor_kl": 0.1,
+     "grad_clip": 1.0, "d_model": 256, "no_privileged": True,
+     "init_from": "data/store/tg3_bc_e20_s0.pt", "seed": 2, "run_timeout": 3600},
+]
+
 MODE_RUNS = {
     "h4": H4_RUNS,
     "alld": ALL_DECKS_RUNS,
@@ -333,6 +354,7 @@ MODE_RUNS = {
     "hist2": HIST2_RUNS,
     "hist3": HIST3_RUNS,
     "hist4": HIST4_RUNS,
+    "hist5": HIST5_RUNS,
 }
 
 SMOKE_RUNS = [

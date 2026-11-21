@@ -98,6 +98,20 @@
 即 **dvalin 已经达到绝对强度 + floor 两关，只差"显著高于专家"这一条**（+0.3pp）。
 注意种子集敏感：同一 deck 的 teacher 在 seeds 9600 上是 +0.040 [+0.010,+0.070]。
 
+### 6.7 再走一轮自博弈 PG（2026-11-21，`failures/010`）
+
+在 `tg3_bc_e20_s0` 上用 1,200 局新自博弈数据做 `--loss pg --pg-anchor-kl 0.1`、3 seeds：
+
+| 项 | 结果 |
+|---|---|
+| 训练稳定性（锚） | val_acc 0.8454 / 0.8502 / 0.8492，极差 **0.48pp** |
+| 筛选（seeds 10100–10119, 800 局） | pooled **0.721**，Δ **+0.021 [−0.012,+0.055]** |
+| floor（D25） | 违规 `klee_mavuika_mualani`（0.575 vs 专家 0.650） |
+
+结论：**该轮没有越过 parity**，dvalin 仍是"绝对强度够、显著性差 0.3pp"的状态；
+1-epoch REINFORCE（≈5 局/批）在当前数据量下已到顶，下一步需换更新方式（每批 ≥50 局或 V-trace），
+不是继续换种子。**PASS 集合仍为 2 个 deck。**
+
 **门禁修复（本轮）**：`eval/scoreboard.evaluate_gates` 此前**没有实现 D25 豁免**，
 把"专家自己也过不了"的 matchup 记成违规；现已实现（`floor_mode="wilson_low_d25"`、
 `floor_exempt` 字段、`expert_per_opponent` 入参），并加测试 `tests/test_floor_exemption.py`。
