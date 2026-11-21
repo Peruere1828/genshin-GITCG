@@ -11,6 +11,7 @@
 | [`EXPLOIT_LADDER.md`](./EXPLOIT_LADDER.md) | 逐 deck PG 剥削阶梯：dgeo 0.880 / ungeo 0.909 / dvalin 0.765 | valid |
 | [`explore/dvalin_third_pass_20261121.md`](./explore/dvalin_third_pass_20261121.md) | 第三个 PASS 的完整链路：补 gap → A/B 零增益 → 定向补采 → 整局 batch PG → 认证 | valid |
 | [`explore/next_plan_20261121.md`](./explore/next_plan_20261121.md) | 下一步方向（oracle 复盘）：deck 分诊、杠杆排序、D32 证据标准、算力映射（含 4090） | valid |
+| [`explore/value_truth_20261121.md`](./explore/value_truth_20261121.md) | 价值头真值测试（0 采集）：BC 臂 skill +29%/ECE 2.4%，PG 后变乐观（ECE 6.0%） | valid |
 | [`SPECIALISTS.md`](./SPECIALISTS.md) | 19 个 deck 的认证最优臂（自动生成） | generated |
 | [`explore/p0_parity_20261027.md`](./explore/p0_parity_20261027.md) | P0 parity / exact id / 干净语料 / A2 复核 | valid |
 | [`explore/literature_review.md`](./explore/literature_review.md) | 7 条文献线 + D25/D26 提案 | valid |
