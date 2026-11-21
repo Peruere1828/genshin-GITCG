@@ -117,6 +117,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--matchup-floor", type=float, default=0.45)
     p.add_argument("--pg-entropy", type=float, default=0.01, help="entropy bonus for --loss pg")
     p.add_argument(
+        "--batch-games", type=int, default=0,
+        help="train on whole-game batches of >= N games (0 = historical sample "
+             "batches). The PG advantage is dominated by which games land in a "
+             "256-sample batch (~5 games); see docs/failures/010.",
+    )
+    p.add_argument(
+        "--batch-samples-cap", type=int, default=8192,
+        help="memory cap for one game-level batch (a game is never split)",
+    )
+    p.add_argument(
         "--pg-anchor-kl", type=float, default=0.0,
         help="KL penalty to the warm-started policy (variance reducer for 1-epoch PG; "
              "0 = off). Measured motivation: the same PG round moves +0.015 / -0.128 "
@@ -326,6 +336,8 @@ def main(argv: list[str] | None = None) -> int:
         matchup_floor=args.matchup_floor,
         pg_entropy=args.pg_entropy,
         pg_anchor_kl=args.pg_anchor_kl,
+        batch_games=args.batch_games,
+        batch_samples_cap=args.batch_samples_cap,
         grad_clip=args.grad_clip,
         pg_advantage_norm=not args.no_pg_advantage_norm,
         privileged=bool(use_privileged and getattr(model, "has_privileged", False)),

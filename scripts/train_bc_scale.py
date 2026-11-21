@@ -609,6 +609,66 @@ def _value_loss(value: torch.Tensor, targets: torch.Tensor, config, model) -> to
     raise ValueError(f"unknown value_loss: {kind!r}")
 
 
+def game_groups(store: Store) -> list[list[int]]:
+    """Contiguous sample-index groups, one per game ``(deck, opponent, seed)``.
+
+    The store is sorted by ``keys = (deck, opponent, seed, step_index)``, so a game
+    is a contiguous run of samples. Grouping is what makes a *game-level* batch
+    possible: the episode return is constant inside a game, so a batch spanning
+    many games is the smallest unit on which the PG advantage has real spread.
+    """
+    keys = getattr(store, "keys", None) or []
+    n = len(store)
+    if n == 0:
+        return []
+    if len(keys) != n:
+        return [list(range(n))]
+    # Group by the key *value*, not by adjacency: the builder sorts by
+    # (deck, opponent, seed, step_index), but a ``--train-limit`` subset keeps the
+    # shuffle order and is no longer contiguous. A dict keeps one list per game
+    # while preserving first-seen order, so both layouts work.
+    by_game: dict[tuple, list[int]] = {}
+    for i, key in enumerate(keys):
+        by_game.setdefault(tuple(key[:3]), []).append(i)
+    return list(by_game.values())
+
+
+def game_batches(
+    store: Store,
+    batch_games: int,
+    *,
+    max_samples: int = 8192,
+    rng=None,
+) -> Iterator[list[int]]:
+    """Yield sample-index batches of **whole games**, ``>= batch_games`` per batch.
+
+    Why: with the historical ``--batch-size 256`` (~5 games of ~45 decisions) the
+    PG advantage is dominated by *which* games happened to land in the batch
+    (measured 2026-11-20: the same round moved +0.015 / -0.128 between seeds).
+    Grouping by game makes the per-batch advantage average over >= batch_games
+    independent outcomes, which is the variance the 1-epoch round was drowning in.
+
+    ``max_samples`` bounds the memory of one batch (tokens are variable length);
+    a game is never split across batches. The order of games is shuffled by
+    ``rng`` (one ``random.Random`` per epoch), so runs stay reproducible.
+    """
+    games = game_groups(store)
+    if not games:
+        return
+    if rng is not None:
+        rng.shuffle(games)
+    batch: list[int] = []
+    size = 0
+    for game in games:
+        if batch and (len(batch) >= batch_games or size + len(game) > max_samples):
+            yield batch
+            batch, size = [], 0
+        batch.extend(game)
+        size += len(game)
+    if batch:
+        yield batch
+
+
 def run_batch(model, store, index, device, value_coef, belief_coef, has_belief,
               config=None, q_scale=None, sample_weights=None, privileged=None,
               anchor=None):
@@ -778,6 +838,14 @@ class Config:
     # the teacher, so a 2-3pp feature effect is not buried in run-to-run noise.
     # 0 = off (historical behaviour, bit-identical).
     pg_anchor_kl: float = 0.0
+    # --- game-level batching (variance reduction, failures/010) ----------------
+    # 0 = historical sample batching (``batch_size`` samples per step, ~5 games).
+    # >0 = whole-game batches of at least ``batch_games`` games (capped by
+    # ``batch_samples_cap`` samples). This is the "per-batch >=50 games" arm of the
+    # lower-variance update: the episode return is constant inside a game, so only
+    # a multi-game batch gives the advantage estimator real spread.
+    batch_games: int = 0
+    batch_samples_cap: int = 8192
     grad_clip: float = 0.0     # 0 = off; PG rounds use 1.0
     # --- D30 privileged critic -------------------------------------------------
     # ``privileged`` trains the value head on the god's-eye state (never the
@@ -852,6 +920,14 @@ def train(
         print(f"[train] matchup weighting: {config.matchup_weight} "
               f"(mean 1.0, min {min(sample_weights):.3f}, max {max(sample_weights):.3f})", flush=True)
     order0 = list(range(n))
+    if getattr(config, "batch_games", 0):
+        n_games = len(game_groups(train_store))
+        print(
+            f"[train] game batches: >={config.batch_games} games/step "
+            f"(cap {getattr(config, 'batch_samples_cap', 8192)} samples), "
+            f"{n_games} games, ~{max(1, n_games // max(1, int(config.batch_games)))} steps/epoch",
+            flush=True,
+        )
     import random as _random
 
     rng = _random.Random(config.seed)
@@ -860,12 +936,26 @@ def train(
     best_score: float | None = None
     t0 = time.perf_counter()
     for epoch in range(config.epochs):
-        order = list(order0)
-        rng.shuffle(order)
         agg = {"loss": 0.0, "ce": 0.0, "value": 0.0, "belief": 0.0, "acc": 0.0}
         nb = 0
-        for start in range(0, n, config.batch_size):
-            index = order[start : start + config.batch_size]
+        if getattr(config, "batch_games", 0):
+            # Whole-game batches: the episode return is constant inside a game, so
+            # only a multi-game batch gives the PG advantage real spread (the
+            # historical 256-sample batch was ~5 games -> seed-to-seed ±10pp).
+            batches = game_batches(
+                train_store,
+                int(config.batch_games),
+                max_samples=int(getattr(config, "batch_samples_cap", 8192)),
+                rng=rng,
+            )
+        else:
+            order = list(order0)
+            rng.shuffle(order)
+            batches = (
+                order[start : start + config.batch_size]
+                for start in range(0, n, config.batch_size)
+            )
+        for index in batches:
             if not index:
                 continue
             opt.zero_grad(set_to_none=True)

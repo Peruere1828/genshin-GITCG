@@ -339,6 +339,51 @@ HIST5_RUNS = [
      "init_from": "data/store/tg3_bc_e20_s0.pt", "seed": 2, "run_timeout": 3600},
 ]
 
+HIST6_RUNS = [
+    # Lower-variance PG (failures/010): whole-game batches of >=50 games instead of
+    # 256 samples (~5 games), 4 epochs = ~160 steps (old recipe: 342 steps x 5
+    # games), weaker KL anchor (0.05) so the larger batch can actually move.
+    # 2,000 fresh self-play games from tg3_bc_e20_s0 (seeds 11000-11099).
+    {"name": "r6_gb50_e4_s0", "store": "r6_dvalin_sp2000.pt", "loss": "pg", "epochs": 4,
+     "lr": 1.5e-4, "batch_size": 256, "batch_games": 50, "batch_samples_cap": 8192,
+     "pg_entropy": 0.01, "pg_anchor_kl": 0.05, "grad_clip": 1.0, "d_model": 256,
+     "no_privileged": True, "init_from": "data/store/tg3_bc_e20_s0.pt", "seed": 0,
+     "run_timeout": 5400},
+    {"name": "r6_gb50_e4_s1", "store": "r6_dvalin_sp2000.pt", "loss": "pg", "epochs": 4,
+     "lr": 1.5e-4, "batch_size": 256, "batch_games": 50, "batch_samples_cap": 8192,
+     "pg_entropy": 0.01, "pg_anchor_kl": 0.05, "grad_clip": 1.0, "d_model": 256,
+     "no_privileged": True, "init_from": "data/store/tg3_bc_e20_s0.pt", "seed": 1,
+     "run_timeout": 5400},
+    {"name": "r6_gb50_e4_s2", "store": "r6_dvalin_sp2000.pt", "loss": "pg", "epochs": 4,
+     "lr": 1.5e-4, "batch_size": 256, "batch_games": 50, "batch_samples_cap": 8192,
+     "pg_entropy": 0.01, "pg_anchor_kl": 0.05, "grad_clip": 1.0, "d_model": 256,
+     "no_privileged": True, "init_from": "data/store/tg3_bc_e20_s0.pt", "seed": 2,
+     "run_timeout": 5400},
+]
+
+HIST7_RUNS = [
+    # Conservative game-batch PG. Measured (2026-11-21): a 50-game batch at the old
+    # lr (3e-5) already moves KL to 0.17 and costs 7pp val_acc in 36 steps, and at
+    # lr 1.5e-4 x 4 epochs the policy collapses (val_acc 0.28-0.49). The multi-game
+    # batch is a much *stronger* gradient per step than the 5-game batch, so the
+    # learning rate and the anchor have to come down, not up.
+    {"name": "r7_gb50_lr1e5_e2_s0", "store": "r6_dvalin_sp2000.pt", "loss": "pg", "epochs": 2,
+     "lr": 1e-5, "batch_size": 256, "batch_games": 50, "batch_samples_cap": 8192,
+     "pg_entropy": 0.01, "pg_anchor_kl": 0.2, "grad_clip": 1.0, "d_model": 256,
+     "no_privileged": True, "init_from": "data/store/tg3_bc_e20_s0.pt", "seed": 0,
+     "run_timeout": 5400},
+    {"name": "r7_gb50_lr1e5_e2_s1", "store": "r6_dvalin_sp2000.pt", "loss": "pg", "epochs": 2,
+     "lr": 1e-5, "batch_size": 256, "batch_games": 50, "batch_samples_cap": 8192,
+     "pg_entropy": 0.01, "pg_anchor_kl": 0.2, "grad_clip": 1.0, "d_model": 256,
+     "no_privileged": True, "init_from": "data/store/tg3_bc_e20_s0.pt", "seed": 1,
+     "run_timeout": 5400},
+    {"name": "r7_gb50_lr1e5_e2_s2", "store": "r6_dvalin_sp2000.pt", "loss": "pg", "epochs": 2,
+     "lr": 1e-5, "batch_size": 256, "batch_games": 50, "batch_samples_cap": 8192,
+     "pg_entropy": 0.01, "pg_anchor_kl": 0.2, "grad_clip": 1.0, "d_model": 256,
+     "no_privileged": True, "init_from": "data/store/tg3_bc_e20_s0.pt", "seed": 2,
+     "run_timeout": 5400},
+]
+
 MODE_RUNS = {
     "h4": H4_RUNS,
     "alld": ALL_DECKS_RUNS,
@@ -355,6 +400,8 @@ MODE_RUNS = {
     "hist3": HIST3_RUNS,
     "hist4": HIST4_RUNS,
     "hist5": HIST5_RUNS,
+    "hist6": HIST6_RUNS,
+    "hist7": HIST7_RUNS,
 }
 
 SMOKE_RUNS = [
